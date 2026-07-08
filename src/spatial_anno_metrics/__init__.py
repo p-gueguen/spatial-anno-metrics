@@ -15,6 +15,7 @@ See ``docs/cell-annotation-quality-metrics.md`` for the catalog + the sources ea
 from .eval_metrics import (
     annotation_quality,
     composition_accuracy,
+    conformal_prediction_sets,
     deconvolution_metrics,
     element_centric_similarity,
     external_scores,
@@ -39,7 +40,7 @@ __all__ = [
     "internal_validity", "inter_sample_consistency", "marker_program_fidelity",
     "external_scores", "element_centric_similarity", "hierarchical_accuracy",
     "composition_accuracy", "deconvolution_metrics", "panel_resolvability",
-    "annotation_quality",
+    "annotation_quality", "conformal_prediction_sets",
     "moran_signal", "signal_to_noise", "sparsity", "detection_entropy",
     "tx_per_area", "run_signal_qc",
 ]

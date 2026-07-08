@@ -1,6 +1,17 @@
 # Cell Annotation Quality Metrics — a consolidated reference
 
-**Status:** authoritative design reference (the metrics catalog) · **Scope:** cell-type annotation quality for scRNA-seq **and** imaging spatial transcriptomics (Xenium / MERSCOPE / CosMx) · **Audience:** anyone at FGCZ evaluating "is this cell-type annotation any good?" — in SpatialScribe, in a custom report, or in a benchmark.
+**Status:** authoritative design reference (the metrics catalog) · **Scope:** cell-type annotation quality for scRNA-seq **and** imaging spatial transcriptomics (Xenium / MERSCOPE / CosMx) · **Audience:** anyone evaluating "is this cell-type annotation any good?" — in a package, a custom report, or a benchmark.
+
+> **📦 Reading this inside the `spatial-anno-metrics` package.** This catalog originated in the
+> **SpatialScribe** project and is vendored here as the package's reference. Two mappings to keep in mind:
+> - **Code paths:** where §6 and the master table cite `src/spatialscribe/analysis/eval_metrics.py` /
+>   `signal_qc.py`, the code in *this* package lives at `src/spatial_anno_metrics/eval_metrics.py` /
+>   `signal_qc.py` and is imported as `spatial_anno_metrics.eval_metrics` / `.signal_qc` (top-level
+>   re-exports: `import spatial_anno_metrics as sam; sam.internal_validity(...)`). Metrics attributed to
+>   `purity.py` / `annotate.py` / `spatial.py` / `panel_check.py` are SpatialScribe-pipeline modules **not**
+>   shipped here (candidates for a future release).
+> - **Companion docs:** relative links to `cell-annotation-qc.md`, `annotation_qc_thresholds.yaml`, and
+>   `annotation-method-selection.md` refer to sibling docs in the SpatialScribe repo, not this one.
 
 > **Why this document exists, and how it relates to the others.** We already have [`cell-annotation-qc.md`](cell-annotation-qc.md), which is excellent — but it is a **spatial pipeline QC funnel** (six ordered gates: segmentation → counts → contamination → panel adequacy → confidence → spatial coherence) scoped Xenium-first and oriented toward *per-cell gating and abstention inside the SpatialScribe pipeline*. It does **not** consolidate two whole families of metric: (a) **reference-based / external-validation** metrics used when a ground truth or trusted reference exists (accuracy, F1, ARI, NMI, kappa, biological fidelity), and (b) **internal cluster-validity + inter-sample-consistency** metrics used when there is no ground truth (silhouette variants, neighborhood purity, medoid/Ward concordance, inter-sample consistency — the family the Carmona lab's [**scTypeEval**](https://github.com/carmonalab/scTypeEval) packages). This document is the **catalog**: every metric worth using to *evaluate* an annotation, organized by what evidence you have, what each measures, whether it needs a reference, and where it lives (or should live) in code. Use this to *choose a battery*; use `cell-annotation-qc.md` for the spatial per-cell funnel and [`annotation_qc_thresholds.yaml`](annotation_qc_thresholds.yaml) for the tunable numbers; use [`annotation-method-selection.md`](annotation-method-selection.md) to choose *which annotator to run*.
 

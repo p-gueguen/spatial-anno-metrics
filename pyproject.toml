@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "spatial-anno-metrics"
+version = "0.1.0"
+description = "Cell-type annotation quality metrics (spatial + scRNA-seq): internal validity, marker-program fidelity, external harness, deconvolution, and spatial signal QC."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Paul Gueguen" }]
+requires-python = ">=3.9"
+keywords = [
+    "single-cell", "spatial-transcriptomics", "cell-type-annotation",
+    "quality-control", "metrics", "xenium", "deconvolution",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "scipy",
+    "anndata",
+]
+
+[project.optional-dependencies]
+spatial = ["squidpy"]          # signal_qc.moran_signal (Moran's I via sq.gr.spatial_autocorr)
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.urls]
+Documentation = "https://github.com/p-gueguen/spatial-anno-metrics/blob/main/docs/cell-annotation-quality-metrics.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/spatial_anno_metrics"]
+
+[tool.ruff]
+line-length = 110

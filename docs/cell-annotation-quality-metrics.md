@@ -7,9 +7,11 @@
 > - **Code paths:** where §6 and the master table cite `src/spatialscribe/analysis/eval_metrics.py` /
 >   `signal_qc.py`, the code in *this* package lives at `src/spatial_anno_metrics/eval_metrics.py` /
 >   `signal_qc.py` and is imported as `spatial_anno_metrics.eval_metrics` / `.signal_qc` (top-level
->   re-exports: `import spatial_anno_metrics as sam; sam.internal_validity(...)`). Metrics attributed to
->   `purity.py` / `annotate.py` / `spatial.py` / `panel_check.py` are SpatialScribe-pipeline modules **not**
->   shipped here (candidates for a future release).
+>   re-exports: `import spatial_anno_metrics as sam; sam.internal_validity(...)`). The **marker /
+>   contamination purity** metrics (§3c MECR / CRISP / PMP, §3f NMP / NCP) attributed to `purity.py`
+>   now ship here too, at `src/spatial_anno_metrics/purity.py` (`sam.crisp_purity`, `sam.mecr`,
+>   `sam.pmp`, `sam.nmp`, `sam.ncp`). Metrics attributed to `annotate.py` / `spatial.py` /
+>   `panel_check.py` remain SpatialScribe-pipeline modules **not** shipped here.
 > - **Companion docs:** relative links to `cell-annotation-qc.md`, `annotation_qc_thresholds.yaml`, and
 >   `annotation-method-selection.md` refer to sibling docs in the SpatialScribe repo, not this one.
 

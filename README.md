@@ -26,7 +26,15 @@ pip install "spatial-anno-metrics[spatial]"      # + squidpy, for the Moran's I 
 | `inter_sample_consistency(adata, label_key, sample_key)` | ISC — a type reproducible across biological replicates | scTypeEval |
 | `marker_program_fidelity(adata, label_key, marker_sets)` | per-type AUC-ROC + Cohen's d of the marker-enrichment score | Zhu et al. 2026 |
 | `panel_resolvability(reference, label_key, panel_genes)` | can a target panel resolve a reference's types **at the panel's own depth**? (depth-thinned CV classifier → per-type F1 + confuser) | — |
+| `crisp_purity(adata, marker_sets)`, `mecr(adata, marker_sets)`, `pmp(adata, marker_sets, label_key)` | marker co-expression **contamination purity**: CRISP per-cell impurity + dataset purity, MECR (mutually-exclusive co-detection rate over disjoint lineage pairs), PMP (per-cell marker purity, panel-size-invariant) | SpatialScribe QC L3 |
 | `annotation_quality(adata, label_key, marker_sets=, sample_key=)` | orchestrates the reference-free battery into one headline | — |
+
+### Reference-based purity (needs a matched scRNA/snRNA reference)
+
+| Function | Metric | From |
+|---|---|---|
+| `nmp(adata, reference, label_key)` | negative-marker proportion: fraction of a cell's counts on genes its assigned type should NOT express (the reference's per-type bottom decile) — the reference-based counterpart to `pmp` | SpatialScribe QC L3 |
+| `ncp(adata, reference)` | non-coexpression preservation: fraction of reference-defined non-coexpressed gene pairs that stay non-coexpressed in the section (MECR-style, reference-derived pairs) | SpatialScribe QC L3 |
 
 ### Signal QC (annotation-independent — score the *data*, not the labels)
 
@@ -56,6 +64,9 @@ sam.internal_validity(adata, label_key="cell_type", embedding="X_pca")
 
 # Reference-free fidelity: you have marker sets but no truth
 sam.marker_program_fidelity(adata, "cell_type", {"T cell": ["CD3D", "CD3E", "TRAC"], ...})
+
+# Contamination purity: reference-free from curated markers (spillover / spatial doublets)
+sam.crisp_purity(adata, marker_sets)   # dataset purity + obs['crisp_impure']; sam.mecr(adata, marker_sets)
 
 # Signal QC: is the section trustworthy at all? (needs coords + control probes)
 sam.moran_signal(adata)          # median gene Moran's I >> control -> real signal

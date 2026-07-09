@@ -5,12 +5,13 @@ organised by what evidence you have:
 
   * reference-free internal validity (scTypeEval family) + inter-sample consistency;
   * marker-program fidelity (reference-free, given marker sets): AUC-ROC / Cohen's d;
+  * marker co-expression / contamination purity: reference-free CRISP / MECR / PMP + reference-based NMP / NCP;
   * external harness (needs ground truth): F1 / ARI / kappa / ECS / hierarchical / composition;
   * deconvolution proportion metrics (OpenProblems): R2 / JSD / RMSE;
   * annotation-independent signal QC (SpatialQM): Moran's I gene-vs-control, SNR, sparsity, entropy.
 
 See ``docs/cell-annotation-quality-metrics.md`` for the catalog + the sources each metric is from
-(scTypeEval, Zhu et al. 2026, SpatialQM/Center-for-Spatial-OMICs, OpenProblems).
+(scTypeEval, Zhu et al. 2026, SpatialQM/Center-for-Spatial-OMICs, OpenProblems, SpatialScribe QC L3).
 """
 from .eval_metrics import (
     annotation_quality,
@@ -25,6 +26,13 @@ from .eval_metrics import (
     marker_program_fidelity,
     panel_resolvability,
 )
+from .purity import (
+    crisp_purity,
+    mecr,
+    ncp,
+    nmp,
+    pmp,
+)
 from .signal_qc import (
     detection_entropy,
     moran_signal,
@@ -34,13 +42,14 @@ from .signal_qc import (
     tx_per_area,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "internal_validity", "inter_sample_consistency", "marker_program_fidelity",
     "external_scores", "element_centric_similarity", "hierarchical_accuracy",
     "composition_accuracy", "deconvolution_metrics", "panel_resolvability",
     "annotation_quality", "conformal_prediction_sets",
+    "crisp_purity", "mecr", "pmp", "nmp", "ncp",
     "moran_signal", "signal_to_noise", "sparsity", "detection_entropy",
     "tx_per_area", "run_signal_qc",
 ]

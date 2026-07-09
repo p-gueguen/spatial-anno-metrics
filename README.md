@@ -22,9 +22,10 @@ pip install "spatial-anno-metrics[spatial]"      # + squidpy, for the Moran's I 
 
 | Function | Metrics | From |
 |---|---|---|
-| `internal_validity(adata, label_key, embedding="X_pca")` | silhouette, 2label-silhouette, neighborhood purity, orbital-medoid, Ward-PropMatch, avg similarity, `integrated` (geometric mean) | scTypeEval |
+| `internal_validity(adata, label_key, embedding="X_pca")` | silhouette, 2label-silhouette, neighborhood purity, orbital-medoid, Ward-PropMatch, avg similarity, **Davies-Bouldin + Calinski-Harabasz**, `integrated` (geometric mean) | scTypeEval + sklearn |
 | `inter_sample_consistency(adata, label_key, sample_key)` | ISC — a type reproducible across biological replicates | scTypeEval |
 | `marker_program_fidelity(adata, label_key, marker_sets)` | per-type AUC-ROC + Cohen's d of the marker-enrichment score | Zhu et al. 2026 |
+| `marker_gene_overlap(adata, label_key, marker_sets, n_top=25)` | fraction of a type's curated markers landing in its top-N data-derived DE genes (the fidelity DE-overlap view) | Zhu et al. 2026 |
 | `panel_resolvability(reference, label_key, panel_genes)` | can a target panel resolve a reference's types **at the panel's own depth**? (depth-thinned CV classifier → per-type F1 + confuser) | — |
 | `crisp_purity(adata, marker_sets)`, `mecr(adata, marker_sets)`, `pmp(adata, marker_sets, label_key)` | marker co-expression **contamination purity**: CRISP per-cell impurity + dataset purity, MECR (mutually-exclusive co-detection rate over disjoint lineage pairs), PMP (per-cell marker purity, panel-size-invariant) | SpatialScribe QC L3 |
 | `annotation_quality(adata, label_key, marker_sets=, sample_key=)` | orchestrates the reference-free battery into one headline | — |
@@ -35,6 +36,20 @@ pip install "spatial-anno-metrics[spatial]"      # + squidpy, for the Moran's I 
 |---|---|---|
 | `nmp(adata, reference, label_key)` | negative-marker proportion: fraction of a cell's counts on genes its assigned type should NOT express (the reference's per-type bottom decile) — the reference-based counterpart to `pmp` | SpatialScribe QC L3 |
 | `ncp(adata, reference)` | non-coexpression preservation: fraction of reference-defined non-coexpressed gene pairs that stay non-coexpressed in the section (MECR-style, reference-derived pairs) | SpatialScribe QC L3 |
+
+### Spatial label quality (does the label make spatial sense? — needs coords)
+
+| Function | Metric | From |
+|---|---|---|
+| `spatial_coherence(adata, label_key, k=15)` | per-cell fraction of spatial neighbors sharing the label + dataset **PAS** (Proportion of Abnormal Spots). Down-weight only — rare infiltrating cells are legitimately incoherent | SpatialScribe QC L6 |
+| `neighborhood_sanity(adata, label_key)` | flags types whose strongest neighborhood-enrichment partner is a *different* type (a mislabeling smell) via a squidpy permutation null | SpatialScribe QC L6 |
+
+### Per-cell confidence (reference-free, given marker sets)
+
+| Function | Metric | From |
+|---|---|---|
+| `per_cell_confidence(adata, marker_sets)` | marker-score **margin** (top1−top2) + softmax **entropy** — the margin, not the absolute score, is the confidence | SpatialScribe QC L5 |
+| `label_stability(adata, annotate_fn, drop_frac=0.2)` | label-flip rate under transcript subsampling; annotator-agnostic (pass any labeller) | SpatialScribe QC L5 |
 
 ### Signal QC (annotation-independent — score the *data*, not the labels)
 
@@ -50,6 +65,7 @@ pip install "spatial-anno-metrics[spatial]"      # + squidpy, for the Moran's I 
 | `external_scores(pred, truth)` | balanced accuracy, macro/weighted/per-class F1, ARI/AMI/NMI, Cohen's kappa, ECS | classic + Gates & Ahn 2019 |
 | `element_centric_similarity(a, b)` | exact vectorized ECS for hard partitions (resolution-agnostic) | Gates & Ahn 2019 |
 | `hierarchical_accuracy(pred, truth, hierarchy)` | partial credit along the lineage tree | Zhu et al. 2026 |
+| `avg_bio(adata, label_key, truth_key, embedding)` | AvgBIO = mean(ARI, NMI, scaled-ASW) — biological-structure conservation | Zhu et al. 2026 / scIB |
 | `composition_accuracy(pred, truth)` | hard-label global proportions: L1 / Pearson / JSD | — |
 | `deconvolution_metrics(true_prop, pred_prop)` | soft per-spot proportion matrices: **R² / JSD** (+ RMSE, per-spot JSD) | OpenProblems `task_spatial_decomposition` |
 

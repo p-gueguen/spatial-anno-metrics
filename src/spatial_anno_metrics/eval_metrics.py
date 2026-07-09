@@ -134,11 +134,19 @@ def internal_validity(adata, label_key: str = "cell_type", embedding: str | None
         s2.extend((b_out - a_in) / np.maximum(a_in, b_out))
     sil_2label = float(np.mean(s2)) if s2 else 0.0
 
+    # Davies-Bouldin (lower = better separated) + Calinski-Harabasz (higher = better): standard sklearn
+    # internal indices, reported RAW (not folded into `integrated`) - the catalog battery-C over-cluster check.
+    from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score
+    yenc = np.unique(ys, return_inverse=True)[1]
+    db = float(davies_bouldin_score(Es, yenc)) if len(np.unique(ys)) > 1 else float("nan")
+    ch = float(calinski_harabasz_score(Es, yenc)) if len(np.unique(ys)) > 1 else float("nan")
+
     parts = [_scale01(sil), _scale01(sil_2label), purity, orbital, ward_prop, _scale01(avg_sim)]
     integrated = float(np.exp(np.mean(np.log(np.clip(parts, 1e-9, 1.0)))))
     return {
         "silhouette": sil, "silhouette_2label": sil_2label, "neighborhood_purity": purity,
         "orbital_medoid": orbital, "ward_propmatch": ward_prop, "avg_similarity": avg_sim,
+        "davies_bouldin": db, "calinski_harabasz": ch,
         "integrated": integrated, "n_used": int(len(sel)),
     }
 
@@ -216,6 +224,47 @@ def marker_program_fidelity(adata, label_key: str, marker_sets: dict[str, list[s
         "mean_auc": float(np.mean(aucs)) if aucs else None,
         "mean_cohens_d": float(np.mean(ds)) if ds else None,
     }
+
+
+def marker_gene_overlap(adata, label_key: str, marker_sets: dict[str, list[str]], n_top: int = 25) -> dict:
+    """Do the labels reproduce known markers? Per type, the fraction of its curated markers that land in
+    the top-``n_top`` data-derived DE genes for that label (standardized in-vs-out mean difference).
+    Reference-free given marker sets; the DE-overlap complement to :func:`marker_program_fidelity`'s
+    ranking view. Returns ``{per_type: {overlap, n_curated}, mean_overlap}``."""
+    genes = np.array(list(map(str, adata.var_names)))
+    gene_set = set(genes)
+    labels = adata.obs[label_key].astype(str).to_numpy()
+    X = _dense(adata.X).astype(float)
+    per, fracs = {}, []
+    for t, curated in marker_sets.items():
+        cur = [g for g in map(str, curated) if g in gene_set]
+        y = labels == t
+        if not cur or y.sum() < 2 or (~y).sum() < 2:
+            per[t] = {"overlap": None, "n_curated": len(cur)}
+            continue
+        score = (X[y].mean(0) - X[~y].mean(0)) / np.sqrt(X[~y].var(0) + 1e-9)
+        top = set(genes[np.argsort(-score)[:n_top]])
+        ov = len(top & set(cur)) / len(cur)
+        per[t] = {"overlap": float(ov), "n_curated": len(cur)}
+        fracs.append(ov)
+    return {"per_type": per, "mean_overlap": float(np.mean(fracs)) if fracs else None}
+
+
+def avg_bio(adata, label_key: str, truth_key: str, embedding: str | None = "X_pca") -> dict:
+    """AvgBIO (Zhu 2026 / scIB): mean(ARI, NMI, scaled-ASW) - biological-structure conservation of a
+    labeling vs a ground truth. ARI/NMI compare ``label_key`` to ``truth_key``; ASW is the silhouette
+    of the TRUE labels in ``embedding`` (how well real types separate), scaled to [0,1]. External (needs
+    ground truth). Returns ``{ari, nmi, asw, avg_bio}``."""
+    from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score, silhouette_score
+
+    pred = adata.obs[label_key].astype(str).to_numpy()
+    truth = adata.obs[truth_key].astype(str).to_numpy()
+    ari = float(adjusted_rand_score(truth, pred))
+    nmi = float(normalized_mutual_info_score(truth, pred))
+    E = _embedding(adata, embedding)
+    asw = float(silhouette_score(E, truth)) if len(np.unique(truth)) > 1 else 0.0
+    return {"ari": ari, "nmi": nmi, "asw": asw,
+            "avg_bio": float(np.mean([ari, nmi, (asw + 1) / 2]))}
 
 
 # --------------------------------------------------------------------------- #

@@ -7,11 +7,18 @@
 > - **Code paths:** where §6 and the master table cite `src/spatialscribe/analysis/eval_metrics.py` /
 >   `signal_qc.py`, the code in *this* package lives at `src/spatial_anno_metrics/eval_metrics.py` /
 >   `signal_qc.py` and is imported as `spatial_anno_metrics.eval_metrics` / `.signal_qc` (top-level
->   re-exports: `import spatial_anno_metrics as sam; sam.internal_validity(...)`). The **marker /
->   contamination purity** metrics (§3c MECR / CRISP / PMP, §3f NMP / NCP) attributed to `purity.py`
->   now ship here too, at `src/spatial_anno_metrics/purity.py` (`sam.crisp_purity`, `sam.mecr`,
->   `sam.pmp`, `sam.nmp`, `sam.ncp`). Metrics attributed to `annotate.py` / `spatial.py` /
->   `panel_check.py` remain SpatialScribe-pipeline modules **not** shipped here.
+>   re-exports: `import spatial_anno_metrics as sam; sam.internal_validity(...)`). As of **v0.3.0**,
+>   many metrics the tables attribute to SpatialScribe modules or mark "—" now ship here:
+>   - **§3c/§3f purity** (`purity.py`): `crisp_purity`, `mecr`, `pmp`, `nmp`, `ncp`.
+>   - **§3e spatial label quality** (`spatial.py`): `spatial_coherence` (+ PAS), `neighborhood_sanity`.
+>   - **§3d per-cell confidence** (`confidence.py`): `per_cell_confidence` (marker margin + entropy),
+>     `label_stability` (subsampling flip-rate, annotator-agnostic via a callback).
+>   - **§3a / §3g / external** (`eval_metrics.py`): Davies-Bouldin + Calinski-Harabasz (inside
+>     `internal_validity`), `marker_gene_overlap`, `avg_bio` (AvgBIO), and `conformal_prediction_sets`.
+>
+>   So the "In code" column citing `purity.py` / `spatial.py` / `annotate.py` (margin/entropy/stability)
+>   or "—" for those metrics is superseded by the package. Metrics still attributed to `annotate.py`
+>   (the confidence *funnel*), `panel_check.py`, and `methods.py` remain SpatialScribe-pipeline-only.
 > - **Companion docs:** relative links to `cell-annotation-qc.md`, `annotation_qc_thresholds.yaml`, and
 >   `annotation-method-selection.md` refer to sibling docs in the SpatialScribe repo, not this one.
 

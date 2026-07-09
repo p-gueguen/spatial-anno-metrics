@@ -49,7 +49,8 @@ def per_cell_confidence(adata, marker_sets: dict[str, list[str]], layer: str | N
     srt = np.sort(S, axis=1)
     margin = srt[:, -1] - srt[:, -2]                           # top1 - top2
     Z = S - S.max(1, keepdims=True)
-    P = np.exp(Z); P /= P.sum(1, keepdims=True)
+    P = np.exp(Z)
+    P /= P.sum(1, keepdims=True)
     with np.errstate(divide="ignore", invalid="ignore"):
         ent = -(P * np.log(np.clip(P, 1e-12, 1.0))).sum(1) / np.log(P.shape[1])
     adata.obs["marker_margin"] = margin

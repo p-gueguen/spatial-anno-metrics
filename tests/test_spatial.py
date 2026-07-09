@@ -17,7 +17,8 @@ def _blocks(n_side=20, seed=0):
     xs, ys, lab = [], [], []
     for i in range(2 * n_side):
         for j in range(n_side):
-            xs.append(i + rng.normal(0, 0.01)); ys.append(j + rng.normal(0, 0.01))
+            xs.append(i + rng.normal(0, 0.01))
+            ys.append(j + rng.normal(0, 0.01))
             lab.append("A" if i < n_side else "B")
     a = anndata.AnnData(X=np.zeros((len(xs), 3), dtype="float32"))
     a.obs_names = [f"c{i}" for i in range(len(xs))]

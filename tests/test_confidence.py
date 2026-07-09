@@ -49,7 +49,8 @@ def _marker_argmax(adata):
     for name, genes in MARKERS.items():
         gi = [list(adata.var_names).index(g) for g in genes if g in panel]
         X = adata.X.toarray() if hasattr(adata.X, "toarray") else np.asarray(adata.X)
-        names.append(name); cols.append(X[:, gi].mean(1))
+        names.append(name)
+        cols.append(X[:, gi].mean(1))
     S = np.column_stack(cols)
     return np.array(names)[S.argmax(1)]
 

@@ -41,7 +41,7 @@ def spatial_coherence(adata, label_key: str = "cell_type", k: int = 15,
 
     labels = adata.obs[label_key].astype(str).to_numpy()
     cats = {c: i for i, c in enumerate(np.unique(labels))}
-    lab_idx = np.array([cats[l] for l in labels])
+    lab_idx = np.array([cats[lb] for lb in labels])
     onehot = csr_matrix((np.ones(adata.n_obs), (np.arange(adata.n_obs), lab_idx)),
                         shape=(adata.n_obs, len(cats)))
     same = np.asarray((A @ onehot)[np.arange(adata.n_obs), lab_idx]).ravel()

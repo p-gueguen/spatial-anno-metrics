@@ -51,12 +51,15 @@ def test_marker_gene_overlap_high_when_labels_match_markers():
         X[:80, gi[g]] += 15
     for g in ("MLANA", "SOX10", "DCT"):
         X[80:, gi[g]] += 15
-    a = anndata.AnnData(X=X); a.var_names = genes; a.obs_names = [f"c{i}" for i in range(n)]
+    a = anndata.AnnData(X=X)
+    a.var_names = genes
+    a.obs_names = [f"c{i}" for i in range(n)]
     a.obs["cell_type"] = pd.Categorical(["T"] * 80 + ["Mal"] * 80)
     ms = {"T": ["CD3D", "CD3E", "TRAC"], "Mal": ["MLANA", "SOX10", "DCT"]}
     good = em.marker_gene_overlap(a, "cell_type", ms, n_top=10)
     assert good["mean_overlap"] == pytest.approx(1.0)              # each type's markers ARE its top DE genes
-    b = a.copy(); b.obs["cell_type"] = pd.Categorical(rng.permutation(b.obs["cell_type"].to_numpy()))
+    b = a.copy()
+    b.obs["cell_type"] = pd.Categorical(rng.permutation(b.obs["cell_type"].to_numpy()))
     assert em.marker_gene_overlap(b, "cell_type", ms, n_top=10)["mean_overlap"] < good["mean_overlap"]
 
 

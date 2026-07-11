@@ -499,14 +499,153 @@ def deconvolution_metrics(true_prop, pred_prop) -> dict:
 # --------------------------------------------------------------------------- #
 # Orchestrator (reference-free battery)
 # --------------------------------------------------------------------------- #
+def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[str]] | None,
+                             internal_validity_result: dict | None = None, *,
+                             reference=None, ref_key: str = "cell_type", panel_genes=None,
+                             median_depth: float | None = None, method_label_cols=None,
+                             abstention_labels=None, provenance: dict | None = None,
+                             min_type_n: int = 50, p_softmin: float = -4.0) -> dict:
+    """AQI - one Annotation Quality Index in [0, 1].
+
+    ``AQI = w_coh * soft_min_{p=-4}({A, C, G, M})`` over the ACTIVE (defined) confound-normalized
+    sub-scores: **A** panel x depth adequacy (base-rate-normalized macro F1, depth-matched), **C**
+    contamination/purity (macro median PMP x retention; panel-size invariant), **G** cross-method
+    AGREEMENT (needs >=3 voters; the ONLY reference-free correctness term), **M** marker-program
+    fidelity. Coherence **H** is a bounded <=15% multiplier (self-consistency can never manufacture
+    score); completeness is a side flag (honest abstention is not low quality). Every component is
+    macro over predicted types with ``n >= min_type_n`` and any UNDEFINED component is DROPPED (never
+    set to 0). The soft-min means the weakest confound-normalized link caps the score.
+
+    It is an INDEX (section-comparable, monotone-in-quality), **not** ``P(correct)`` - the no-transfer
+    finding forbids a universal reference-free accuracy curve. ``regime`` says which reading is licensed:
+    ``agreement_anchored`` (>=3 voters) vs ``coherence_index`` (default; self-consistency only, cannot
+    detect a confidently-wrong-but-coherent whole-cluster mislabel). Ground-truth accuracy is a caller
+    concern (:func:`external_scores`), not this index.
+
+    Returns ``{aqi, aqi_core, regime, components:{A,C,G,M,H,completeness}, w_coh, active_set, argmin,
+    n_ge50_types, flags, provenance}``. Pure/guarded; safe from the QC funnel.
+    """
+    from .purity import pmp as _pmp
+
+    labels = adata.obs[label_key].astype(str).to_numpy()
+    abst = {str(x) for x in (abstention_labels or [])}
+    vc = adata.obs[label_key].astype(str).value_counts()
+    big = [str(t) for t, n in vc.items() if int(n) >= min_type_n and str(t) not in abst]
+    big_mask = np.isin(labels, big)
+
+    def _c01(x):
+        return float(min(max(float(x), 0.0), 1.0))
+
+    # A - panel x depth adequacy: base-rate-null-normalized macro F1 at the section's own depth.
+    A = None
+    frac_resolvable = None
+    if reference is not None and panel_genes is not None:
+        try:
+            pr = panel_resolvability(reference, ref_key, panel_genes,
+                                     target_depth=float(median_depth) if median_depth else 50.0)
+            mf, nt = pr.get("macro_f1"), pr.get("n_types")
+            frac_resolvable = pr.get("frac_resolvable")
+            if mf is not None and nt and int(nt) >= 2:
+                null = 1.0 / int(nt)
+                A = _c01((float(mf) - null) / (1.0 - null))
+        except Exception:  # pragma: no cover - defensive
+            A = None
+
+    # C - contamination/purity: min(macro median PMP, retention). Deleting transcripts -> NaN PMP ->
+    # retention falls, so it cannot be gamed by dropping counts. Panel-size invariant (lineage-marker denom).
+    C = None
+    if marker_sets:
+        try:
+            _pmp(adata, marker_sets, label_key)                     # writes obs['pmp']
+            pv = np.asarray(adata.obs["pmp"], dtype=float)
+            meds, defined = [], 0
+            for t in big:
+                col = pv[labels == t]
+                ok = col[~np.isnan(col)]
+                if ok.size:
+                    meds.append(float(np.median(ok)))
+                defined += int((~np.isnan(col)).sum())
+            if meds and big_mask.any():
+                C = _c01(min(float(np.mean(meds)), defined / int(big_mask.sum())))
+        except Exception:  # pragma: no cover - defensive
+            C = None
+
+    # G - cross-method agreement (the only reference-free correctness term); needs >=3 diverse voters.
+    G = None
+    cols = [c for c in (method_label_cols or []) if c in adata.obs.columns]
+    if len(cols) >= 3:
+        try:
+            votes = np.vstack([adata.obs[c].astype(str).to_numpy() for c in cols])   # voters x cells
+            agree = (votes == labels[None, :]).mean(0)              # frac of voters backing the label
+            per = [float(agree[labels == t].mean()) for t in big if (labels == t).any()]
+            if per:
+                G = _c01(float(np.mean(per)))
+        except Exception:  # pragma: no cover - defensive
+            G = None
+
+    # M - marker-program fidelity: macro one-vs-rest AUC over n>=50 types, rescaled 2*(auc-0.5).
+    M = None
+    if marker_sets:
+        try:
+            mpf = marker_program_fidelity(adata, label_key, marker_sets)
+            aucs = [v["auc"] for t, v in mpf.get("per_type", {}).items()
+                    if t in big and v.get("auc") is not None and int(v.get("n", 0)) >= min_type_n]
+            if aucs:
+                M = _c01(2.0 * (float(np.mean(aucs)) - 0.5))
+        except Exception:  # pragma: no cover - defensive
+            M = None
+
+    # H - coherence: bounded <=15% multiplier only (coherence != correctness).
+    H = internal_validity_result.get("integrated") if isinstance(internal_validity_result, dict) else None
+    w_coh = float(np.clip(0.85 + 0.15 * H, 0.85, 1.0)) if isinstance(H, (int, float)) else 1.0
+
+    # completeness - side usability flag, NOT a term (honest abstention on a shallow panel is correct).
+    typed_frac = float(np.mean(~np.isin(labels, list(abst)))) if abst else 1.0
+    completeness = _c01(typed_frac / frac_resolvable) if frac_resolvable else _c01(typed_frac)
+
+    # combine: soft-min (power mean, p=-4) over the ACTIVE set, then the bounded coherence multiplier.
+    parts = {"A": A, "C": C, "G": G, "M": M}
+    active = {k: v for k, v in parts.items() if v is not None}
+    names = {"A": "panel/depth adequacy", "C": "contamination",
+             "G": "cross-method agreement", "M": "marker fidelity"}
+    aqi_core = argmin = aqi = None
+    if active:
+        clipped = {k: min(max(v, 0.01), 1.0) for k, v in active.items()}
+        aqi_core = _c01(float(np.mean([c ** p_softmin for c in clipped.values()])) ** (1.0 / p_softmin))
+        argmin = names[min(clipped, key=clipped.get)]
+        aqi = _c01(w_coh * aqi_core)
+
+    return {
+        "aqi": aqi, "aqi_core": aqi_core,
+        "regime": "agreement_anchored" if G is not None else "coherence_index",
+        "components": {"A": A, "C": C, "G": G, "M": M, "H": H, "completeness": completeness},
+        "w_coh": w_coh, "active_set": list(active.keys()), "argmin": argmin,
+        "n_ge50_types": len(big),
+        "flags": {"reference_unanchored": A is None, "low_support": len(big) < 2,
+                  "coherence_only": G is None},
+        "provenance": dict(provenance or {}, n_voters=len(cols)),
+    }
+
+
 def annotation_quality(adata, label_key: str = "cell_type",
                        marker_sets: dict[str, list[str]] | None = None,
                        sample_key: str | None = None, embedding: str | None = "X_pca",
-                       k: int = 30, subsample: int = 5000, seed: int = 0) -> dict:
+                       k: int = 30, subsample: int = 5000, seed: int = 0, *,
+                       reference=None, ref_key: str = "cell_type", panel_genes=None,
+                       median_depth: float | None = None, method_label_cols=None,
+                       abstention_labels=None, platform=None, n_panel_genes=None,
+                       normalization=None, marker_set_name=None, compute_aqi: bool = True) -> dict:
     """Run the reference-free quality battery and return a compact headline: internal validity,
-    marker-program fidelity (if ``marker_sets``), and inter-sample consistency (if ``sample_key``
-    present). Each sub-metric is guarded - a failure returns ``{'status': 'skipped: ...'}`` rather
-    than raising, so this is safe to call from the QC funnel on any labeled section."""
+    marker-program fidelity (if ``marker_sets``), inter-sample consistency (if ``sample_key``), and
+    the single **AQI** headline (:func:`annotation_quality_index`) in ``out['aqi']``. Each sub-metric is
+    guarded - a failure returns ``{'status': 'skipped: ...'}`` rather than raising, so this is safe to
+    call from the QC funnel on any labeled section.
+
+    The AQI extra inputs are all optional and degrade gracefully: pass ``reference``+``panel_genes``
+    (+``median_depth``) for the adequacy term, ``method_label_cols`` (>=3 obs columns) for the
+    agreement term, and ``marker_sets`` for purity + fidelity. With none of them AQI is a pure
+    coherence index. ``platform``/``n_panel_genes``/``normalization``/``marker_set_name`` are stamped
+    into ``provenance`` (every number must name its normalization + marker set)."""
     out: dict = {}
     try:
         out["internal_validity"] = internal_validity(
@@ -523,6 +662,18 @@ def annotation_quality(adata, label_key: str = "cell_type",
             out["inter_sample_consistency"] = inter_sample_consistency(adata, label_key, sample_key)
         except Exception as e:  # pragma: no cover
             out["inter_sample_consistency"] = {"status": f"skipped: {e}"}
+    if compute_aqi:
+        try:
+            out["aqi"] = annotation_quality_index(
+                adata, label_key, marker_sets, out.get("internal_validity"),
+                reference=reference, ref_key=ref_key, panel_genes=panel_genes,
+                median_depth=median_depth, method_label_cols=method_label_cols,
+                abstention_labels=abstention_labels,
+                provenance={"platform": platform, "n_panel_genes": n_panel_genes,
+                            "median_depth": median_depth, "normalization": normalization,
+                            "marker_set": marker_set_name, "reference": reference is not None})
+        except Exception as e:  # pragma: no cover - defensive
+            out["aqi"] = {"status": f"skipped: {e}"}
     return out
 
 

@@ -21,6 +21,7 @@ from .confidence import (
 )
 from .eval_metrics import (
     annotation_quality,
+    annotation_quality_index,
     avg_bio,
     composition_accuracy,
     conformal_prediction_sets,
@@ -61,7 +62,7 @@ __all__ = [
     "marker_gene_overlap", "avg_bio",
     "external_scores", "element_centric_similarity", "hierarchical_accuracy",
     "composition_accuracy", "deconvolution_metrics", "panel_resolvability",
-    "annotation_quality", "conformal_prediction_sets",
+    "annotation_quality", "annotation_quality_index", "conformal_prediction_sets",
     "crisp_purity", "mecr", "pmp", "nmp", "ncp",
     "spatial_coherence", "neighborhood_sanity",
     "per_cell_confidence", "label_stability",

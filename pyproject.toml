@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "spatial-anno-metrics"
-version = "0.4.0"
+version = "0.4.1"
 description = "Cell-type annotation quality metrics (spatial + scRNA-seq): internal validity, marker-program fidelity, external harness, deconvolution, and spatial signal QC."
 readme = "README.md"
 license = { text = "MIT" }

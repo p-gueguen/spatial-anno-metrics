@@ -1,8 +1,10 @@
 """Tests for the AQI headline (annotation_quality_index): the single 0-1 quality score.
 
-AQI = w_coh * soft-min_{p=-4}({A adequacy, C contamination, G agreement, M marker-fidelity}), an
-INDEX (not P(correct)), with any undefined component DROPPED (never 0) and coherence a bounded
-multiplier. These pin the math (bounds, soft-min <= arithmetic mean, drop-undefined, regime flip).
+AQI = w_coh * min(A ceiling, soft-min_{p=-4}({C contamination, M marker-fidelity})), an INDEX (not
+P(correct)), with any undefined term DROPPED (never 0) and coherence a bounded multiplier. Cross-method
+agreement G is a WITHIN-section abstention signal (reported, not a cross-section term - it does not
+transfer across sections per the 2026-07 validation). These pin the math (bounds, soft-min <= arithmetic
+mean of {C,M}, A caps, drop-undefined, regime = abstention availability).
 """
 from __future__ import annotations
 
@@ -68,32 +70,54 @@ def test_aqi_full_regime_bounds_and_softmin():
         normalization="log1p-median", marker_set_name="curated")
     aqi = out["aqi"]
 
-    assert set(aqi["active_set"]) == {"A", "C", "G", "M"}          # all four defined on clean data
-    comps = [aqi["components"][k] for k in ("A", "C", "G", "M")]
-    for v in comps:
+    # C, M drive the soft-min; A joins as the ceiling. G is reported under abstention, NOT active_set.
+    assert set(aqi["active_set"]) == {"C", "M", "A"}
+    for k in ("A", "C", "M"):
+        v = aqi["components"][k]
         assert v is not None and 0.0 <= v <= 1.0
     assert 0.0 <= aqi["aqi"] <= 1.0 and 0.0 <= aqi["aqi_core"] <= 1.0
-    assert aqi["regime"] == "agreement_anchored"                  # >=3 voters
-    assert aqi["argmin"] in ("panel/depth adequacy", "contamination",
-                             "cross-method agreement", "marker fidelity")
-    # soft-min: the power mean (p=-4) sits between the weakest link and the arithmetic mean.
-    assert min(comps) - 1e-6 <= aqi["aqi_core"] <= float(np.mean(comps)) + 1e-6
-    assert aqi["aqi"] <= aqi["aqi_core"] + 1e-9                    # coherence multiplier <= 1
+    assert aqi["regime"] == "with_agreement"                       # >=3 voters -> abstention available
+    assert aqi["abstention"]["available"] is True and aqi["abstention"]["n_voters"] == 3
+    assert aqi["abstention"]["signal"] is not None
+    assert aqi["argmin"] in ("contamination", "marker fidelity", "panel/depth ceiling")
+    # soft-min core: the power mean (p=-4) of {C, M} sits between the weaker link and their mean.
+    cm = [aqi["components"]["C"], aqi["components"]["M"]]
+    assert min(cm) - 1e-6 <= aqi["aqi_core"] <= float(np.mean(cm)) + 1e-6
+    assert aqi["aqi"] <= aqi["aqi_core"] + 1e-9                     # A-cap and coherence multiplier <= core
     assert aqi["n_ge50_types"] == 3
     assert aqi["provenance"]["marker_set"] == "curated" and aqi["provenance"]["n_voters"] == 3
+
+
+def test_aqi_a_is_a_ceiling_not_a_bottleneck():
+    """A LOW adequacy caps the index (min), but a HIGH adequacy never lifts it above the {C,M} soft-min:
+    that is the whole point of the 2026-07 correction (A anti-orders accuracy, so it may only cap)."""
+    from spatial_anno_metrics import eval_metrics as em
+
+    a, ref, msets, genes = _counts_fixture()
+    depth = float(np.median(np.asarray(a.layers["counts"]).sum(1)))
+    out = em.annotation_quality(
+        a, label_key="cell_type", marker_sets=msets, embedding="X_pca",
+        reference=ref, panel_genes=genes, median_depth=depth,
+        method_label_cols=["m1", "m2", "m3"], platform="xenium", n_panel_genes=len(genes))
+    aqi = out["aqi"]
+    A, core = aqi["components"]["A"], aqi["aqi_core"]
+    # aqi (pre-w_coh) = min(A, core): capped by A only when A < core, else equals core. Never exceeds core.
+    assert aqi["aqi"] <= min(A, core) * aqi["w_coh"] + 1e-9
+    if A >= core:                                                  # rich panel must not inflate the score
+        assert abs(aqi["aqi"] - aqi["w_coh"] * core) < 1e-9
 
 
 def test_aqi_drops_undefined_components_and_flips_regime():
     from spatial_anno_metrics import eval_metrics as em
 
     a, _ref, msets, _genes = _counts_fixture()
-    # <3 voters -> agreement UNDEFINED; no reference -> adequacy UNDEFINED. Both must DROP, not become 0.
+    # <3 voters -> agreement UNDEFINED (abstention unavailable); no reference -> adequacy UNDEFINED. Both DROP.
     out = em.annotation_quality(a, label_key="cell_type", marker_sets=msets, embedding="X_pca",
                                 method_label_cols=["m1"])
     aqi = out["aqi"]
-    assert aqi["regime"] == "coherence_index"
-    assert aqi["components"]["G"] is None and "G" not in aqi["active_set"]
-    assert aqi["components"]["A"] is None and aqi["flags"]["reference_unanchored"] is True
+    assert aqi["regime"] == "index_only"
+    assert aqi["components"]["G"] is None and aqi["abstention"]["available"] is False
+    assert aqi["components"]["A"] is None and aqi["flags"]["adequacy_unknown"] is True
     assert set(aqi["active_set"]) == {"C", "M"}                    # only the reference-free terms survive
     assert 0.0 <= aqi["aqi"] <= 1.0
 
@@ -104,4 +128,4 @@ def test_aqi_empty_active_set_is_none_not_zero():
     a, _ref, _m, _g = _counts_fixture()
     out = em.annotation_quality(a, label_key="cell_type", embedding="X_pca")  # no markers/ref/methods
     aqi = out["aqi"]
-    assert aqi["active_set"] == [] and aqi["aqi"] is None and aqi["regime"] == "coherence_index"
+    assert aqi["active_set"] == [] and aqi["aqi"] is None and aqi["regime"] == "index_only"

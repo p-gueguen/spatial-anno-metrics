@@ -507,23 +507,26 @@ def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[
                              min_type_n: int = 50, p_softmin: float = -4.0) -> dict:
     """AQI - one Annotation Quality Index in [0, 1].
 
-    ``AQI = w_coh * soft_min_{p=-4}({A, C, G, M})`` over the ACTIVE (defined) confound-normalized
-    sub-scores: **A** panel x depth adequacy (base-rate-normalized macro F1, depth-matched), **C**
-    contamination/purity (macro median PMP x retention; panel-size invariant), **G** cross-method
-    AGREEMENT (needs >=3 voters; the ONLY reference-free correctness term), **M** marker-program
-    fidelity. Coherence **H** is a bounded <=15% multiplier (self-consistency can never manufacture
-    score); completeness is a side flag (honest abstention is not low quality). Every component is
-    macro over predicted types with ``n >= min_type_n`` and any UNDEFINED component is DROPPED (never
-    set to 0). The soft-min means the weakest confound-normalized link caps the score.
+    ``AQI = w_coh * min(A, soft_min_{p=-4}({C, M}))`` - the soft-min of the ACHIEVED-quality terms,
+    capped by the panel-adequacy ceiling: **C** contamination/purity (macro median PMP x retention;
+    panel-size invariant), **M** marker-program fidelity (macro one-vs-rest AUC), capped by **A** panel x
+    depth adequacy (base-rate-normalized depth-matched macro F1 - a resolvable CEILING: you cannot type
+    better than the panel resolves, but a rich panel does not by itself mean the labels are right).
+    Coherence **H** is a bounded <=15% multiplier (self-consistency can never manufacture score);
+    completeness is a side flag (honest abstention is not low quality). Every component is macro over
+    predicted types with ``n >= min_type_n`` and any UNDEFINED term is DROPPED (never set to 0).
+
+    Cross-method AGREEMENT **G** (>=3 voters) is NOT a cross-section term: its absolute level tracks
+    REFERENCE quality, not accuracy, and does not transfer across sections (2026-07 validation). It is
+    reported under ``abstention`` as a WITHIN-section per-cell signal (which cells to grey out), and
+    ``regime`` (``with_agreement`` vs ``index_only``) says whether that signal is available.
 
     It is an INDEX (section-comparable, monotone-in-quality), **not** ``P(correct)`` - the no-transfer
-    finding forbids a universal reference-free accuracy curve. ``regime`` says which reading is licensed:
-    ``agreement_anchored`` (>=3 voters) vs ``coherence_index`` (default; self-consistency only, cannot
-    detect a confidently-wrong-but-coherent whole-cluster mislabel). Ground-truth accuracy is a caller
-    concern (:func:`external_scores`), not this index.
+    finding forbids a universal reference-free accuracy curve. Ground-truth accuracy is a caller concern
+    (:func:`external_scores`), not this index.
 
-    Returns ``{aqi, aqi_core, regime, components:{A,C,G,M,H,completeness}, w_coh, active_set, argmin,
-    n_ge50_types, flags, provenance}``. Pure/guarded; safe from the QC funnel.
+    Returns ``{aqi, aqi_core, regime, components:{A,C,G,M,H,completeness}, abstention:{signal,n_voters,
+    available}, w_coh, active_set, argmin, n_ge50_types, flags, provenance}``. Pure/guarded; QC-safe.
     """
     from .purity import pmp as _pmp
 
@@ -603,26 +606,38 @@ def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[
     typed_frac = float(np.mean(~np.isin(labels, list(abst)))) if abst else 1.0
     completeness = _c01(typed_frac / frac_resolvable) if frac_resolvable else _c01(typed_frac)
 
-    # combine: soft-min (power mean, p=-4) over the ACTIVE set, then the bounded coherence multiplier.
-    parts = {"A": A, "C": C, "G": G, "M": M}
-    active = {k: v for k, v in parts.items() if v is not None}
-    names = {"A": "panel/depth adequacy", "C": "contamination",
-             "G": "cross-method agreement", "M": "marker fidelity"}
+    # combine: soft-min over the ACHIEVED-quality terms {C, M}, CAPPED by the panel x depth ceiling A,
+    # then the bounded coherence multiplier. This is the 2026-07 VALIDATION correction (validate_aqi.py,
+    # 3 GT sections, common 6-lineage axis). Measured section-level Spearman(component, true balanced
+    # accuracy): M = +1.0 (marker fidelity orders sections perfectly), C = +0.5, but A = -1.0 and
+    # G = +0.5. A ANTI-orders accuracy because it is a resolvable-CEILING (high on any deep panel
+    # regardless of the labels actually assigned) - so it must CAP, never drive. G's absolute level
+    # tracks REFERENCE quality, not accuracy, and does not transfer across sections - so it is a WITHIN-
+    # section per-cell abstention signal (reported under `abstention`), never a cross-section term. The
+    # old soft_min(A,C,G,M) mixed a ceiling and a non-transferring term into the bottleneck (rho +0.5,
+    # wrong section order); min(A, soft_min(C,M)) restores rho +1.0.
+    core = {"C": C, "M": M}
+    active = {k: v for k, v in core.items() if v is not None}
+    names = {"C": "contamination", "M": "marker fidelity", "A": "panel/depth ceiling"}
     aqi_core = argmin = aqi = None
     if active:
         clipped = {k: min(max(v, 0.01), 1.0) for k, v in active.items()}
         aqi_core = _c01(float(np.mean([c ** p_softmin for c in clipped.values()])) ** (1.0 / p_softmin))
-        argmin = names[min(clipped, key=clipped.get)]
-        aqi = _c01(w_coh * aqi_core)
+        capped = aqi_core if A is None else min(aqi_core, A)          # adequacy is a CEILING, not a driver
+        argmin = ("panel/depth ceiling" if (A is not None and A < aqi_core)
+                  else names[min(clipped, key=clipped.get)])
+        aqi = _c01(w_coh * capped)
 
     return {
         "aqi": aqi, "aqi_core": aqi_core,
-        "regime": "agreement_anchored" if G is not None else "coherence_index",
+        "regime": "with_agreement" if G is not None else "index_only",
         "components": {"A": A, "C": C, "G": G, "M": M, "H": H, "completeness": completeness},
-        "w_coh": w_coh, "active_set": list(active.keys()), "argmin": argmin,
-        "n_ge50_types": len(big),
-        "flags": {"reference_unanchored": A is None, "low_support": len(big) < 2,
-                  "coherence_only": G is None},
+        # cross-method agreement is a WITHIN-section per-cell abstention signal, not a cross-section term.
+        "abstention": {"signal": G, "n_voters": len(cols), "available": G is not None},
+        "w_coh": w_coh, "active_set": list(active.keys()) + (["A"] if A is not None else []),
+        "argmin": argmin, "n_ge50_types": len(big),
+        "flags": {"adequacy_unknown": A is None, "low_support": len(big) < 2,
+                  "abstention_available": G is not None},
         "provenance": dict(provenance or {}, n_voters=len(cols)),
     }
 

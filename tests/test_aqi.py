@@ -129,3 +129,33 @@ def test_aqi_empty_active_set_is_none_not_zero():
     out = em.annotation_quality(a, label_key="cell_type", embedding="X_pca")  # no markers/ref/methods
     aqi = out["aqi"]
     assert aqi["active_set"] == [] and aqi["aqi"] is None and aqi["regime"] == "index_only"
+
+
+def test_aqi_coverage_flags_a_collapsed_lineage():
+    """The advisory coverage flag must catch a lineage the markers strongly support but the annotation
+    dropped ENTIRELY - the AQI index blind spot confirmed on colon. Collapse type C into A: C's markers
+    stay strong in those cells, no C label survives, so coverage.missing must name C."""
+    from spatial_anno_metrics import eval_metrics as em
+
+    a, _ref, msets, _genes = _counts_fixture()
+    lab = a.obs["cell_type"].astype(str).to_numpy()
+    lab[lab == "C"] = "A"                                        # collapse C -> A
+    a.obs["cell_type"] = pd.Categorical(lab)
+    out = em.annotation_quality(a, label_key="cell_type", marker_sets=msets, embedding="X_pca")
+    aqi = out["aqi"]
+    cov = aqi["coverage"]
+    assert cov is not None
+    assert "C" in cov["missing"], cov                           # markers say C is here, no C label
+    assert "A" in cov["annotated_on_axis"]
+    assert aqi["flags"]["missing_lineages"] is True
+    assert cov["missing_frac"] > 0.1                            # a real fraction of cells look like C
+
+
+def test_aqi_coverage_empty_when_all_lineages_present():
+    from spatial_anno_metrics import eval_metrics as em
+
+    a, _ref, msets, _genes = _counts_fixture()                  # A, B, C all annotated
+    out = em.annotation_quality(a, label_key="cell_type", marker_sets=msets, embedding="X_pca")
+    cov = out["aqi"]["coverage"]
+    assert cov is not None and cov["missing"] == []
+    assert out["aqi"]["flags"]["missing_lineages"] is False

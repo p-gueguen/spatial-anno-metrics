@@ -499,6 +499,51 @@ def deconvolution_metrics(true_prop, pred_prop) -> dict:
 # --------------------------------------------------------------------------- #
 # Orchestrator (reference-free battery)
 # --------------------------------------------------------------------------- #
+def _lineage_coverage(adata, labels, marker_sets, abstained, *,
+                      min_frac: float = 0.03, min_cells: int = 50, margin: float = 0.25):
+    """Advisory: which marker-set lineages does the section's EXPRESSION strongly support that the
+    annotation never assigned? Catches a COLLAPSED lineage - the AQI index cannot see one (purity +
+    marker-fidelity score only the labels present; adequacy scores the reference), so a whole missing
+    lineage costs the score nothing. Confirmed on human colon (Stromal + T/NK dropped, yet AQI 0.73).
+
+    Reference-free: z-score each on-panel marker gene, take the per-cell marker-argmax lineage over its
+    CONFIDENT calls (top-minus-second >= ``margin``), and flag any lineage that is the argmax for a real
+    fraction of cells (``>= min_cells`` or ``>= min_frac``) yet is absent from the annotation labels.
+    Returns ``{expected, annotated_on_axis, missing, missing_frac}`` or ``None`` (<2 lineages on panel).
+    Only meaningful when ``marker_sets`` spans the tissue's lineages (not just the present labels)."""
+    import scipy.sparse as sp
+
+    var = {str(g): i for i, g in enumerate(map(str, adata.var_names))}
+    lin_idx = {L: [var[g] for g in map(str, genes) if g in var]
+               for L, genes in (marker_sets or {}).items()}
+    lin_idx = {L: ii for L, ii in lin_idx.items() if ii}
+    if len(lin_idx) < 2:
+        return None
+    allidx = sorted({i for ii in lin_idx.values() for i in ii})
+    Xs = adata.X
+    sub = (Xs[:, allidx].toarray() if sp.issparse(Xs) else np.asarray(Xs)[:, allidx]).astype(float)
+    mu, sd = sub.mean(0), sub.std(0)
+    sd[sd == 0] = 1.0
+    Z = (sub - mu) / sd
+    pos = {g: k for k, g in enumerate(allidx)}
+    Ls = list(lin_idx)
+    S = np.vstack([Z[:, [pos[i] for i in lin_idx[L]]].mean(1) for L in Ls]).T   # cells x lineages
+    order = np.argsort(-S, axis=1)
+    top = S[np.arange(len(S)), order[:, 0]]
+    second = S[np.arange(len(S)), order[:, 1]] if S.shape[1] > 1 else np.full(len(S), -np.inf)
+    conf = (top - second) >= margin
+    arg = np.array([Ls[i] for i in order[:, 0]])
+    n = max(1, int(conf.sum()))
+    counts = {L: int(((arg == L) & conf).sum()) for L in Ls}
+    expected = [L for L in Ls if counts[L] >= min_cells or counts[L] / n >= min_frac]
+    annotated = {str(x) for x in np.unique(labels) if str(x) not in abstained}
+    missing = [L for L in expected if L not in annotated]
+    missing_frac = float(np.mean(conf & np.isin(arg, missing))) if missing else 0.0
+    return {"expected": sorted(expected), "annotated_on_axis": sorted(annotated & set(Ls)),
+            "missing": sorted(missing), "missing_frac": round(missing_frac, 3)}
+
+
+
 def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[str]] | None,
                              internal_validity_result: dict | None = None, *,
                              reference=None, ref_key: str = "cell_type", panel_genes=None,
@@ -526,7 +571,10 @@ def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[
     (:func:`external_scores`), not this index.
 
     Returns ``{aqi, aqi_core, regime, components:{A,C,G,M,H,completeness}, abstention:{signal,n_voters,
-    available}, w_coh, active_set, argmin, n_ge50_types, flags, provenance}``. Pure/guarded; QC-safe.
+    available}, coverage:{expected,annotated_on_axis,missing,missing_frac}, w_coh, active_set, argmin,
+    n_ge50_types, flags, provenance}``. ``coverage`` is an ADVISORY warning (never folded into the score):
+    marker-supported lineages the annotation dropped entirely - the index cannot see a collapsed lineage
+    (C/M score only present labels; A scores the reference), confirmed on colon. Pure/guarded; QC-safe.
     """
     from .purity import pmp as _pmp
 
@@ -606,6 +654,17 @@ def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[
     typed_frac = float(np.mean(~np.isin(labels, list(abst)))) if abst else 1.0
     completeness = _c01(typed_frac / frac_resolvable) if frac_resolvable else _c01(typed_frac)
 
+    # advisory lineage-COVERAGE: which marker-supported lineages did the annotation drop ENTIRELY? The
+    # index cannot see a collapsed lineage (C/M score only present labels; A scores the reference), so
+    # this is a separate WARNING, never folded into the score. Confirmed on human colon (Stromal+T/NK
+    # dropped yet AQI 0.73). Only fires when marker_sets spans the tissue's lineages (else missing=[]).
+    coverage = None
+    if marker_sets:
+        try:
+            coverage = _lineage_coverage(adata, labels, marker_sets, abst)
+        except Exception:  # pragma: no cover - defensive
+            coverage = None
+
     # combine: soft-min over the ACHIEVED-quality terms {C, M}, CAPPED by the panel x depth ceiling A,
     # then the bounded coherence multiplier. This is the 2026-07 VALIDATION correction (validate_aqi.py,
     # 3 GT sections, common 6-lineage axis). Measured section-level Spearman(component, true balanced
@@ -634,10 +693,13 @@ def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[
         "components": {"A": A, "C": C, "G": G, "M": M, "H": H, "completeness": completeness},
         # cross-method agreement is a WITHIN-section per-cell abstention signal, not a cross-section term.
         "abstention": {"signal": G, "n_voters": len(cols), "available": G is not None},
+        # advisory: marker-supported lineages the annotation dropped entirely (index-invisible); not scored.
+        "coverage": coverage,
         "w_coh": w_coh, "active_set": list(active.keys()) + (["A"] if A is not None else []),
         "argmin": argmin, "n_ge50_types": len(big),
         "flags": {"adequacy_unknown": A is None, "low_support": len(big) < 2,
-                  "abstention_available": G is not None},
+                  "abstention_available": G is not None,
+                  "missing_lineages": bool(coverage and coverage.get("missing"))},
         "provenance": dict(provenance or {}, n_voters=len(cols)),
     }
 

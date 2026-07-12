@@ -55,7 +55,7 @@ from .spatial import (
     spatial_coherence,
 )
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 __all__ = [
     "internal_validity", "inter_sample_consistency", "marker_program_fidelity",

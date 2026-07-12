@@ -187,6 +187,42 @@ def test_aqi_cov_ref_clears_when_reference_lineages_all_present():
     assert out["aqi"]["flags"]["missing_vs_reference"] is False
 
 
+def test_aqi_no_dict_frac_discloses_uncovered_labels():
+    """no_dict_frac = fraction of big cells whose label has NO on-panel marker set (a COVERAGE gap fixable
+    by supplying reference-derived markers, not low signal). Makes a coverage-limited C legible instead of
+    an opaque under-read - the MERSCOPE E14 case (curated dicts covered ~10/105 labels -> AQI 0.08)."""
+    from spatial_anno_metrics import eval_metrics as em
+
+    a, _ref, msets, _genes = _counts_fixture()                  # A, B, C each 70 cells
+    msets_partial = {k: v for k, v in msets.items() if k != "C"}  # drop C's dict -> C is undeclared no-dict
+    out = em.annotation_quality(a, label_key="cell_type", marker_sets=msets_partial, embedding="X_pca")
+    aqi = out["aqi"]
+    assert aqi["no_dict_frac"] == pytest.approx(70 / 210, abs=0.02)   # C ~= 1/3 of the big cells
+    assert aqi["flags"]["coverage_limited"] is False                 # 1/3 < 0.5
+    assert 0.0 <= aqi["aqi"] <= 1.0                                  # disclosure does not break the score
+
+
+def test_aqi_no_dict_frac_zero_when_all_covered():
+    from spatial_anno_metrics import eval_metrics as em
+
+    a, _ref, msets, _genes = _counts_fixture()
+    out = em.annotation_quality(a, label_key="cell_type", marker_sets=msets, embedding="X_pca")
+    assert out["aqi"]["no_dict_frac"] == 0.0
+    assert out["aqi"]["flags"]["coverage_limited"] is False
+
+
+def test_aqi_no_dict_frac_forgives_declared_abstention():
+    """A no-dict label that is DECLARED abstention is honest, not a coverage gap -> excluded from no_dict_frac
+    (declared-abstention labels are already dropped from `big`)."""
+    from spatial_anno_metrics import eval_metrics as em
+
+    a, _ref, msets, _genes = _counts_fixture()
+    msets_partial = {k: v for k, v in msets.items() if k != "C"}
+    out = em.annotation_quality(a, label_key="cell_type", marker_sets=msets_partial, embedding="X_pca",
+                                abstention_labels=["C"])
+    assert out["aqi"]["no_dict_frac"] == 0.0
+
+
 def test_aqi_cohort_signal_surfaces_with_sample_key():
     """When a cohort exists (sample_key), inter-sample consistency is reported under `cohort` (not scored)."""
     from spatial_anno_metrics import eval_metrics as em

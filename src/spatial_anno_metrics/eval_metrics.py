@@ -710,6 +710,20 @@ def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[
         except Exception:  # pragma: no cover - defensive
             pass
 
+    # no-dict disclosure: fraction of big cells whose label has NO on-panel marker set (undeclared - declared
+    # abstention labels are already dropped from `big`). Their PMP is NaN for lack of a marker DICTIONARY (a
+    # COVERAGE gap, fixable by supplying reference-derived markers), NOT for low signal - the two are conflated
+    # inside `retention`. Reported so a coverage-limited C is legible instead of an opaque under-read: MERSCOPE
+    # E14 curated dicts covered ~10/105 MOCA labels -> retention ~0.06 -> AQI 0.08 on a GOOD annotation; the fix
+    # is to LOAD A REFERENCE (which then grounds markers per label). NOT scored - retention already caps the
+    # index (a bare "forgive no-dict from retention" change over-reads; verified 2026-07-12); this only explains WHY.
+    no_dict_frac = None
+    if marker_sets is not None and big_mask.any():
+        _panel = set(map(str, adata.var_names))
+        nod = sum(int((labels == t).sum()) for t in big
+                  if not any(g in _panel for g in (marker_sets or {}).get(t, [])))
+        no_dict_frac = round(nod / int(big_mask.sum()), 3)
+
     # combine: soft-min over the ACHIEVED-quality terms {C, M}, CAPPED by the panel x depth ceiling A,
     # then the bounded coherence multiplier. This is the 2026-07 VALIDATION correction (validate_aqi.py,
     # 3 GT sections, common 6-lineage axis). Measured section-level Spearman(component, true balanced
@@ -740,6 +754,8 @@ def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[
         "abstention": {"signal": G, "n_voters": len(cols), "available": G is not None},
         # advisory: lineages the annotation dropped entirely (index-invisible); marker- AND reference-anchored.
         "coverage": coverage,
+        # disclosure: fraction of scored cells whose label has no on-panel marker dict (coverage gap, NOT scored).
+        "no_dict_frac": no_dict_frac,
         # cohort signal (across a sample_key cohort): inter-sample label consistency; REPORTED, not scored -
         # its level does not transfer (like G), and CBCL showed a per-type spread (Keratinocyte 0.51 vs
         # Myeloid -0.11). Present only when the caller computed it (a sample_key exists).
@@ -752,7 +768,8 @@ def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[
         "flags": {"adequacy_unknown": A is None, "low_support": len(big) < 2,
                   "abstention_available": G is not None,
                   "missing_lineages": bool(coverage and coverage.get("missing")),
-                  "missing_vs_reference": bool(coverage and coverage.get("missing_vs_reference"))},
+                  "missing_vs_reference": bool(coverage and coverage.get("missing_vs_reference")),
+                  "coverage_limited": bool(no_dict_frac is not None and no_dict_frac > 0.5)},
         "provenance": dict(provenance or {}, n_voters=len(cols)),
     }
 

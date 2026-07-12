@@ -543,12 +543,43 @@ def _lineage_coverage(adata, labels, marker_sets, abstained, *,
             "missing": sorted(missing), "missing_frac": round(missing_frac, 3)}
 
 
+def _reference_coverage(reference, ref_key, labels, abstained, *, tau: float = 0.03):
+    """Advisory (reference-anchored): which lineages ABUNDANT in the reference (>= ``tau`` of ref cells)
+    have NO matching annotation label? This covers the marker-based coverage blind spot on OFF-PANEL-marker
+    panels - the UM liver met (melanoma/hepatocyte markers off the immuno-oncology panel, but present in the
+    reference): the marker flag can't see them, this one can. Name-normalized loose match (a label using a
+    different WORD for the same lineage can false-flag), so it is a "verify these" advisory, NEVER scored.
+    Returns ``{reference_abundant, missing_vs_reference, n_ref_types_abundant}`` or ``None``."""
+    import re as _re
+
+    obs = getattr(reference, "obs", None)
+    if reference is None or obs is None or ref_key not in obs.columns:
+        return None
+
+    def _norm(x):
+        return _re.sub(r"[^a-z0-9]", "", str(x).lower())
+
+    vc = obs[ref_key].astype(str).value_counts(normalize=True)
+    ref_abundant = [str(t) for t, f in vc.items() if float(f) >= tau]
+    lab_norm = {_norm(x) for x in {str(v) for v in labels} - set(map(str, abstained)) if x}
+    lab_norm.discard("")
+
+    def _present(reft):
+        r = _norm(reft)
+        return bool(r) and any(r == la or (len(r) >= 4 and (r in la or la in r)) for la in lab_norm)
+
+    missing = sorted([t for t in ref_abundant if not _present(t)])
+    return {"reference_abundant": sorted(ref_abundant), "missing_vs_reference": missing,
+            "n_ref_types_abundant": len(ref_abundant)}
+
+
 
 def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[str]] | None,
                              internal_validity_result: dict | None = None, *,
                              reference=None, ref_key: str = "cell_type", panel_genes=None,
                              median_depth: float | None = None, method_label_cols=None,
                              abstention_labels=None, provenance: dict | None = None,
+                             cohort_result: dict | None = None,
                              min_type_n: int = 50, p_softmin: float = -4.0) -> dict:
     """AQI - one Annotation Quality Index in [0, 1].
 
@@ -571,10 +602,15 @@ def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[
     (:func:`external_scores`), not this index.
 
     Returns ``{aqi, aqi_core, regime, components:{A,C,G,M,H,completeness}, abstention:{signal,n_voters,
-    available}, coverage:{expected,annotated_on_axis,missing,missing_frac}, w_coh, active_set, argmin,
-    n_ge50_types, flags, provenance}``. ``coverage`` is an ADVISORY warning (never folded into the score):
-    marker-supported lineages the annotation dropped entirely - the index cannot see a collapsed lineage
-    (C/M score only present labels; A scores the reference), confirmed on colon. Pure/guarded; QC-safe.
+    available}, coverage:{expected,annotated_on_axis,missing,missing_frac,reference_abundant,
+    missing_vs_reference,n_ref_types_abundant}, cohort:{consistency,per_type,n_profiles}, w_coh, active_set,
+    argmin, n_ge50_types, flags, provenance}``. ``coverage`` is an ADVISORY warning (never folded into the
+    score): lineages the annotation dropped entirely - the index cannot see a collapsed lineage (C/M score
+    only present labels; A scores the reference), confirmed on colon. It is MARKER-anchored (``missing``,
+    on-panel markers) AND, when a reference is threaded, REFERENCE-anchored (``missing_vs_reference``, ref-
+    abundant lineages with no matching label - covers the off-panel-marker blind spot, UM liver met).
+    ``cohort`` reports inter-sample label consistency when ``cohort_result`` is passed (also not scored - its
+    level does not transfer, like G). Pure/guarded; QC-safe.
     """
     from .purity import pmp as _pmp
 
@@ -664,6 +700,15 @@ def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[
             coverage = _lineage_coverage(adata, labels, marker_sets, abst)
         except Exception:  # pragma: no cover - defensive
             coverage = None
+    # reference-anchored coverage (cov_ref): catches a dropped compartment even when its MARKERS are
+    # off-panel (the marker flag's blind spot; UM liver met). Advisory, merged into `coverage`.
+    if reference is not None:
+        try:
+            rcov = _reference_coverage(reference, ref_key, labels, abst)
+            if rcov is not None:
+                coverage = {**(coverage or {}), **rcov}
+        except Exception:  # pragma: no cover - defensive
+            pass
 
     # combine: soft-min over the ACHIEVED-quality terms {C, M}, CAPPED by the panel x depth ceiling A,
     # then the bounded coherence multiplier. This is the 2026-07 VALIDATION correction (validate_aqi.py,
@@ -693,13 +738,21 @@ def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[
         "components": {"A": A, "C": C, "G": G, "M": M, "H": H, "completeness": completeness},
         # cross-method agreement is a WITHIN-section per-cell abstention signal, not a cross-section term.
         "abstention": {"signal": G, "n_voters": len(cols), "available": G is not None},
-        # advisory: marker-supported lineages the annotation dropped entirely (index-invisible); not scored.
+        # advisory: lineages the annotation dropped entirely (index-invisible); marker- AND reference-anchored.
         "coverage": coverage,
+        # cohort signal (across a sample_key cohort): inter-sample label consistency; REPORTED, not scored -
+        # its level does not transfer (like G), and CBCL showed a per-type spread (Keratinocyte 0.51 vs
+        # Myeloid -0.11). Present only when the caller computed it (a sample_key exists).
+        "cohort": ({"consistency": cohort_result.get("consistency"),
+                    "per_type": cohort_result.get("per_type"),
+                    "n_profiles": cohort_result.get("n_profiles")}
+                   if isinstance(cohort_result, dict) and "consistency" in cohort_result else None),
         "w_coh": w_coh, "active_set": list(active.keys()) + (["A"] if A is not None else []),
         "argmin": argmin, "n_ge50_types": len(big),
         "flags": {"adequacy_unknown": A is None, "low_support": len(big) < 2,
                   "abstention_available": G is not None,
-                  "missing_lineages": bool(coverage and coverage.get("missing"))},
+                  "missing_lineages": bool(coverage and coverage.get("missing")),
+                  "missing_vs_reference": bool(coverage and coverage.get("missing_vs_reference"))},
         "provenance": dict(provenance or {}, n_voters=len(cols)),
     }
 
@@ -745,7 +798,7 @@ def annotation_quality(adata, label_key: str = "cell_type",
                 adata, label_key, marker_sets, out.get("internal_validity"),
                 reference=reference, ref_key=ref_key, panel_genes=panel_genes,
                 median_depth=median_depth, method_label_cols=method_label_cols,
-                abstention_labels=abstention_labels,
+                abstention_labels=abstention_labels, cohort_result=out.get("inter_sample_consistency"),
                 provenance={"platform": platform, "n_panel_genes": n_panel_genes,
                             "median_depth": median_depth, "normalization": normalization,
                             "marker_set": marker_set_name, "reference": reference is not None})

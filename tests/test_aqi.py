@@ -159,3 +159,41 @@ def test_aqi_coverage_empty_when_all_lineages_present():
     cov = out["aqi"]["coverage"]
     assert cov is not None and cov["missing"] == []
     assert out["aqi"]["flags"]["missing_lineages"] is False
+
+
+def test_aqi_cov_ref_flags_dropped_reference_lineage():
+    """Reference-anchored coverage catches a lineage ABUNDANT in the reference but absent from the labels -
+    the fix for the marker-based blind spot on off-panel-marker panels (UM). Collapse C -> A."""
+    from spatial_anno_metrics import eval_metrics as em
+
+    a, ref, msets, genes = _counts_fixture()
+    lab = a.obs["cell_type"].astype(str).to_numpy()
+    lab[lab == "C"] = "A"
+    a.obs["cell_type"] = pd.Categorical(lab)
+    out = em.annotation_quality(a, label_key="cell_type", marker_sets=msets, embedding="X_pca",
+                                reference=ref, ref_key="cell_type", panel_genes=genes)
+    cov = out["aqi"]["coverage"]
+    assert "C" in cov["missing_vs_reference"], cov
+    assert out["aqi"]["flags"]["missing_vs_reference"] is True
+
+
+def test_aqi_cov_ref_clears_when_reference_lineages_all_present():
+    from spatial_anno_metrics import eval_metrics as em
+
+    a, ref, msets, genes = _counts_fixture()                    # A, B, C all annotated == ref types
+    out = em.annotation_quality(a, label_key="cell_type", marker_sets=msets, embedding="X_pca",
+                                reference=ref, ref_key="cell_type", panel_genes=genes)
+    assert out["aqi"]["coverage"]["missing_vs_reference"] == []
+    assert out["aqi"]["flags"]["missing_vs_reference"] is False
+
+
+def test_aqi_cohort_signal_surfaces_with_sample_key():
+    """When a cohort exists (sample_key), inter-sample consistency is reported under `cohort` (not scored)."""
+    from spatial_anno_metrics import eval_metrics as em
+
+    a, _ref, msets, _genes = _counts_fixture()
+    a.obs["sample"] = pd.Categorical(np.tile(["s1", "s2"], a.n_obs // 2 + 1)[:a.n_obs])
+    out = em.annotation_quality(a, label_key="cell_type", marker_sets=msets, embedding="X_pca",
+                                sample_key="sample")
+    coh = out["aqi"]["cohort"]
+    assert coh is not None and "consistency" in coh and coh["n_profiles"] is not None

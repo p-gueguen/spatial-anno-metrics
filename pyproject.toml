@@ -40,3 +40,7 @@ packages = ["src/spatial_anno_metrics"]
 
 [tool.ruff]
 line-length = 110
+
+[tool.ruff.lint]
+# ruff >=0.16 widened the default rule set (BLE/SIM/RUF/S...); pin the set this code was written against.
+select = ["E", "F"]

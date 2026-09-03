@@ -15,6 +15,8 @@
 >     `label_stability` (subsampling flip-rate, annotator-agnostic via a callback).
 >   - **§3a / §3g / external** (`eval_metrics.py`): Davies-Bouldin + Calinski-Harabasz (inside
 >     `internal_validity`), `marker_gene_overlap`, `avg_bio` (AvgBIO), and `conformal_prediction_sets`.
+>   - **§3b ISC** (`eval_metrics.py`, v0.5.0): `inter_sample_consistency` returns the Garnica et al. 2026 pair
+>     ISCG / ISCL, their product, and a per-label `isc_regime` (consistent / merge / split / remove).
 >
 >   So the "In code" column citing `purity.py` / `spatial.py` / `annotate.py` (margin/entropy/stability)
 >   or "—" for those metrics is superseded by the package. Metrics still attributed to `annotate.py`
@@ -59,7 +61,7 @@ Pick the column that matches what you actually have. This is the whole document 
 |---|---|---|
 | **Ground-truth labels** (manual gold standard, or a benchmark dataset) | External (§2) | **macro-F1** + **balanced accuracy** + **ARI** + per-class F1; add **AvgBIO / program concordance** because accuracy ≠ biological fidelity. Never rank methods on plain accuracy alone. |
 | **A trusted reference atlas** but no per-cell truth | External-ish (§2.4) + Internal | Label-transfer native confidence (SingleR `delta`/`pruned`, CellTypist prob, RCTD `spot_class`/weight margin) as a quality proxy; **NCP/NMP** (§3f) if the reference is matched scRNA/snRNA. |
-| **Biological replicates** (≥2 samples per condition) but no truth | Internal (§3b) | **Inter-sample consistency (ISC)** — the scTypeEval idea: a real cell type looks consistent across samples. Pair with cluster-validity (§3a). |
+| **Biological replicates** (≥5 samples with ≥10 cells per sample × label) but no truth | Internal (§3b) | **Inter-sample consistency on two axes**: ISCG (cross-sample compactness) + ISCL (cross-sample replicability) → a merge / split / remove regime per label; their product ranks annotators or reference atlases without truth (R² > 0.98 with macro-F1). Pair with cluster-validity (§3a). |
 | **Just labels + an embedding / expression matrix** (the common case) | Internal (§3a, §3d) | **Silhouette + 2label-silhouette + neighborhood purity** (scTypeEval); **marker-score margin + entropy**; **subsampling label-stability**. |
 | **Marker gene sets** (curated per lineage) | Internal (§3c) | **MECR + CRISP purity + PMP + on-target marker specificity** — reference-free contamination readouts. |
 | **Spatial coordinates** | Internal (§3e) | **Spatial coherence / PAS**, neighborhood enrichment sanity. Down-weight, never delete (rare infiltrating cells are legitimately incoherent). |
@@ -159,18 +161,49 @@ Treat each annotated cell type as a cluster and ask: is it **cohesive** (cells o
 | **Calinski–Harabasz** | between/within variance ratio (F-like) | higher | classic; candidate |
 | **Graph modularity / connectivity** | modularity of the label partition on the kNN graph; connectivity penalty for split types | higher modularity better | classic; candidate |
 
-**scTypeEval's key framing** (its benchmark over 31 datasets): use a **local** consistency metric to catch **over-partitioning** (silhouette in a reciprocal-classification match space) and a **global** consistency metric to catch **signal degradation** (2label-silhouette in pseudobulk-cosine space), then combine them with a **geometric-mean integrated score**. The important idea for us: *neighborhood purity / silhouette computed on the labels are a direct, reference-free "is this type real?" signal* — under-used in FGCZ spatial reports, and cheap.
+**scTypeEval's key framing** (Garnica, Andreatta & Carmona 2026, benchmark over 31 datasets - §3b): a **local** ISC (silhouette in reciprocal-classification-match space, ISCL) catches **over-partitioning**, a **global** ISC (2label-silhouette in pseudobulk-cosine space, ISCG) catches **signal degradation**; the paper integrates them as the **product** (the package README says geometric mean - same ranking, different scale). The important idea for us: *neighborhood purity / silhouette computed on the labels are a direct, reference-free "is this type real?" signal* — under-used in FGCZ spatial reports, and cheap.
 
 Interpreting on sparse panels: silhouette on a raw sparse Xenium matrix is noisy — compute it on the **PCA/latent embedding** (or on pseudobulk profiles for a per-type read), never on raw counts, and remember the `maxRank=150` sparsity caveat when scores feed in.
 
 <a name="3b-isc"></a>
 ### 3b. Inter-sample consistency — ISC (scTypeEval)
 
-**The distinctive scTypeEval contribution.** If you have biological replicates, a *correctly* annotated cell type should have a **reproducible profile across samples**; an over-split or mislabeled type will not. ISC turns replicates into a reference-free quality signal:
+**The distinctive scTypeEval contribution**, now a preprint: Garnica, Andreatta & Carmona, *Evaluating cell type annotations in single-cell omics in the absence of ground truth*, bioRxiv 2026-06-12, DOI [10.64898/2026.06.10.731285](https://doi.org/10.64898/2026.06.10.731285) (scTypeEval is on Bioconductor; benchmark code [carmonalab/ISC_benchmark_reproducibility](https://github.com/carmonalab/ISC_benchmark_reproducibility); data Zenodo [10.5281/zenodo.18921437](https://doi.org/10.5281/zenodo.18921437)). Premise: a label is useful only if it captures a molecular pattern that is **reproducible across biological replicates**. ISC turns replicates into a reference-free quality signal, one score per label.
 
-- **Pseudobulk distance** across samples per type — aggregate each (sample, type) to a pseudobulk profile, measure within-type across-sample distance (euclidean / **cosine** / pearson); tight = consistent.
-- **Single-cell distribution distance** — Wasserstein distance between per-type single-cell distributions across samples (no aggregation).
-- **Reciprocal classifiers** — train on sample A, predict sample B and vice-versa; consistent types are recovered reciprocally.
+**How it is computed** (paper Methods; `inter_sample_consistency` follows this at pseudobulk level):
+1. One observation per (sample, cell type): pseudobulk = aggregate counts, then log-normalise. A type is kept only with **≥ 5 samples of ≥ 10 cells** (`min_samples = 5`, `min_cells = 10`). 2,000 scran HVGs blocked by sample; 30 PCs when a reduction is used; TCR / Ig / Y-chromosome genes blacklisted.
+2. A (sample × type) by (sample × type) **dissimilarity matrix**: pseudobulk Euclidean / cosine / Pearson; single-cell Wasserstein-2; or **reciprocal classification match (RCM)** - for every ordered sample pair, train SingleR (classic mode, pruned labels) on one sample's profiles, predict the other, swap; distance 0 only for a *mutual best hit*, else 1 (a score-based variant keeps the SingleR scores).
+3. A **consistency metric** on that matrix with labels as clusters, averaged per label: silhouette, 2-label silhouette (b(i) = mean distance to *all* other labels pooled), neighborhood purity (k = 5), Ward-D2 clustering agreement, nearest-medoid agreement, average similarity.
+
+**The two axes and the four regimes** (paper Fig. 5):
+
+| | high ISCL (replicable) | low ISCL |
+|---|---|---|
+| **high ISCG** (compact) | **consistent** - keep | **over-partitioned** - compact but not distinguishable across samples (e.g. proliferating vs non-proliferating monocytes) → **merge** |
+| **low ISCG** | **heterogeneous / too coarse** - matchable but no strong shared signature (e.g. a pan-B-cell label) → **split** when biology justifies it | **inconsistent** - multiplets, low-quality labels → **remove / collapse** |
+
+- **ISCG** (global) = 2-label silhouette on pseudobulk **cosine** distance - the most sensitive detector of signal degradation.
+- **ISCL** (local) = silhouette on the **RCM** distance - top-ranked metric overall, the detector of over-partitioning, and the least affected by batch / condition shifts (relative cross-sample relationships, not absolute distances).
+- **Integrated** = ISCG × ISCL (paper; the package README uses the geometric mean).
+- **Empirical guide thresholds** ISCG = 0.74, ISCL = 0.45 (median − 1 IQR over a 9-dataset meta-study, Fig. 5c). The reproducibility notebook derives 0.76 / 0.56 with median − 1 SD; use the preprint's numbers, and treat both as *pragmatic guides, not cut-offs* - the authors state no universal cutoff exists.
+- **Refinement is testable**: merging low-ISCL labels should raise ISCL *without moving* ISCG; splitting a low-ISCG label should raise ISCG *without lowering* ISCL; unmodified labels must not move (they did not, in the HLCA case below).
+
+**What the benchmark found** (31 datasets from 17 studies, 6 tissues, 7-15 samples each; 6 metrics × 6 dissimilarities = 36 combinations; 8 semi-synthetic tasks; task weights 0.2 signal degradation, 0.2 over-partitioning, 0.1 each for granularity, complexity, n-samples, n-cells, batch, biological perturbation):
+- Overall ranking: **silhouette | RCM 0.91** > 2-label silhouette | RCM 0.88 > silhouette | pseudobulk-cosine 0.87. Silhouette-based metrics give the best sensitivity / robustness balance.
+- Marginal effects: 2-label silhouette drives task 1 (degradation); silhouette drives task 2 (over-partitioning); RCM is best for task 2 and for batch / condition robustness (tasks 7-8); cosine and Euclidean pseudobulk distances are best for task 1. Hence the two-axis pair above.
+- Most metrics are robust to granularity, cellular complexity, number of samples and cells per type. **Exception: neighborhood purity breaks when the number of samples approaches k** (k = 5) - do not use it with few replicates.
+- Wasserstein wins some tasks but costs orders of magnitude more time and memory for no overall gain; pseudobulk methods run in < 1 s and < 100 MB per dataset.
+- Pearson ≈ cosine and average-similarity ≈ 2-label silhouette (highly correlated; dropped from the figure).
+- Method **rankings saturate at ~10 datasets** (median Spearman between disjoint dataset subsets 0.95, flat thereafter) - a metric benchmark on fewer datasets has an unstable leaderboard.
+- Classical internal validation at single-cell resolution (cLISI aggregated per type) is **weakly and inconsistently** concordant with ISC: within-dataset separability does not measure cross-sample reproducibility.
+
+**ISC predicts supervised label-transfer performance without ground truth** (14 classifiers incl. a random negative control; 21 intra-dataset sample-wise splits with 30 % of samples as reference / 70 % as query; 12 inter-dataset pairs): mean integrated ISC of the *predicted* labels vs mean macro-F1 gives **R² = 0.982 (intra) and 0.984 (inter)**; either component alone correlates less. ISC of the *training* annotation is associated with test F1 (a consistent reference is a prerequisite) but is not sufficient - some classifiers score low F1 on highly consistent references. Use: rank annotators, or choose a reference atlas, by ISC when no truth exists.
+
+**Meta-study of author labels** (9 atlases, coarse and fine): on average **64 % of labels consistent, 5 % low/low, 6 % low ISCG only, 5 % low ISCL only, 3 % not computable** (< 5 samples or < 10 cells). 5 of 7 coarse and 7 of 8 fine annotation sets contained at least one inconsistent label. **HLCA** (~500 k cells, 486 individuals, 49 datasets, 6-expert consensus labels): club, multiciliated, bronchial- and nasal-goblet cells were low-ISC because nose / airway / parenchyma subpopulations were pooled under one label (ELF3, FXYD3 nose-high; SCGB1A1 airway/lung-high); splitting by tissue raised both ISCs, merging the two goblet labels (high ISCG, low ISCL) raised ISCL selectively.
+
+**Limits the paper states**: needs ≥ 5 biological replicates and enough cells per label; large batch effects lower ISC (RCM least affected); **individual-specific populations such as malignant cells score low regardless of annotation accuracy** - the benchmark's own preprocessing excluded cancer-cell labels, so do not read low ISC on tumour cells as a bad label; interpretation depends on granularity, tissue complexity and cohort composition. The package README adds: in a high-granularity dataset (e.g. only CD8 T subsets) use **ISCL alone**.
+
+**In this package**: `inter_sample_consistency(adata, label_key, sample_key, min_cells=10, min_samples=5, counts_layer=None)` returns `iscg`, `iscl`, `integrated`, per-type dicts, a per-type `regime` from `isc_regime()`, and `dropped_types` (labels below the minimums are reported, not folded in as 1-cell pseudobulks). RCM uses a nearest-profile Spearman classifier in place of SingleR - same reciprocal-best-hit rule, so expect the same ranking and a different absolute scale. ISCL on a targeted spatial panel (a few hundred genes) is not validated by the paper; run the over-partitioning positive control (`tests/test_eval_metrics.py`, task-2 replica) on your own data before trusting a threshold.
 
 This is genuinely additive to `cell-annotation-qc.md` (which has no multi-sample notion) and to FGCZ practice: when a report has replicates, ISC answers "is this cluster a real cell type or a batch/over-clustering artifact?" without any atlas.
 
@@ -259,12 +292,12 @@ The authoritative recommendation: don't compute everything; compute the right ba
 3. **Marker-score margin + entropy** (per-cell confidence)
 4. **Spatial coherence / PAS** (down-weight only)
 5. **Subsampling label-stability**
-6. *(if ≥2 replicates)* **Inter-sample consistency (ISC)**
+6. *(if ≥5 replicates)* **Inter-sample consistency (ISCG + ISCL, regime per label)**
 7. *(reporting)* section **annotatability headline**: % PASS / WARN / abstain + top reasons
 
 **B. Spatial with a matched snRNA reference:** battery A **plus** RCTD `spot_class` + weight-margin, **NCP/NMP**, label-transfer posterior margin. (This is the highest-quality regime; reference choice matters more than method — see [`annotation-method-selection.md`](annotation-method-selection.md).)
 
-**C. scRNA-seq, no ground truth:** **silhouette + 2label-silhouette + neighborhood purity** (scTypeEval internal) + **ISC across samples** + **marker-score margin** + **AUC-ROC on marker enrichment** (§3g fidelity). Add Davies–Bouldin / Ward-PropMatch to catch over-clustering.
+**C. scRNA-seq, no ground truth:** **silhouette + 2label-silhouette + neighborhood purity** (scTypeEval internal) + **ISCG + ISCL across samples** (≥5 replicates) + **marker-score margin** + **AUC-ROC on marker enrichment** (§3g fidelity). Add Davies–Bouldin / Ward-PropMatch to catch over-clustering.
 
 **D. Benchmark with ground-truth labels (the Zhu 2026 template):** **macro-F1 + per-class F1 + balanced accuracy** (classification) + **ARI/AMI + ECS** (partition, ECS when granularity differs) + **AvgBIO** (structure conservation) + **≥1 fidelity metric** (AUC-ROC on marker enrichment / marker-gene overlap) + **hierarchical accuracy** (so subtype-vs-lineage errors are scored differently) + **composition/proportion accuracy** if the question is compositional/dynamic; report **scalability** (time/mem) when method choice must scale. Never rank on accuracy alone; never on a single metric.
 
@@ -297,7 +330,8 @@ Regime: **E** = external (needs truth) · **I** = internal (reference-free) · *
 | **Neighborhood purity** | I | L+embedding | kNN label agreement | high | `eval_metrics.py` |
 | Orbital-medoid · Ward-PropMatch · Avg-similarity | I | L+embedding | cluster–label concordance | high | `eval_metrics.py` |
 | Davies–Bouldin · Calinski–Harabasz | I | L+embedding | separation | DB low / CH high | — |
-| **Inter-sample consistency (ISC)** | I | L+S | cross-replicate reproducibility | high | `eval_metrics.py` |
+| **ISCG** (2-label silhouette \| pseudobulk cosine) | I | L+S (≥5 samples) | cross-replicate compactness (signal degradation) | high; guide 0.74 | `eval_metrics.py` |
+| **ISCL** (silhouette \| reciprocal-classification match) | I | L+S (≥5 samples) | cross-replicate replicability (over-partitioning) | high; guide 0.45 | `eval_metrics.py` |
 | **MECR** | I | M | cross-lineage co-expression | low | `purity.py`, SPLIT compare |
 | **CRISP purity** | I | M | per-cell lineage purity | high | `purity.py` |
 | **PMP** | I | M | own-marker transcript fraction | high | `purity.py` |
@@ -329,7 +363,7 @@ Regime: **E** = external (needs truth) · **I** = internal (reference-free) · *
 internal_validity(adata, label_key="cell_type", embedding="X_pca", k=30) -> dict
     # {silhouette, silhouette_2label, neighborhood_purity, orbital_medoid,
     #  ward_propmatch, avg_similarity, integrated (geometric mean)}
-inter_sample_consistency(adata, label_key, sample_key, metric="cosine") -> dict   # ISC
+inter_sample_consistency(adata, label_key, sample_key, min_cells=10, min_samples=5) -> dict  # ISCG / ISCL / integrated / regime
 marker_program_fidelity(adata, label_key, marker_sets) -> dict     # §3g: per-type AUC-ROC + Cohen's d
 external_scores(pred, truth) -> dict     # balanced_acc, macro/weighted/per-class F1, ARI/AMI/NMI, kappa, ECS
 element_centric_similarity(a, b, alpha=0.9) -> float               # exact vectorized ECS (Gates & Ahn)
@@ -343,24 +377,26 @@ annotation_quality(adata, label_key, marker_sets=None, sample_key=None) -> dict 
 
 **Signal-quality QC** — `analysis/signal_qc.py` (**built, TDD**: `tests/test_signal_qc.py`; §3h) ports the label-independent SpatialQM metrics, squidpy-compatible: `moran_signal` (Moran's I gene-vs-control via `sq.gr.spatial_autocorr`), `signal_to_noise`, `sparsity`, `detection_entropy`, `tx_per_area`, and `run_signal_qc` (headline). Standalone (run before annotation to gate whether a section is trustworthy at all); not auto-wired into the funnel because Moran's I over the full panel is heavier than the per-cell metrics.
 
-> **Two scTypeEval implementations — pick the right one.** `eval_metrics.internal_validity` is an **embedding-space approximation** built for a fast, always-on `qc.run_funnel` headline: it computes the family on the PCA embedding (subsampled) and does **not** implement scTypeEval's dissimilarity spaces or its `recip_classif:Match` local metric, and its `orbital_medoid` / `avg_similarity` / `ward_propmatch` use classic embedding-space definitions rather than the exact `IntClusVal.R` ones. A **byte-exact port** (dissimilarity spaces + `recip_classif:Match` + exact IntClusVal formulas + per-sample pseudobulk, TDD-verified) lives in [`scripts/norm_benchmark/sctypeeval_metrics.py`](../../scripts/norm_benchmark/sctypeeval_metrics.py) — use it when you need scTypeEval's recommended local(recip-match)/global(pseudobulk-cosine) combo or paper parity; use `eval_metrics.py` for the production funnel. Empirically the two **rank annotations/normalizations identically but differ in absolute scale**, so the approximation is fine for a QC headline. See [`scripts/norm_benchmark/README.md`](../../scripts/norm_benchmark/README.md) — the **normalization × annotation-quality benchmark** on the 100k breast Xenium 5K section, which anchors to this catalog and reports both implementations plus the implemented contamination/confidence/spatial families across 9 normalizations. Headline finding: normalization is **~invariant** for the contamination metrics (§3c, they read raw counts) but has a **strong** effect on internal separability (§3a/b), the abstention rate (§3d), and above all the clustering the annotation is built on.
+> **Two scTypeEval implementations — pick the right one.** `eval_metrics.internal_validity` is an **embedding-space approximation** built for a fast, always-on `qc.run_funnel` headline: it computes the family on the PCA embedding (subsampled) and does **not** implement scTypeEval's dissimilarity spaces (the pseudobulk-level ISCG / ISCL pair, with a Spearman-classifier `recip_classif:Match`, lives in `inter_sample_consistency` since v0.5.0), and its `orbital_medoid` / `avg_similarity` / `ward_propmatch` use classic embedding-space definitions rather than the exact `IntClusVal.R` ones. A **byte-exact port** (dissimilarity spaces + `recip_classif:Match` + exact IntClusVal formulas + per-sample pseudobulk, TDD-verified) lives in [`scripts/norm_benchmark/sctypeeval_metrics.py`](../../scripts/norm_benchmark/sctypeeval_metrics.py) — use it when you need scTypeEval's recommended local(recip-match)/global(pseudobulk-cosine) combo or paper parity; use `eval_metrics.py` for the production funnel. Empirically the two **rank annotations/normalizations identically but differ in absolute scale**, so the approximation is fine for a QC headline. See [`scripts/norm_benchmark/README.md`](../../scripts/norm_benchmark/README.md) — the **normalization × annotation-quality benchmark** on the 100k breast Xenium 5K section, which anchors to this catalog and reports both implementations plus the implemented contamination/confidence/spatial families across 9 normalizations. Headline finding: normalization is **~invariant** for the contamination metrics (§3c, they read raw counts) but has a **strong** effect on internal separability (§3a/b), the abstention rate (§3d), and above all the clustering the annotation is built on.
 
 ---
 
 <a name="7-sctypeeval"></a>
 ## 7. scTypeEval — what it adds and how to fold it in
 
-[**scTypeEval**](https://github.com/carmonalab/scTypeEval) (Cancer Systems Immunology Lab / Carmona) is an R package for **reference-free** assessment of cell-type annotations, benchmarked internally across **31 datasets**. Inputs: count matrix + metadata / Seurat / SCE; feature selection by HVGs (scran), marker genes, or a custom list; strategies incl. pseudobulk + distance (euclidean/cosine/pearson), single-cell Wasserstein, reciprocal classifiers, optional PCA.
+[**scTypeEval**](https://github.com/carmonalab/scTypeEval) (Carmona lab; Bioconductor) is the R package behind the ISC preprint (§3b; Garnica, Andreatta & Carmona 2026). Inputs: count matrix + metadata / Seurat / SCE; feature selection by HVGs (scran), marker genes, or a custom list; dissimilarities `Pseudobulk:{Euclidean,Cosine,Pearson}`, `WasserStein`, `recip_classif:{Match,Score}`; consistency metrics `silhouette`, `2label_silhouette`, `NeighborhoodPurity`, `ward_PropMatch`, `Orbital_medoid`, `Average_similarity`; optional PCA.
 
-**Metrics it defines** (all reference-free, higher = more consistent): `Silhouette`, `2label_silhouette`, `NeighborhoodPurity`, `ward_PropMatch`, `Orbital_medoid`, `Average_similarity`. **Recommended combo from its benchmark:** *local consistency* (silhouette in reciprocal-classification match space → catches **over-partitioning**) + *global consistency* (2label-silhouette in pseudobulk-cosine space → catches **signal degradation**) + a geometric-mean **integrated score**.
+**Recommended combo (benchmarked, §3b):** ISCL = `silhouette | recip_classif:Match`, ISCG = `2label_silhouette | Pseudobulk:Cosine`, integrated = product (README: geometric mean). Defaults: `Log1p`, 2,000 HVGs, 30 PCs, `min_samples = 5`, `min_cells = 10`, `knn_graph_k = 5`, `hclust_method = "ward.D2"`.
 
-**Why fold it in:** it fills the two families `cell-annotation-qc.md` lacks — general internal cluster-validity applied to *annotation* quality, and the **inter-sample-consistency** idea (use replicates as a truth-free quality signal). Both are directly useful for FGCZ reports that have labels + replicates but no atlas.
+**How it is folded in:** `inter_sample_consistency` (§3b) carries a pseudobulk-level port of both axes plus the regime call; `internal_validity` carries the metric family on a cell embedding (§6 note). Call the R package as a subprocess only when byte-parity with the paper (SingleR-based RCM, Wasserstein) is required.
 
-**How to add (two options):**
-1. **Port the metric definitions** into `analysis/eval_metrics.py` (§6) — they are standard distance/clustering computations (silhouette, kNN purity, medoid/Ward concordance); no new heavy dependency, stays in the Python stack. Recommended.
-2. **Call the R package** as a subprocess (same pattern as the annotation subprocesses) if we want its exact reciprocal-classifier / Wasserstein internals. Heavier; only if we need byte-parity with the paper.
-
-**Caveats / attribution:** scTypeEval is a **GitHub tool with an internal 31-dataset self-benchmark**; I did not find a peer-reviewed preprint (as of Jul 2026) — cite the repo, flag as `[tool / self-benchmark]`, and treat the specific recommended-combo claims as developer-benchmarked, not independently validated. It is **scRNA-oriented**; on targeted spatial panels, compute its metrics on the PCA/latent embedding (not raw sparse counts) and expect the sparsity caveats (§3a) to apply.
+**Benchmark-design lessons worth reusing** (from `ISC_benchmark_reproducibility`; they apply to any metric benchmark, including ours):
+- Score each task with a bounded 0-1 curve-shape statistic, not a raw metric value: **monotonicity** = fraction of consecutive perturbation steps that move the expected way; **constant-fit** = 1 − RMSD / 0.5 (0.5 is the largest RMSD a [0,1] metric can have, so the score spans the full range); **consistency drop** = ISC(complete) − ISC(split), clipped to [0,1]. Then min-max across methods and weight tasks explicitly (0.2 / 0.2 / 0.1 × 6 here).
+- Perturb only the labels or the sampling, never the features: the HVG list is computed once on the unperturbed data and held fixed across perturbation levels, and the rate-1 baseline is computed once and reused by every task.
+- Three replicates per perturbation level; the over-partitioning and cell-downsampling targets are the **most abundant** label, so the effect is not confounded with cell number.
+- Test ranking stability before trusting a leaderboard: draw disjoint dataset subsets of size k, rank methods within each, Spearman-correlate the two rankings, then fit the IQR of that correlation against k (GAM); here it plateaus at k ≈ 10 of 31.
+- Decompose the leaderboard into marginal (residual) effects of each component (metric vs dissimilarity) - that is how the two-axis result was found.
+- Reading their outputs: the two-level tasks have **opposite polarity** in code - task 2 scores the raw drop (larger = more sensitive) while tasks 7-8 score 1 − drop (larger = more robust); and the granularity / complexity task keys are labelled inconsistently between the YAML descriptions, the saturation config and the figure notebook (the implementation is: label-subset removal = complexity, hierarchical merging = granularity). Both carry weight 0.1, so the overall ranking is unaffected.
 
 ---
 
@@ -376,6 +412,9 @@ annotation_quality(adata, label_key, marker_sets=None, sample_key=None) -> dict 
 - **Thresholds are local** — tune per tissue/panel/platform; prefer distributional variants; annotate raw values (don't min-max a 3-method bar chart).
 - **Granularity must match** for partition metrics (ARI/NMI) — fine-vs-coarse is low by construction, not by error. Fixes: use **ECS** (resolution-agnostic) for the partition score and **hierarchical accuracy** (§2.6) so a right-lineage/wrong-subtype call earns partial credit instead of a flat miss.
 - **Internal metrics are consistency, not correctness** — a confidently-wrong-but-self-consistent annotation (e.g. a whole cluster mislabeled) scores well on silhouette/ISC. Internal metrics catch *incoherence*, not systematic bias; only a reference or orthogonal modality (protein) catches the latter.
+- **ISC needs ≥ 5 replicates and ≥ 10 cells per (sample, label)** (Garnica 2026). Below that, report a label as *not computable*, never as 0 or as "inconsistent": a 1-cell pseudobulk is noise, not a replicate.
+- **Read ISC on two axes, not one number.** Low ISCL alone → merge, low ISCG alone → split, both low → remove; the product is for ranking annotators or references, the quadrant is for fixing labels.
+- **Individual-specific populations (malignant cells, patient-private clones) have low ISC by construction** - exclude them from an ISC-based quality verdict, as the benchmark's own preprocessing excluded cancer-cell labels.
 
 ---
 
@@ -388,7 +427,8 @@ annotation_quality(adata, label_key, marker_sets=None, sample_key=None) -> dict 
 - [`annotation_qc_thresholds.yaml`](annotation_qc_thresholds.yaml) — the tunable pass/warn/fail numbers consumed by the code.
 
 **scTypeEval (the metrics folded in here):**
-- Carmona lab, `scTypeEval` — reference-free annotation-quality assessment (silhouette / 2label-silhouette / neighborhood purity / Orbital-medoid / Ward-PropMatch / average-similarity; inter-sample consistency; local/global/integrated framing). GitHub: [github.com/carmonalab/scTypeEval](https://github.com/carmonalab/scTypeEval) `[tool / 31-dataset self-benchmark]`. Lab: [github.com/carmonalab](https://github.com/carmonalab).
+- Carmona lab, `scTypeEval` — reference-free annotation-quality assessment (silhouette / 2label-silhouette / neighborhood purity / Orbital-medoid / Ward-PropMatch / average-similarity; inter-sample consistency; local/global/integrated framing). GitHub: [github.com/carmonalab/scTypeEval](https://github.com/carmonalab/scTypeEval) `[tool; benchmarked in the preprint below]`. Lab: [github.com/carmonalab](https://github.com/carmonalab).
+- **Garnica J, Andreatta M, Carmona SJ.** "Evaluating cell type annotations in single-cell omics in the absence of ground truth," bioRxiv 2026-06-12, DOI [10.64898/2026.06.10.731285](https://doi.org/10.64898/2026.06.10.731285) `[preprint, not yet peer-reviewed]`. Source for ISCG / ISCL / RCM, the 36-combination × 31-dataset benchmark, the 0.74 / 0.45 guide thresholds, the four refinement regimes, and the ISC ↔ F1 R² > 0.98 result (§3b), plus the benchmark-design lessons in §7. Code: [carmonalab/ISC_benchmark_reproducibility](https://github.com/carmonalab/ISC_benchmark_reproducibility) (`targets` pipelines, `renv`-pinned); data: Zenodo [10.5281/zenodo.18921437](https://doi.org/10.5281/zenodo.18921437).
 
 **Classic metric definitions (external + internal validity):**
 - **ARI** — Hubert & Arabie, *J. Classification* 1985. **AMI/NMI** — Vinh, Epps & Bailey, *JMLR* 2010.

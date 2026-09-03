@@ -31,6 +31,7 @@ from .eval_metrics import (
     hierarchical_accuracy,
     inter_sample_consistency,
     internal_validity,
+    isc_regime,
     marker_gene_overlap,
     marker_program_fidelity,
     panel_resolvability,
@@ -55,10 +56,10 @@ from .spatial import (
     spatial_coherence,
 )
 
-__version__ = "0.4.4"
+__version__ = "0.5.0"
 
 __all__ = [
-    "internal_validity", "inter_sample_consistency", "marker_program_fidelity",
+    "internal_validity", "inter_sample_consistency", "isc_regime", "marker_program_fidelity",
     "marker_gene_overlap", "avg_bio",
     "external_scores", "element_centric_similarity", "hierarchical_accuracy",
     "composition_accuracy", "deconvolution_metrics", "panel_resolvability",

@@ -23,7 +23,7 @@ pip install "spatial-anno-metrics[spatial]"      # + squidpy, for the Moran's I 
 | Function | Metrics | From |
 |---|---|---|
 | `internal_validity(adata, label_key, embedding="X_pca")` | silhouette, 2label-silhouette, neighborhood purity, orbital-medoid, Ward-PropMatch, avg similarity, **Davies-Bouldin + Calinski-Harabasz**, `integrated` (geometric mean) | scTypeEval + sklearn |
-| `inter_sample_consistency(adata, label_key, sample_key)` | ISC — a type reproducible across biological replicates | scTypeEval |
+| `inter_sample_consistency(adata, label_key, sample_key)` | **ISC on two axes** (Garnica et al. 2026): `iscg` (2-label silhouette on pseudobulk cosine = cross-sample compactness), `iscl` (silhouette on reciprocal-classification match = cross-sample replicability), `integrated` = product, per-label `regime` via `isc_regime` (consistent / merge / split / remove), `dropped_types` below 5 samples × 10 cells | scTypeEval / Garnica et al. 2026 |
 | `marker_program_fidelity(adata, label_key, marker_sets)` | per-type AUC-ROC + Cohen's d of the marker-enrichment score | Zhu et al. 2026 |
 | `marker_gene_overlap(adata, label_key, marker_sets, n_top=25)` | fraction of a type's curated markers landing in its top-N data-derived DE genes (the fidelity DE-overlap view) | Zhu et al. 2026 |
 | `panel_resolvability(reference, label_key, panel_genes)` | can a target panel resolve a reference's types **at the panel's own depth**? (depth-thinned CV classifier → per-type F1 + confuser) | — |
@@ -100,11 +100,18 @@ Don't compute everything — pick the battery for your situation. The
 save you: **margin > absolute score** for confidence, and keep **≥1 method-independent metric**
 (marker-only) so you're not circular with a reference.
 
+With ≥5 biological replicates, read ISC on **two axes** rather than one number: low ISCL alone → merge
+(over-partitioned), low ISCG alone → split (too coarse), both low → remove; the product ranks annotators
+or reference atlases without ground truth (R² > 0.98 with macro-F1 in the 2026 benchmark). Labels with
+fewer than 5 samples × 10 cells are reported as not computable, and malignant / patient-private
+populations score low by construction - leave them out of the verdict. Details and the benchmark's
+design lessons: catalog §3b and §7.
+
 ## Sources & attribution
 
 The metrics are consolidated, with attribution, from:
 
-- **scTypeEval** — Carmona lab, [github.com/carmonalab/scTypeEval](https://github.com/carmonalab/scTypeEval) (reference-free internal validity + inter-sample consistency; a Python re-implementation of its metric family). `[tool / self-benchmark]`
+- **scTypeEval / ISC** — Garnica, Andreatta & Carmona, "Evaluating cell type annotations in single-cell omics in the absence of ground truth," bioRxiv 2026, [10.64898/2026.06.10.731285](https://doi.org/10.64898/2026.06.10.731285); package [github.com/carmonalab/scTypeEval](https://github.com/carmonalab/scTypeEval) (Bioconductor); benchmark code [carmonalab/ISC_benchmark_reproducibility](https://github.com/carmonalab/ISC_benchmark_reproducibility). Source of ISCG / ISCL / RCM, the 0.74 / 0.45 guide thresholds and the four refinement regimes; this package is a pseudobulk-level Python re-implementation (Spearman nearest-profile classifier in place of SingleR). `[preprint]`
 - **Zhu et al. 2026** — "Benchmarking cell type annotation in spatial transcriptomics," bioRxiv [10.64898/2026.06.16.732716](https://www.biorxiv.org/content/10.64898/2026.06.16.732716v1.full) (ECS, AvgBIO, hierarchical accuracy, marker-program fidelity; accuracy ≠ fidelity).
 - **SpatialQM** — Center for Spatial OMICs, [github.com/Center-for-Spatial-OMICs/SpatialQM](https://github.com/Center-for-Spatial-OMICs/SpatialQM) (Moran's I gene-vs-control + signal-quality metrics). ⚠ NOT the identically-named Plummer/Spatial-Touchstone tool.
 - **OpenProblems** — [task_spatial_decomposition](https://github.com/openproblems-bio/task_spatial_decomposition) (deconvolution R² / JSD).
@@ -115,7 +122,7 @@ original sources** in publications, not just this package.
 
 ## Status
 
-`v0.1.0`, experimental. Several thresholds/metrics in the catalog are flagged provisional —
+`v0.5.0`, experimental. Several thresholds/metrics in the catalog are flagged provisional —
 version accordingly. Tests: `pip install -e ".[spatial,dev]" && pytest`.
 
 ## License

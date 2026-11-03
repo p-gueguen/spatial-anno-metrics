@@ -4,10 +4,12 @@
 
 For each scenario x strength x seed it simulates a section (``sim.py``), runs every metric, and scores
 each metric's trajectory against what it SHOULD do: move with the damage (labels wrong / data degraded),
-or stay flat (negative controls: nothing is wrong). Writes ``values.csv`` (raw), ``matrix.md``
-(verdicts), ``edge_cases.md`` and ``checks.md`` (ISC regimes, conformal coverage, panel resolvability,
-deconvolution). Extra metrics can be plugged in with ``main(extra_adapters=...)`` without touching
-this file.
+or stay flat (negative controls: nothing is wrong). Writes ``values.csv`` (raw values, with the number of
+UserWarnings the metric's adapter raised in ``n_user_warnings``), ``verdicts.csv`` / ``matrix.md``
+(verdicts), ``edge_cases.md``, ``check_*.csv`` (ISC regimes, conformal coverage, panel resolvability,
+deconvolution), ``errors.csv`` (every adapter error, edge cases included, with its full traceback) and
+``warnings.csv`` (every warning message, counted). Extra metrics can be plugged in with
+``main(extra_adapters=...)`` without touching this file.
 """
 from __future__ import annotations
 
@@ -16,6 +18,7 @@ import os
 import sys
 import traceback
 import warnings
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -68,8 +71,7 @@ def _iv(a, ref):
 @adapter("inter_sample_consistency", {"isc.iscg": (1, [L, "isc"]), "isc.iscl": (1, [L, "isc"]),
                                       "isc.integrated": (1, [L, "isc"])})
 def _isc(a, ref):
-    r = sam.inter_sample_consistency(a, "label", "sample",
-                                     counts_layer="counts" if "counts" in a.layers else None)
+    r = sam.inter_sample_consistency(a, "label", "sample", layer="counts")
     return {f"isc.{k}": r.get(k, np.nan) for k in ["iscg", "iscl", "integrated"]}
 
 
@@ -81,16 +83,14 @@ def _fid(a, ref):
 
 @adapter("marker_gene_overlap", {"mgo.mean_overlap": (1, [L, "marker"])})
 def _mgo(a, ref):
-    return {"mgo.mean_overlap": sam.marker_gene_overlap(a, "label", a.uns["marker_sets"], n_top=10)["mean_overlap"]}
+    return {"mgo.mean_overlap": sam.marker_gene_overlap(a, "label", a.uns["marker_sets"], n_top=10).get("mean_overlap")}
 
 
 @adapter("purity", {"crisp_purity": (1, [PUR]), "mecr": (-1, [PUR]), "pmp": (1, [L, PUR])})
 def _pur(a, ref):
     ms = a.uns["marker_sets"]
-    out = {"crisp_purity": sam.crisp_purity(a, ms), "mecr": sam.mecr(a, ms)}
-    sam.pmp(a, ms, "label")
-    out["pmp"] = float(np.nanmean(a.obs["pmp"]))
-    return out
+    return {"crisp_purity": sam.crisp_purity(a, ms).get("crisp_purity"), "mecr": sam.mecr(a, ms).get("mecr"),
+            "pmp": sam.pmp(a, ms, "label").get("mean_pmp")}
 
 
 @adapter("nmp", {"nmp": (-1, [L, PUR, REF])})
@@ -100,7 +100,7 @@ def _nmp(a, ref):
 
 @adapter("ncp", {"ncp": (1, [PUR, REF])})
 def _ncp(a, ref):
-    return {"ncp": sam.ncp(a, ref, "cell_type").get("ncp", np.nan)}
+    return {"ncp": sam.ncp(a, ref).get("ncp", np.nan)}
 
 
 @adapter("neighbor_contamination", {"neighbor_contamination": (-1, [L, PUR, SP])})
@@ -120,13 +120,14 @@ def _sc(a, ref):
 @adapter("neighborhood_sanity", {"ns.n_suspicious": (-1, [L, SP])})
 def _ns(a, ref):
     _fresh_graph(a)
-    return {"ns.n_suspicious": len(sam.neighborhood_sanity(a, "label")["suspicious"])}
+    r = sam.neighborhood_sanity(a, "label")
+    return {"ns.n_suspicious": len(r["suspicious"]) if r["status"] == "ok" else np.nan}
 
 
 @adapter("per_cell_confidence", {"conf.mean_margin": (1, ["marker"]), "conf.mean_entropy": (-1, ["marker"])})
 def _conf(a, ref):
-    r = sam.per_cell_confidence(a, a.uns["marker_sets"], layer="counts" if "counts" in a.layers else None)
-    return {"conf.mean_margin": r["mean_margin"], "conf.mean_entropy": r["mean_entropy"]}
+    r = sam.per_cell_confidence(a, a.uns["marker_sets"])
+    return {"conf.mean_margin": r.get("mean_margin"), "conf.mean_entropy": r.get("mean_entropy")}
 
 
 def marker_argmax(a):
@@ -156,32 +157,44 @@ def _sig(a, ref):
     return {"sig.moran_gap": m.get("separation", np.nan),
             "sig.frac_above_ctrl": m.get("frac_genes_above_control_p95", np.nan),
             "sig.snr": sam.signal_to_noise(a).get("median_mean_signal_ratio"),
-            "sig.zero_fraction": sam.sparsity(a)["zero_fraction"],
-            "sig.detection_entropy": sam.detection_entropy(a)["median_detection_entropy"],
+            "sig.zero_fraction": sam.sparsity(a).get("zero_fraction"),
+            "sig.detection_entropy": sam.detection_entropy(a).get("median_detection_entropy"),
             "sig.tx_per_area": sam.tx_per_area(a).get("median_tx_per_area")}
 
 
 @adapter("external", {"ext.macro_f1": (1, [L, TR]), "ext.ari": (1, [L, TR]), "ext.ecs": (1, [L, TR]),
                       "ext.hier_acc": (1, [L, TR]), "ext.comp_l1": (-1, [L, TR]), "ext.avg_bio": (1, [L, TR])})
 def _ext(a, ref):
-    p, t = a.obs["label"].astype(str), a.obs["truth"].astype(str)
-    e = sam.external_scores(p, t)
+    p, t = a.obs["label"], a.obs["truth"]          # raw columns: a NaN label must reach the label check
+    e = sam.external_scores(y_true=t, y_pred=p)
     return {"ext.macro_f1": e["macro_f1"], "ext.ari": e["ari"], "ext.ecs": e["ecs"],
-            "ext.hier_acc": sam.hierarchical_accuracy(p, t, a.uns["hierarchy"])["hierarchical_accuracy"],
-            "ext.comp_l1": sam.composition_accuracy(p, t)["l1"],
-            "ext.avg_bio": sam.avg_bio(a, "label", "truth")["avg_bio"]}
+            "ext.hier_acc": sam.hierarchical_accuracy(y_true=t, y_pred=p,
+                                                      hierarchy=a.uns["hierarchy"])["hierarchical_accuracy"],
+            "ext.comp_l1": sam.composition_accuracy(y_true=t, y_pred=p)["l1"],
+            "ext.avg_bio": sam.avg_bio(a, "label", "truth").get("avg_bio")}
 
 
 def run_adapters(a, ref, adapters):
-    vals, errs = {}, {}
+    """Run every adapter on ``a``. Returns ``(values {adapter: {metric: value}}, n_user_warnings {adapter: n},
+    warnings [(adapter, category, message)], errors {adapter: (one-line message, full traceback)})``. Warnings
+    are recorded, not shown or ignored: every occurrence counts."""
+    vals, nwarn, warned, errs = {}, {}, [], {}
     for name, fn in adapters.items():
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                vals.update({k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()})
-        except Exception as e:  # noqa: BLE001 - a crash is a finding, record it
-            errs[name] = f"{type(e).__name__}: {str(e).splitlines()[0][:120] if str(e) else ''}"
-    return vals, errs
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            try:
+                vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+            except Exception as e:  # noqa: BLE001 - a crash is a finding, record it
+                errs[name] = (f"{type(e).__name__}: {str(e).splitlines()[0][:120] if str(e) else ''}",
+                              traceback.format_exc())
+        nwarn[name] = sum(issubclass(w.category, UserWarning) for w in caught)
+        warned += [(name, w.category.__name__, str(w.message).splitlines()[0][:200] if str(w.message) else "")
+                   for w in caught]
+    return vals, nwarn, warned, errs
+
+
+def _flat(vals):
+    return {m: v for metrics in vals.values() for m, v in metrics.items()}
 
 
 def _reference_for(a):
@@ -193,8 +206,10 @@ def _task(args):
     scen, level, seed, adapters = args
     fn = sim.SCENARIOS[scen][0]
     a = fn(level, seed)
-    vals, errs = run_adapters(a, _reference_for(a), adapters)
-    return [(scen, level, seed, m, v) for m, v in vals.items()], [(scen, level, seed, k, e) for k, e in errs.items()]
+    vals, nwarn, warned, errs = run_adapters(a, _reference_for(a), adapters)
+    rows = [(scen, level, seed, m, v, nwarn[ad]) for ad, metrics in vals.items() for m, v in metrics.items()]
+    return (rows, [(scen, level, seed, k, one, tb) for k, (one, tb) in errs.items()],
+            [("scenarios", *w) for w in warned])
 
 
 # --------------------------------------------------------------------------- #
@@ -295,7 +310,7 @@ def isc_regimes(seeds):
              ("merge 3 (incl. T_CD4+T_CD8)", sim.merge, 3), ("batch sd 1.0", sim.batch, 1.0)]
     for name, fn, s in cases:
         for seed in range(seeds):
-            r = sam.inter_sample_consistency(fn(s, seed), "label", "sample", counts_layer="counts")
+            r = sam.inter_sample_consistency(fn(s, seed), "label", "sample", layer="counts")
             for t, reg in r.get("regime", {}).items():
                 rows.append(dict(case=name, seed=seed, type=t, regime=reg,
                                  iscg=r["per_type_iscg"][t], iscl=r["per_type_iscl"][t]))
@@ -375,7 +390,7 @@ def deconv_check(seeds):
         rng = np.random.default_rng(seed)
         noise = pd.DataFrame(rng.dirichlet(np.ones(T.shape[1]), T.shape[0]), index=T.index, columns=T.columns)
         for s in [0, 0.1, 0.25, 0.5, 1.0]:
-            r = sam.deconvolution_metrics(T, (1 - s) * T + s * noise)
+            r = sam.deconvolution_metrics(true_prop=T, pred_prop=(1 - s) * T + s * noise)
             rows.append(dict(seed=seed, noise=s, r2=r["r2"], jsd=r["jsd"], rmse=r["rmse"]))
     return pd.DataFrame(rows)
 
@@ -456,8 +471,8 @@ EDGES = ["one_label", "singleton_type", "two_types", "empty_marker_set", "marker
 def _edge_task(args):
     name, adapters = args
     a = _edge(name)
-    vals, errs = run_adapters(a, sim.reference(0), adapters)
-    return name, vals, errs
+    vals, _, warned, errs = run_adapters(a, sim.reference(0), adapters)
+    return name, vals, errs, [(f"edge:{name}", *w) for w in warned]
 
 
 def edge_md(results, base):
@@ -466,7 +481,7 @@ def edge_md(results, base):
                      "lognorm_X_no_counts"}   # here ≠ = values silently computed on log data
     names = list(OWNER)
     lines = ["| edge case | " + " | ".join(names) + " |", "|" + "---|" * (len(names) + 1)]
-    for name, vals, errs in results:
+    for name, vals, errs in results:                 # vals: {metric: value}; errs: {adapter: one-line message}
         cells = []
         for ad_name in names:
             if ad_name in errs:
@@ -490,17 +505,7 @@ def _owner(metric):
     return None
 
 
-OWNER: dict[str, set] = {}
-
-
-def _register_owners(adapters, a, ref):
-    for name, fn in adapters.items():
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                OWNER[name] = set(fn(a.copy(), ref))
-        except Exception:  # noqa: BLE001
-            OWNER[name] = set()
+OWNER: dict[str, set] = {}   # adapter -> the metrics it returned on the clean section (empty if it failed)
 
 
 # --------------------------------------------------------------------------- #
@@ -516,24 +521,30 @@ def main(argv=None, extra_adapters=None, extra_metrics=None):
     adapters = {**ADAPTERS, **(extra_adapters or {})}
     scen = args.only or list(sim.SCENARIOS)
     tasks = [(s, lv, seed, adapters) for s in scen for lv in sim.SCENARIOS[s][1] for seed in range(args.seeds)]
-    rows, errs = [], []
+    rows, errs, warned = [], [], Counter()
     with ProcessPoolExecutor(args.workers) as ex:
-        for r, e in ex.map(_task, tasks):
+        for r, e, w in ex.map(_task, tasks):
             rows += r
             errs += e
+            warned.update(w)
         edges = list(ex.map(_edge_task, [(n, adapters) for n in EDGES]))
-    df = pd.DataFrame(rows, columns=["scenario", "level", "seed", "metric", "value"])
+    df = pd.DataFrame(rows, columns=["scenario", "level", "seed", "metric", "value", "n_user_warnings"])
     df.to_csv(out / "values.csv", index=False)
     sc = score(df, extra_metrics)
     sc.to_csv(out / "verdicts.csv", index=False)
     (out / "matrix.md").write_text(matrix_md(sc) + "\n")
-    if errs:
-        pd.DataFrame(errs, columns=["scenario", "level", "seed", "adapter", "error"]).to_csv(out / "errors.csv",
-                                                                                              index=False)
-    ref0 = sim.reference(0)
-    _register_owners(adapters, sim.simulate(0, n_cells=600), ref0)
-    base = run_adapters(sim.simulate(0, n_cells=600), ref0, adapters)[0]
-    (out / "edge_cases.md").write_text(edge_md(edges, base) + "\n")
+    base_vals, _, base_warned, _ = run_adapters(sim.simulate(0, n_cells=600), sim.reference(0), adapters)
+    OWNER.update({name: set(base_vals.get(name, {})) for name in adapters})
+    warned.update(("edge:base", *w) for w in base_warned)
+    for name, vals, e, w in edges:
+        errs += [("edge", name, 0, k, one, tb) for k, (one, tb) in e.items()]
+        warned.update(w)
+    pd.DataFrame(errs, columns=["scenario", "level", "seed", "adapter", "error", "traceback"]).to_csv(
+        out / "errors.csv", index=False)
+    pd.DataFrame([(*k, n) for k, n in sorted(warned.items())],
+                 columns=["source", "adapter", "category", "message", "count"]).to_csv(out / "warnings.csv", index=False)
+    edge_rows = [(name, _flat(vals), {k: one for k, (one, _) in e.items()}) for name, vals, e, _ in edges]
+    (out / "edge_cases.md").write_text(edge_md(edge_rows, _flat(base_vals)) + "\n")
     if extra_adapters is None:
         checks = {"isc_regimes": isc_regimes(args.seeds), "conformal": conformal_check(args.seeds),
                   "panel_resolvability": panel_check(args.seeds), "deconvolution": deconv_check(args.seeds)}

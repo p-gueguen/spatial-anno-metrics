@@ -109,6 +109,14 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
 - `spatial_anno_metrics._validate`, shared by the metrics: `check_labels`, `get_counts`, `skip` and
   `dictionary_coverage` (which labels have no marker set, and the fraction of cells they cover).
 
+### Changed
+
+- `benchmarks/synthetic/sweep.py` uses the 0.7.0 API, with the same metric names in `values.csv`. Warnings are
+  recorded instead of silenced. `values.csv` gains an `n_user_warnings` column: the UserWarnings raised by the
+  adapter that produced the value. A new `warnings.csv` counts every warning message. `errors.csv` is always
+  written and now holds every adapter error, edge cases included, with its full traceback (before, only a
+  one-line message).
+
 ### Fixed
 
 - `label_stability` floored non-integer values before thinning (`astype(int)`: 0.6 -> 0). It now rounds them,

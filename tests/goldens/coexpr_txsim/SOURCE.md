@@ -90,6 +90,14 @@ reproduces every number in `expected.json` to <= 3.3e-16 under Python 3.10 and 3
 
 ## Ours vs reference
 
+**Since 0.7.0** `coexpression_similarity` (beside `ncp`) re-implements txsim's from the definitions above: it reads
+the counts and log-normalises them exactly as here (1e4, totals over each file's own genes). Overall, `per_gene` and
+(with `label_key`) `per_celltype` match, max |diff| 6.7e-16 on both sections under Python 3.10 and 3.12, and the
+by-type `per_gene` is NaN for the one gene (`bg28`, clean) that no type scores
+(`tests/test_purity.py::test_coexpression_similarity_matches_txsim`, tolerance 1e-12). The `thresh` mask (default 0)
+and the Spearman option are not ported. On the synthetic sweep (`benchmarks/synthetic`, 3 seeds) it barely moves
+with spillover (0.9788 -> 0.9775 at 0.4) and the by-type score rises slightly (0.9666 -> 0.9671).
+
 Ours = `spatial_anno_metrics.ncp` at `f71512f` (v0.6.0), called as a user would on the full section and the
 reference (counts): a shared-gene pair is non-coexpressed when `#(both > 0) / #(either > 0) <= 0.1` (top 400
 genes by reference mean, first 2000 such pairs); `ncp` = fraction of the reference's non-coexpressed pairs

@@ -159,8 +159,11 @@ def main() -> None:
         results[s] = r
 
         a = to_adata(OUT / f"section_{s}.npz", key="cell_type")      # ours: full panel, natural call
-        o = sam.nmp(a, to_adata(OUT / "reference.npz", key="cell_type"))
-        ours[s] = {**o, "per_celltype": a.obs.groupby("cell_type")["nmp"].mean().to_dict()}
+        ref_a = to_adata(OUT / "reference.npz", key="cell_type")
+        o = sam.nmp(a, ref_a)                                           # score="salas" (default since 0.7.0)
+        raw = sam.nmp(a, ref_a, score="raw")
+        ours[s] = {**o, "mean_nmp": raw["mean_nmp"], "types_without_negatives": raw["types_without_negatives"],
+                   "per_celltype": a.obs.groupby("cell_type")["sam_nmp"].mean().to_dict()}
 
     write_json(OUT / "expected.json", {
         "generated": date.today().isoformat(),
@@ -169,20 +172,22 @@ def main() -> None:
         "results": results})
 
     print("| section | txsim reads | txsim cells | Moldia reads | Moldia cells | txsim reads, scaled | "
-          "txsim cells, scaled | ours mean_nmp | ours types_without_negatives |")
-    print("|---|---|---|---|---|---|---|---|---|")
+          "txsim cells, scaled | ours salas unscaled | ours salas scaled | ours raw mean_nmp | "
+          "ours raw types_without_negatives |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|")
     for s in SECTIONS:
         r = results[s]
         print(f"| {s} | {r['txsim_reads']['overall']:.6f} | {r['txsim_cells']['overall']:.6f} | "
               f"{r['moldia_seg_reads']['overall']:.6f} | {r['moldia_seg_cells']['overall']:.6f} | "
               f"{r['txsim_reads_permuted']['scaled_overall']:.4f} | "
               f"{r['txsim_cells_permuted']['scaled_overall']:.4f} | "
+              f"{ours[s]['nmp_unscaled']:.6f} | {ours[s]['nmp']:.4f} | "
               f"{ours[s]['mean_nmp']:.6f} | {ours[s]['types_without_negatives']} |")
-    print("\n| section | cell type | txsim reads per-type excess | ours mean nmp |")
-    print("|---|---|---|---|")
+    print("\n| section | cell type | txsim reads per-type excess | ours salas per_type | ours raw mean nmp |")
+    print("|---|---|---|---|---|")
     for s in SECTIONS:
         for ct, v in results[s]["txsim_reads"]["per_celltype"].items():
-            print(f"| {s} | {ct} | {v:.6f} | {ours[s]['per_celltype'][ct]:.6f} |")
+            print(f"| {s} | {ct} | {v:.6f} | {ours[s]['per_type'][ct]:.6f} | {ours[s]['per_celltype'][ct]:.6f} |")
     for s in SECTIONS:
         means = {fl: round(results[s][f"txsim_{fl}_permuted"]["mean"], 6) for fl in ("reads", "cells")}
         print(s, "permuted means:", means,

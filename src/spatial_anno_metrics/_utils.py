@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
+from .thresholds import value as _thr
+
 __all__ = []
+_PCA_N = _thr("internal", "pca_n_components")
 
 
 # --------------------------------------------------------------------------- #
@@ -26,7 +29,7 @@ def _embedding(adata, embedding: str | None, seed: int = 0) -> np.ndarray:
     from sklearn.decomposition import PCA
 
     X = _dense(adata.X).astype(float)
-    n_comp = int(min(50, X.shape[1], max(2, X.shape[0] - 1)))
+    n_comp = int(min(_PCA_N, X.shape[1], max(2, X.shape[0] - 1)))
     return PCA(n_components=n_comp, random_state=seed).fit_transform(X)
 
 

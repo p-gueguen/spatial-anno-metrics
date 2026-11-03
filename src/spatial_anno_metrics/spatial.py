@@ -25,6 +25,7 @@ import numpy as np
 
 from ._utils import _squidpy, _store
 from ._validate import check_labels, get_counts, skip
+from .thresholds import value as _thr
 
 __all__ = ["spatial_coherence", "neighborhood_sanity", "neighbor_contamination"]
 
@@ -36,8 +37,9 @@ def _ensure_spatial_graph(adata, n_neighs: int) -> None:
     _squidpy().gr.spatial_neighbors(adata, coord_type="generic", n_neighs=n_neighs)
 
 
-def spatial_coherence(adata, label_key: str = "cell_type", n_neighs: int = 15,
-                      pas_threshold: float = 0.2, *, key_added: str = "sam_spatial_coherence") -> dict:
+def spatial_coherence(adata, label_key: str = "cell_type", n_neighs: int = _thr("spatial", "coherence_n_neighs"),
+                      pas_threshold: float = _thr("spatial", "pas_threshold"), *,
+                      key_added: str = "sam_spatial_coherence") -> dict:
     """Per-cell fraction of same-label spatial neighbors (writes ``obs[key_added]``), plus the
     dataset **PAS** (Proportion of Abnormal Spots = fraction of cells with < ``pas_threshold`` same-label
     neighbors). Reuses ``obsp['spatial_connectivities']`` (built via squidpy kNN with ``n_neighs`` if
@@ -69,7 +71,8 @@ def spatial_coherence(adata, label_key: str = "cell_type", n_neighs: int = 15,
     return out
 
 
-def neighborhood_sanity(adata, label_key: str = "cell_type", n_neighs: int = 6, seed: int = 0) -> dict:
+def neighborhood_sanity(adata, label_key: str = "cell_type", n_neighs: int = _thr("spatial", "sanity_n_neighs"),
+                        seed: int = 0) -> dict:
     """A healthy annotation self-associates spatially. Runs squidpy's neighborhood-enrichment
     (permutation z-score) and flags any type whose STRONGEST partner is a different type - a mild
     systematic-mislabeling smell (e.g. two labels that are really one, or a swap). Reference-free
@@ -106,7 +109,8 @@ def neighborhood_sanity(adata, label_key: str = "cell_type", n_neighs: int = 6, 
 
 
 def neighbor_contamination(adata, marker_sets: dict[str, list[str]], label_key: str = "cell_type",
-                           n_neighs: int = 6, require_neighbor_expression: bool = True, *,
+                           n_neighs: int = _thr("spatial", "contamination_n_neighs"),
+                           require_neighbor_expression: bool = True, *,
                            layer: str | None = "counts", key_added: str = "sam_neighbor_contamination") -> dict:
     """Spillover from ADJACENT cells (reference-free: labels + coords + curated ``marker_sets``). For a
     cell of type t, a gene is a local contaminant when it is a marker of a type s touching the cell and not

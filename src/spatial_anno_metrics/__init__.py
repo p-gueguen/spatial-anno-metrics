@@ -12,7 +12,8 @@ organised by what evidence you have:
   * external harness (needs ground truth): F1 / ARI / kappa / ECS / hierarchical / composition / AvgBIO;
   * deconvolution proportion metrics (OpenProblems): R2 / JSD / RMSE;
   * annotation-independent signal QC (SpatialQM): Moran's I gene-vs-control, SNR, sparsity, entropy;
-  * input: ``from_spatialdata`` (the AnnData table of a SpatialData object).
+  * input: ``from_spatialdata`` (the AnnData table of a SpatialData object);
+  * ``THRESHOLDS``: every hard-coded constant with its source and whether it is provisional.
 
 Every metric returns a dict with ``"status": "ok"``, or ``{"status": "skipped", "reason": ...}`` when it cannot
 score the input; count-based metrics also name the matrix they read under ``"matrix"``. Exceptions:
@@ -25,7 +26,7 @@ from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _version
 
 from . import (aqi, battery, confidence, conformal, decomposition, external, fidelity, internal, io, isc,
-               ontology, panel, purity, signal_qc, spatial)
+               ontology, panel, purity, signal_qc, spatial, thresholds)
 from .aqi import *  # noqa: F403
 from .battery import *  # noqa: F403
 from .confidence import *  # noqa: F403
@@ -41,6 +42,7 @@ from .panel import *  # noqa: F403
 from .purity import *  # noqa: F403
 from .signal_qc import *  # noqa: F403
 from .spatial import *  # noqa: F403
+from .thresholds import *  # noqa: F403
 
 try:
     __version__ = _version("spatial-anno-metrics")
@@ -49,7 +51,8 @@ except _PackageNotFoundError:  # running from a source tree that is not installe
 
 # The public API is each module's __all__, in catalog order. eval_metrics (deprecated shim) is not imported here.
 __all__ = [name for mod in (internal, isc, fidelity, external, panel, battery, aqi, conformal, purity, spatial,
-                            confidence, signal_qc, ontology, decomposition, io) for name in mod.__all__]
+                            confidence, signal_qc, ontology, decomposition, io, thresholds)
+           for name in mod.__all__]
 
 
 def __getattr__(name):

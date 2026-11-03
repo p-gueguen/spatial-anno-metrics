@@ -6,6 +6,7 @@ import numpy as np
 
 from ._utils import _embedding
 from ._validate import check_labels, skip
+from .thresholds import value as _thr
 
 __all__ = ["avg_bio", "external_scores", "element_centric_similarity", "hierarchical_accuracy",
            "composition_accuracy", "deconvolution_metrics"]
@@ -69,7 +70,7 @@ def external_scores(*, y_true, y_pred) -> dict:
 # --------------------------------------------------------------------------- #
 # Element-Centric Similarity (Gates & Ahn 2019) - resolution-agnostic partition agreement
 # --------------------------------------------------------------------------- #
-def element_centric_similarity(a, b, alpha: float = 0.9) -> dict:
+def element_centric_similarity(a, b, alpha: float = _thr("external", "ecs_alpha")) -> dict:
     """ECS between two hard labelings ``a`` and ``b`` over the same N elements (symmetric).
 
     Exact, vectorized closed form for hard partitions (the paper's affinity-matrix definition, with
@@ -97,7 +98,8 @@ def element_centric_similarity(a, b, alpha: float = 0.9) -> dict:
 # --------------------------------------------------------------------------- #
 # Hierarchical & composition accuracy (external)
 # --------------------------------------------------------------------------- #
-def hierarchical_accuracy(*, y_true, y_pred, hierarchy: dict[str, str], partial: float = 0.5) -> dict:
+def hierarchical_accuracy(*, y_true, y_pred, hierarchy: dict[str, str],
+                          partial: float = _thr("external", "hierarchical_partial")) -> dict:
     """Accuracy with partial credit along a cell-type lineage tree. ``hierarchy`` maps
     subtype -> parent lineage (labels absent from it are their own parent). A correct subtype
     scores 1, a right-lineage/wrong-subtype scores ``partial``, a wrong lineage scores 0. Keyword-only.

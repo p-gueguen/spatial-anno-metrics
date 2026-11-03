@@ -7,6 +7,7 @@ from .aqi import annotation_quality_index
 from .fidelity import marker_program_fidelity
 from .internal import internal_validity
 from .isc import inter_sample_consistency
+from .thresholds import value as _thr
 
 __all__ = ["annotation_quality"]
 
@@ -17,7 +18,8 @@ __all__ = ["annotation_quality"]
 def annotation_quality(adata, label_key: str = "cell_type",
                        marker_sets: dict[str, list[str]] | None = None,
                        sample_key: str | None = None, embedding: str | None = "X_pca",
-                       n_neighbors: int = 30, subsample: int = 5000, seed: int = 0, *,
+                       n_neighbors: int = _thr("battery", "n_neighbors"),
+                       subsample: int = _thr("battery", "subsample"), seed: int = 0, *,
                        reference=None, ref_key: str = "cell_type", panel_genes=None,
                        median_depth: float | None = None, method_label_cols=None,
                        abstention_labels=None, platform=None, n_panel_genes=None,

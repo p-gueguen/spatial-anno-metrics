@@ -6,6 +6,7 @@ import numpy as np
 
 from ._utils import _dense
 from ._validate import check_labels, get_counts, skip
+from .thresholds import value as _thr
 
 __all__ = ["marker_program_fidelity", "marker_gene_overlap"]
 
@@ -56,7 +57,8 @@ def marker_program_fidelity(adata, label_key: str, marker_sets: dict[str, list[s
     }
 
 
-def marker_gene_overlap(adata, label_key: str, marker_sets: dict[str, list[str]], n_top: int = 25, *,
+def marker_gene_overlap(adata, label_key: str, marker_sets: dict[str, list[str]],
+                        n_top: int = _thr("fidelity", "overlap_n_top"), *,
                         layer: str | None = "counts") -> dict:
     """Do the labels reproduce known markers? Per type, the fraction of its curated markers that land in
     the top-``n_top`` data-derived DE genes for that label (standardized in-vs-out mean difference).

@@ -19,6 +19,7 @@ import numpy as np
 
 from ._utils import _store
 from ._validate import get_counts, skip
+from .thresholds import value as _thr
 
 __all__ = ["per_cell_confidence", "label_stability"]
 
@@ -78,7 +79,8 @@ def _subsample_counts(counts, drop_frac: float, rng) -> "np.ndarray":
     return rng.binomial(np.rint(arr).astype(np.int64), 1.0 - drop_frac).astype("float32")
 
 
-def label_stability(adata, annotate_fn, drop_frac: float = 0.2, reps: int = 5, seed: int = 0,
+def label_stability(adata, annotate_fn, drop_frac: float = _thr("confidence", "stability_drop_frac"),
+                    reps: int = _thr("confidence", "stability_reps"), seed: int = 0,
                     layer: str | None = "counts", *, key_added: str = "sam_label_stability") -> dict:
     """Annotation robustness under transcript subsampling (reference-free). Baseline labels come from
     ``annotate_fn(adata) -> array[str] of length n_obs``; then for ``reps`` reps, drop ``drop_frac`` of

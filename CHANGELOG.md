@@ -101,6 +101,11 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
 
 - `from_spatialdata(sdata, table_key="table")` (new module `io`): the AnnData table of a SpatialData object.
   Needs the optional `spatialdata` package.
+- `THRESHOLDS` (new module `thresholds`): every hard-coded constant (ISC 0.74 / 0.45, panel F1 tiers, kNN sizes,
+  NMP / NCP rules, the PAS threshold, the SNR floor, ...) as `{"value", "source", "provisional"}`. The functions
+  take their defaults from it; the values are unchanged.
+- `spatial_anno_metrics._hierarchy`, for hierarchy-aware metrics: `ancestors(label, parent_map)` and
+  `lca_depth(a, b, parent_map)`.
 - `spatial_anno_metrics._validate`, shared by the metrics: `check_labels`, `get_counts`, `skip` and
   `dictionary_coverage` (which labels have no marker set, and the fraction of cells they cover).
 

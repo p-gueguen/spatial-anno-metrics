@@ -6,15 +6,21 @@ import numpy as np
 from ._utils import _dense
 from ._validate import check_labels, skip
 from .external import external_scores
+from .thresholds import value as _thr
 
 __all__ = ["panel_resolvability"]
+_MIN_SHARED, _MIN_CELLS = _thr("panel", "min_shared_genes"), _thr("panel", "min_cells_per_type")
+_F1_OK, _F1_WEAK = _thr("panel", "f1_resolvable"), _thr("panel", "f1_weak")
+_CONF_WEAK, _CONF_NOT = _thr("panel", "confused_weak"), _thr("panel", "confused_not_resolvable")
+_C, _MAX_ITER, _SCALE = _thr("panel", "logreg_C"), _thr("panel", "logreg_max_iter"), _thr("panel", "library_size_scale")
 
 
 # --------------------------------------------------------------------------- #
 # Panel adequacy - can a target panel resolve a reference's cell types? (§4 battery A #1)
 # --------------------------------------------------------------------------- #
-def panel_resolvability(reference, label_key: str, panel_genes, target_depth: float = 50.0, *,
-                        max_cells_per_type: int = 250, cv: int = 3, seed: int = 0) -> dict:
+def panel_resolvability(reference, label_key: str, panel_genes, target_depth: float = _thr("panel", "target_depth"),
+                        *, max_cells_per_type: int = _thr("panel", "max_cells_per_type"),
+                        cv: int = _thr("panel", "cv_folds"), seed: int = 0) -> dict:
     """Can a target panel resolve this reference's cell types AT THE PANEL'S OWN DEPTH?
 
     Restrict the reference to the genes it shares with ``panel_genes``, **binomially thin each cell
@@ -41,11 +47,10 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
     from sklearn.metrics import precision_recall_fscore_support
     from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
-    f1_ok, f1_weak, conf_hi = 0.50, 0.30, 0.25
     panel = {str(g) for g in panel_genes}
     shared = [g for g in reference.var_names if str(g) in panel]
-    if len(shared) < 25:
-        return {**skip(f"{len(shared)} genes shared with the panel, need >= 25"),
+    if len(shared) < _MIN_SHARED:
+        return {**skip(f"{len(shared)} genes shared with the panel, need >= {_MIN_SHARED}"),
                 "n_shared_genes": len(shared), "per_type": {}}
     sub = reference[:, shared].copy()
     xs = sub.X[:200].toarray() if sp.issparse(sub.X) else np.asarray(sub.X[:200])
@@ -62,11 +67,11 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
                    else rng.choice(pos, max_cells_per_type, replace=False))
     sub = sub[np.array(sorted(idx))].copy()
     y = check_labels(sub, label_key)
-    keep = {ct for ct, n in zip(*np.unique(y, return_counts=True)) if n >= 10}
+    keep = {ct for ct, n in zip(*np.unique(y, return_counts=True)) if n >= _MIN_CELLS}
     m = np.isin(y, list(keep))
     sub, y = sub[m].copy(), y[m]
     if len(np.unique(y)) < 2:
-        return {**skip("fewer than 2 reference types with >= 10 cells"),
+        return {**skip(f"fewer than 2 reference types with >= {_MIN_CELLS} cells"),
                 "n_shared_genes": len(shared), "per_type": {}}
     if raw:                                                        # thin to the panel's real depth
         A = (sub.X.toarray() if sp.issparse(sub.X) else np.asarray(sub.X)).astype(np.int64)
@@ -76,9 +81,9 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
     Xn = _dense(sub.X).astype(float)                             # library-size normalize + log1p (no scanpy dep)
     lib = Xn.sum(1, keepdims=True)
     lib[lib == 0] = 1.0
-    X = np.log1p(Xn / lib * 1e4)
+    X = np.log1p(Xn / lib * _SCALE)
     classes = np.unique(y)
-    proba = cross_val_predict(LogisticRegression(max_iter=300, C=0.3), X, y,
+    proba = cross_val_predict(LogisticRegression(max_iter=_MAX_ITER, C=_C), X, y,
                               cv=StratifiedKFold(cv, shuffle=True, random_state=seed),
                               method="predict_proba")
     pred = classes[np.argmax(proba, 1)]
@@ -93,8 +98,8 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
             v, c = np.unique(wrong, return_counts=True)
             j = int(c.argmax())
             cw, cf = str(v[j]), float(c[j] / mask.sum())
-        tier = ("not_resolvable" if f1[i] < f1_weak or cf >= 0.30
-                else "weak" if f1[i] < f1_ok or cf >= conf_hi else "resolvable")
+        tier = ("not_resolvable" if f1[i] < _F1_WEAK or cf >= _CONF_NOT
+                else "weak" if f1[i] < _F1_OK or cf >= _CONF_WEAK else "resolvable")
         per[str(ct)] = {"f1": float(f1[i]), "recall": float(rec[i]), "precision": float(prec[i]),
                         "confused_with": cw, "confused_frac": round(cf, 2), "tier": tier}
     tiers = [d["tier"] for d in per.values()]

@@ -7,6 +7,7 @@ import numpy as np
 
 from ._utils import _dense
 from ._validate import check_labels, get_counts, skip
+from .thresholds import value as _thr
 
 __all__ = ["inter_sample_consistency", "isc_regime"]
 
@@ -39,7 +40,7 @@ def _pseudobulk_profiles(adata, label_key, sample_key, *, min_cells, min_samples
             samples.append(samp)
     P = np.vstack(profiles) if profiles else np.empty((0, X.shape[1]))
     if layer and P.size:
-        P = np.log1p(P / np.maximum(P.sum(1, keepdims=True), 1.0) * 1e4)
+        P = np.log1p(P / np.maximum(P.sum(1, keepdims=True), 1.0) * _SCALE)
     return P, np.asarray(labels), np.asarray(samples), dropped, matrix
 
 
@@ -85,7 +86,8 @@ def _rcm_dissimilarity(P, samples):
 
 
 # Garnica, Andreatta & Carmona 2026 (Fig. 5c): median - 1 IQR over a 9-atlas meta-study. Guides, not cut-offs.
-ISC_THRESHOLDS = {"iscg": 0.74, "iscl": 0.45}
+ISC_THRESHOLDS = {"iscg": _thr("isc", "iscg"), "iscl": _thr("isc", "iscl")}
+_SCALE = _thr("isc", "pseudobulk_scale")
 
 
 def isc_regime(iscg, iscl, thr_g: float = ISC_THRESHOLDS["iscg"], thr_l: float = ISC_THRESHOLDS["iscl"]) -> str:
@@ -107,7 +109,8 @@ def isc_regime(iscg, iscl, thr_g: float = ISC_THRESHOLDS["iscg"], thr_l: float =
 
 
 def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str = "cosine", *,
-                             min_cells: int = 10, min_samples: int = 5, layer: str | None = None,
+                             min_cells: int = _thr("isc", "min_cells"), min_samples: int = _thr("isc", "min_samples"),
+                             layer: str | None = None,
                              thresholds: dict | None = None) -> dict:
     """Is each cell type reproducible across biological samples? (scTypeEval inter-sample consistency;
     Garnica, Andreatta & Carmona 2026, bioRxiv 10.64898/2026.06.10.731285.)

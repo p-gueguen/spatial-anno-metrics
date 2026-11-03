@@ -7,6 +7,7 @@ import numpy as np
 
 from ._utils import _embedding, _scale01
 from ._validate import check_labels, skip
+from .thresholds import value as _thr
 
 __all__ = ["internal_validity"]
 
@@ -15,7 +16,8 @@ __all__ = ["internal_validity"]
 # Internal cluster-validity (scTypeEval family) - reference-free
 # --------------------------------------------------------------------------- #
 def internal_validity(adata, label_key: str = "cell_type", embedding: str | None = "X_pca",
-                      n_neighbors: int = 30, subsample: int = 2000, seed: int = 0) -> dict:
+                      n_neighbors: int = _thr("internal", "n_neighbors"),
+                      subsample: int = _thr("internal", "subsample"), seed: int = 0) -> dict:
     """Reference-free cluster-validity of a labeling on an embedding (scTypeEval family).
 
     Returns ``{status, silhouette, silhouette_2label, neighborhood_purity, orbital_medoid, ward_propmatch,

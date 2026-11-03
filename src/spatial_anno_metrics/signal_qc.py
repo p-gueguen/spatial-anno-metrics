@@ -35,8 +35,14 @@ import numpy as np
 
 from ._utils import _squidpy, _store
 from ._validate import get_counts, skip
+from .thresholds import value as _thr
 
 __all__ = ["moran_signal", "signal_to_noise", "sparsity", "detection_entropy", "tx_per_area", "run_signal_qc"]
+
+
+_EPS = _thr("signal_qc", "snr_eps")
+_ONE_GENE = _thr("signal_qc", "single_gene_entropy")
+_CTRL_Q = _thr("signal_qc", "control_quantile")
 
 
 def _control_mask(adata) -> np.ndarray:
@@ -53,7 +59,7 @@ def _csr(X):
 # --------------------------------------------------------------------------- #
 # Moran's I gene-vs-control (SpatialQM getMorans) - squidpy-native
 # --------------------------------------------------------------------------- #
-def moran_signal(adata, n_neighs: int = 6, genes: list[str] | None = None,
+def moran_signal(adata, n_neighs: int = _thr("signal_qc", "moran_n_neighs"), genes: list[str] | None = None,
                  n_perms: int | None = None, seed: int = 0, *, layer: str | None = "counts") -> dict:
     """Moran's I spatial autocorrelation split into panel genes vs negative-control probes.
 
@@ -87,7 +93,7 @@ def moran_signal(adata, n_neighs: int = 6, genes: list[str] | None = None,
     }
     if cI.size:
         out["separation"] = out["median_gene_moran"] - float(np.median(cI))
-        out["frac_genes_above_control_p95"] = float((gI > np.quantile(cI, 0.95)).mean())
+        out["frac_genes_above_control_p95"] = float((gI > np.quantile(cI, _CTRL_Q)).mean())
     out["matrix"] = matrix
     return out
 
@@ -113,7 +119,7 @@ def signal_to_noise(adata, *, layer: str | None = "counts",
     mat, matrix = get_counts(adata, layer)
     X = _csr(mat).astype(float)
     Xg, Xc = X[:, ~ctrl], X[:, ctrl]
-    eps = 1e-9
+    eps = _EPS
     gmean = np.asarray(Xg.mean(1)).ravel()
     cmean = np.asarray(Xc.mean(1)).ravel()
     gmax = np.asarray(Xg.max(1).todense()).ravel()
@@ -171,7 +177,7 @@ def detection_entropy(adata, *, layer: str | None = "counts", key_added: str = "
     ent_norm = np.clip(ent / norm, 0.0, 1.0)
     adata.obs[key_added] = ent_norm
     out = {"status": "ok", "median_detection_entropy": float(np.median(ent_norm)),
-           "frac_cells_single_gene_dominated": float((ent_norm < 0.1).mean()), "matrix": matrix}
+           "frac_cells_single_gene_dominated": float((ent_norm < _ONE_GENE).mean()), "matrix": matrix}
     _store(adata, "detection_entropy", out, key_added)
     return out
 

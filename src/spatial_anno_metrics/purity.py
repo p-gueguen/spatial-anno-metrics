@@ -27,8 +27,10 @@ from itertools import combinations
 
 from ._utils import _store
 from ._validate import check_labels, get_counts, matrix_name, skip
+from .thresholds import value as _thr
 
 __all__ = ["crisp_purity", "mecr", "pmp", "nmp", "ncp"]
+_DETECT = _thr("purity", "detection_threshold")         # detected = count > _DETECT, i.e. one count
 
 
 # --------------------------------------------------------------------------- #
@@ -50,7 +52,7 @@ def _private_detection(adata, marker_sets: dict[str, list[str]], layer):
     genes = sorted(set().union(*sets.values()))
     col = {g: j for j, g in enumerate(genes)}
     sub = mat[:, [var_idx[g] for g in genes]]
-    det = (sub.toarray() if hasattr(sub, "toarray") else np.asarray(sub)) > 0   # cells x marker genes
+    det = (sub.toarray() if hasattr(sub, "toarray") else np.asarray(sub)) > _DETECT   # cells x marker genes
 
     def any_of(gs):
         return det[:, [col[g] for g in gs]].any(axis=1)
@@ -171,7 +173,8 @@ def pmp(adata, marker_sets: dict[str, list[str]], label_key: str = "cell_type", 
 # reference-based (need a matched scRNA/snRNA reference)
 # --------------------------------------------------------------------------- #
 def nmp(adata, reference=None, label_key: str = "cell_type", ref_label_key: str = "cell_type",
-        max_neg_frac: float = 0.05, min_other_frac: float = 0.25, *, layer: str | None = "counts",
+        max_neg_frac: float = _thr("purity", "nmp_max_neg_frac"),
+        min_other_frac: float = _thr("purity", "nmp_min_other_frac"), *, layer: str | None = "counts",
         key_added: str = "sam_nmp") -> dict:
     """Negative-marker proportion (reference-based): mean fraction of each cell's counts on genes its
     assigned type should NOT express. A gene shared with the reference is a negative for type t when the
@@ -194,7 +197,7 @@ def nmp(adata, reference=None, label_key: str = "cell_type", ref_label_key: str 
     ref_labels = check_labels(reference, ref_label_key)
 
     ref_idx = {g: i for i, g in enumerate(reference.var_names)}
-    ref_det = reference.X[:, [ref_idx[g] for g in shared]] > 0
+    ref_det = reference.X[:, [ref_idx[g] for g in shared]] > _DETECT
     det = {ct: np.asarray(ref_det[ref_labels == ct].mean(axis=0)).ravel() for ct in np.unique(ref_labels)}
 
     var_idx = {g: i for i, g in enumerate(adata.var_names)}
@@ -222,7 +225,8 @@ def nmp(adata, reference=None, label_key: str = "cell_type", ref_label_key: str 
     return res
 
 
-def ncp(adata, reference=None, coexpr_threshold: float = 0.1, max_genes: int = 400, max_pairs: int = 2000, *,
+def ncp(adata, reference=None, coexpr_threshold: float = _thr("purity", "ncp_coexpr_threshold"),
+        max_genes: int = _thr("purity", "ncp_max_genes"), max_pairs: int = _thr("purity", "ncp_max_pairs"), *,
         layer: str | None = "counts") -> dict:
     """Non-coexpression preservation (reference-based, MECR-style): fraction of reference-defined
     non-coexpressed gene pairs that STAY non-coexpressed in the section - a spillover/diffusion sanity
@@ -249,7 +253,7 @@ def ncp(adata, reference=None, coexpr_threshold: float = 0.1, max_genes: int = 4
         top = np.sort(np.argsort(ref_arr.mean(axis=0))[::-1][:max_genes])
         shared = [shared[i] for i in top]
         ref_arr = ref_arr[:, top]
-    ref_pos = ref_arr > 0
+    ref_pos = ref_arr > _DETECT
 
     n_genes = len(shared)
     pairs = []
@@ -269,7 +273,7 @@ def ncp(adata, reference=None, coexpr_threshold: float = 0.1, max_genes: int = 4
     mat, matrix = get_counts(adata, layer)
     sub = mat[:, gi]
     arr = sub.toarray() if hasattr(sub, "toarray") else np.asarray(sub)
-    pos = arr > 0
+    pos = arr > _DETECT
 
     preserved = 0
     for i, j in pairs:

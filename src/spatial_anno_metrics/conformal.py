@@ -5,14 +5,16 @@ from __future__ import annotations
 import numpy as np
 
 from ._validate import check_labels, skip
+from .thresholds import value as _thr
 
 __all__ = ["conformal_prediction_sets"]
+_MIN_CAL = _thr("conformal", "min_class_calibration")
 
 
 # --------------------------------------------------------------------------- #
 # Conformal prediction sets (catalog s3d) - distribution-free typing uncertainty
 # --------------------------------------------------------------------------- #
-def conformal_prediction_sets(proba_query, classes, proba_cal, y_cal, alpha: float = 0.1,
+def conformal_prediction_sets(proba_query, classes, proba_cal, y_cal, alpha: float = _thr("conformal", "alpha"),
                               class_conditional: bool = False,
                               hierarchy: dict | None = None, y_query=None) -> dict:
     """Distribution-free conformal prediction SETS for cell-type annotation (catalog s3d
@@ -61,7 +63,7 @@ def conformal_prediction_sets(proba_query, classes, proba_cal, y_cal, alpha: flo
         return float(np.quantile(scores, level, method="higher"))
 
     if class_conditional:
-        thr = {c: (_qhat(s_cal[y_cal == c]) if (y_cal == c).sum() >= 10 else _qhat(s_cal))
+        thr = {c: (_qhat(s_cal[y_cal == c]) if (y_cal == c).sum() >= _MIN_CAL else _qhat(s_cal))
                for c in classes}
         incl_thresh = np.array([1.0 - thr[c] for c in classes])      # per-class inclusion threshold
         include = proba_query >= incl_thresh[None, :]

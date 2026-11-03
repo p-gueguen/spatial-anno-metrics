@@ -34,6 +34,11 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
         "min_cells": _e(10, "Garnica et al. 2026 default: cells per (sample, type) pseudobulk", False),
         "min_samples": _e(5, "Garnica et al. 2026 default: pseudobulks a type needs to be scored", False),
         "pseudobulk_scale": _e(1e4, "Garnica et al. 2026 counts recipe: log1p of counts per 10k", False),
+        "n_pcs": _e(30, "scTypeEval 1.0.0 README recipe (run_pca ndim = 30, run_dissimilarity reduction = TRUE): "
+                        "ISCG on the first 30 centred PCs of the pseudobulks, the space the 0.74 guide comes from",
+                    False),
+        "rcm_marker_n": _e(500, "SingleR classic markers (Aran et al. 2019; scTypeEval's RCM classifier): "
+                                "de.n = round(500 * (2/3)^log2(N labels)) per label pair", False),
     },
     "fidelity": {
         "overlap_n_top": _e(25, f"{_PKG}: top DE genes per label in marker_gene_overlap"),

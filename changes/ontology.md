@@ -25,7 +25,7 @@
 - `panel_resolvability` keyword-only parameters `f1_resolvable`, `f1_weak` and `null_adjusted`.
 - `THRESHOLDS["ontology"]` with `min_labels` (4), `min_cells` (10) and `n_perm` (999), all provisional.
 - `THRESHOLDS["panel"]` gains `f1_adjusted_resolvable` (0.8) and `f1_adjusted_weak` (0.5).
-- `tests/data/cl_tiny.obo`: a 14-term CL slice (4 KB) that the tests use.
+- `tests/data/cl_tiny.obo`: a 14-term CL slice (4 KB) that the tests use; header now says 14 (it said 15).
 
 ### Changed (breaking)
 
@@ -78,8 +78,9 @@ New subsection after §3h (`<a name="3i-ontology"></a>`):
 > - a shuffled label -> CL map: `rho` -0.16.
 >
 > The order is right, but the effect is modest. ROADMAP #25 cites Genome Biol 2025,
-> [10.1186/s13059-025-03781-6](https://doi.org/10.1186/s13059-025-03781-6), for the idea. This package did not
-> check that paper's statistic against this one.
+> [10.1186/s13059-025-03781-6](https://doi.org/10.1186/s13059-025-03781-6), for the idea. That paper's ontology
+> metric is scGraph-OntoRWR (a random walk with restart over the ontology graph). `ontology_consistency` is a
+> different, own statistic (`is_a` shortest path, Spearman, Mantel test), not a port of it.
 
 Replacement §5 row:
 
@@ -91,20 +92,31 @@ New §5 row:
 
 ## Roadmap
 
-- **#25 Ontology label-relation consistency: done.**
+- **#25 Ontology label-relation consistency: done, own statistic, not the paper's scGraph-OntoRWR.** The cited
+  Genome Biol 2025 benchmark (10.1186/s13059-025-03781-6) scores ontology agreement with a random walk with
+  restart; this is an `is_a` shortest-path / Spearman / Mantel statistic and was not checked against it.
   - Code: `src/spatial_anno_metrics/ontology.py` (`ontology_consistency`, `_read_obo`, `_ontology_distances`).
-  - Tests: `tests/test_ontology.py` (6 tests) and the fixture `tests/data/cl_tiny.obo`.
+  - Tests: `tests/test_ontology.py` (8 tests) and the fixture `tests/data/cl_tiny.obo`.
     - A planted macrophage centroid inside the epithelium is named `most_inconsistent`. `rho` falls from 0.69 to
       0.19.
-    - A random layout gives p 0.89.
-    - 4/4 mutants (single `is_a` parent, flipped `loo_delta` sign, lower-tail p, obsolete terms kept) are caught.
+    - A random layout with a small positive `rho` (0.21) gives p 0.16, and the sampled Mantel p matches the
+      exact 5! = 120 relabelling p within 0.03.
+    - 8/8 mutants are caught: single `is_a` parent, flipped `loo_delta` sign, lower-tail p, obsolete terms kept,
+      a null of zeros, a rows-only (asymmetric) permutation, `min_cells` ignored, `nearest_ontology` without ties.
   - Real data: the Xenium breast check above. It is modest, and the planted label is named only on confident cells.
     With all 40k marker-argmax cells, the macrophage comes second, behind the plasma cells.
 - **8h `panel_resolvability` tiers lenient: done.**
   - Code: `panel.py` uses chance-corrected F1 tiers. The thresholds are `panel.f1_adjusted_resolvable` and
     `panel.f1_adjusted_weak`.
-  - Tests: `tests/test_panel.py::test_panel_resolvability_no_private_markers_is_not_resolvable`, `..._old_tiers_reproducible`
-    and `..._two_types_at_chance_are_not_resolvable`. All three fail on wp/base.
+  - Tests: `tests/test_panel.py::test_panel_resolvability_no_private_markers_is_not_resolvable`, `..._old_tiers_reproducible`,
+    `..._two_types_at_chance_are_not_resolvable`, `..._chance_correction_decides_imbalanced_tiers` and
+    `..._old_tiers_reproducible_per_type`. All five fail on wp/base.
+    - The imbalanced test (200 vs 40 cells): the majority type has raw F1 > 0.9 and is `weak`, not `resolvable`,
+      because its null is its prevalence 5/6; the minority type clears `f1_adjusted` 0.5 and is `not_resolvable`
+      through the 30 % confusion cut. The per-type old-defaults test asserts tiers {A: resolvable, B:
+      not_resolvable} with the pre-0.7 cuts, against A `weak` with the new ones.
+    - Mutants caught (4/4): tiers on raw F1, `null_adjusted` inverted, null = 1/K, the 30 % confusion cut dropped.
+      Not pinned: dropping the 25 % (`weak`) confusion cut; a seed scan found one case only, 0.009 from the cut.
   - Sweep `panel_check` (3 seeds), mean `frac_resolvable` old -> new:
     - no private markers: 1.00 -> 0.11 at depth 50 and 0.56 -> 0.00 at depth 20;
     - 25 % of private markers kept, depth 20: 0.94 -> 0.72;

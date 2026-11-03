@@ -34,10 +34,26 @@ def per_cell_confidence(adata, marker_sets: dict[str, list[str]], *, layer: str 
 
     Per set, the score is the cell's mean expression over that set's on-panel genes; the margin is
     ``top1 - top2`` across sets (high = one lineage clearly wins) and the entropy is the normalized
-    Shannon entropy of the softmax over set scores (0 = decisive, 1 = uniform / guessing). Writes the margin
-    and the entropy to the two obs columns named by ``key_added``; returns ``{status, mean_margin, mean_entropy,
-    n_sets, matrix}``. Reference-free (needs marker sets). Reads the count matrix chosen by ``layer`` (see
-    ``get_counts``). Fewer than 2 marker sets on the panel -> a skip (no runner-up, so no margin)."""
+    Shannon entropy of the softmax over set scores (0 = decisive, 1 = uniform / guessing). Reference-free
+    (needs marker sets).
+
+    Parameters
+    ----------
+    adata
+        AnnData with the counts.
+    marker_sets
+        ``{lineage: [genes]}``; genes off the panel are ignored.
+    layer
+        Count matrix to read (see ``get_counts``).
+    key_added
+        The two obs columns written: (margin, entropy).
+
+    Returns
+    -------
+    dict
+        ``{status, mean_margin, mean_entropy, n_sets, matrix}``; the per-cell values go to ``obs[key_added]``.
+        Fewer than 2 marker sets on the panel -> a skip (no runner-up, so no margin).
+    """
     if isinstance(key_added, str) or len(key_added) != 2:
         raise TypeError("key_added takes two column names: (margin column, entropy column)")
     panel = set(adata.var_names)
@@ -71,8 +87,10 @@ def per_cell_confidence(adata, marker_sets: dict[str, list[str]], *, layer: str 
 
 
 def _subsample_counts(counts, drop_frac: float, rng) -> "np.ndarray":
-    """Binomial transcript thinning: keep each count with prob ``1 - drop_frac`` (dense float32). Non-integer
-    values are rounded to the nearest count first (``astype(int)`` floored them, so 0.6 became 0)."""
+    """Binomial transcript thinning: keep each count with prob ``1 - drop_frac`` (dense float32).
+
+    Non-integer values are rounded to the nearest count first (``astype(int)`` floored them, so 0.6 became 0).
+    """
     arr = _dense(counts).astype("float32")
     if drop_frac <= 0:
         return arr
@@ -82,23 +100,51 @@ def _subsample_counts(counts, drop_frac: float, rng) -> "np.ndarray":
 def label_stability(adata, annotate_fn, drop_frac: float = _thr("confidence", "stability_drop_frac"),
                     reps: int = _thr("confidence", "stability_reps"), seed: int = 0, *,
                     layer: str | None = "counts", key_added: str = "sam_label_stability") -> dict:
-    """Annotation robustness under transcript subsampling (reference-free). Baseline labels come from
-    ``annotate_fn(adata) -> array[str] of length n_obs``; then for ``reps`` reps, drop ``drop_frac`` of
-    each cell's counts, re-run ``annotate_fn`` on the thinned copy, and record the label-flip rate.
-    Writes ``obs[key_added]`` in [0,1] (higher = LESS stable); returns ``{status, mean_flip_rate,
-    reps, drop_frac, matrix}``. ``annotate_fn`` is any labeller (marker argmax, a classifier, ...); the thinned
-    copy carries the reduced counts in both ``.X`` and (if ``layer`` present) that layer. The counts are
-    the matrix chosen by ``layer`` (see ``get_counts``)."""
+    """Annotation robustness under transcript subsampling (reference-free).
+
+    Baseline labels come from ``annotate_fn(adata)``; then for ``reps`` reps, drop ``drop_frac`` of each
+    cell's counts, re-run ``annotate_fn`` on the thinned object, and record the label-flip rate.
+
+    The thinned object is a new AnnData, not ``adata.copy()``: it holds the thinned counts in ``X`` and, if
+    ``layer`` exists, in ``layers[layer]``, plus copies of ``obs`` and ``var`` and shallow copies of ``uns``,
+    ``obsm`` and ``obsp`` (their arrays are shared with ``adata``: a labeller must not modify them in place).
+    Other layers and ``raw`` are left out - they were the memory cost of the full copy, and a labeller
+    reading them got unthinned data, so its labels could not flip.
+
+    Parameters
+    ----------
+    adata
+        AnnData with the counts.
+    annotate_fn
+        Any labeller ``f(AnnData) -> array of n_obs labels`` (marker argmax, a classifier, ...).
+    drop_frac
+        Share of each cell's transcripts dropped per rep (binomial thinning).
+    reps
+        Thinning repetitions.
+    seed
+        Seed of the thinning.
+    layer
+        Count matrix to thin (see ``get_counts``).
+    key_added
+        obs column for the per-cell flip rate.
+
+    Returns
+    -------
+    dict
+        ``{status, mean_flip_rate, reps, drop_frac, matrix}``; ``obs[key_added]`` holds each cell's flip rate
+        in [0, 1] (higher = LESS stable).
+    """
+    import anndata
+
     counts, matrix = get_counts(adata, layer)
     base = np.asarray(annotate_fn(adata)).astype(str)
     rng = np.random.default_rng(seed)
     flips = np.zeros(adata.n_obs, dtype=float)
     for _ in range(reps):
-        tmp = adata.copy()
         thinned = _subsample_counts(counts, drop_frac, rng)
-        tmp.X = thinned
-        if layer and layer in tmp.layers:
-            tmp.layers[layer] = thinned
+        tmp = anndata.AnnData(X=thinned, obs=adata.obs.copy(), var=adata.var.copy(), uns=dict(adata.uns),
+                              obsm=dict(adata.obsm), obsp=dict(adata.obsp),
+                              layers={layer: thinned} if layer and layer in adata.layers else None)
         lab = np.asarray(annotate_fn(tmp)).astype(str)
         flips += (lab != base).astype(float)
     stability = flips / max(1, reps)

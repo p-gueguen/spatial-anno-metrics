@@ -71,13 +71,27 @@ def test_planted_macrophage_inside_epithelium_is_named():
 
 
 def test_unstructured_embedding_is_not_significant():
-    """Negative control: centroids placed at random give a permutation p well above 0.05."""
+    """Negative control: centroids placed at random give a permutation p above 0.05. This layout has a small
+    POSITIVE rho, so only the permutation null (not the sign of rho) keeps p high."""
     import spatial_anno_metrics as sam
 
-    rng = np.random.default_rng(3)
+    rng = np.random.default_rng(21)
     r = sam.ontology_consistency(_section({t: tuple(rng.uniform(0, 8, 3)) for t in CENTRES}), "cell_type", OBO, CL,
                                  n_perm=199)
-    assert r["status"] == "ok" and r["p_value"] > 0.05
+    assert r["status"] == "ok" and 0.1 < r["rho"] < 0.4 and r["p_value"] > 0.05
+
+
+def test_min_cells_excludes_a_label_and_nearest_ontology_keeps_ties():
+    """A label below min_cells is excluded; with the monocyte gone, four labels tie as the macrophage's nearest
+    ontology term (4 is_a steps each) and all four are listed."""
+    import spatial_anno_metrics as sam
+
+    a = _section()
+    a = a[~((a.obs["cell_type"] == "mono").to_numpy() & (np.arange(a.n_obs) % 30 >= 5))].copy()   # 5 mono cells
+    r = sam.ontology_consistency(a, "cell_type", OBO, CL, n_perm=19, min_cells=10)
+    assert r["n_labels"] == 6 and r["excluded"] == {"mono": "5 cells < min_cells=10"}
+    assert sorted(r["per_label"]["macrophage"]["nearest_ontology"]) == ["B", "T", "epithelial", "fibroblast"]
+    assert sam.ontology_consistency(a, "cell_type", OBO, CL, n_perm=19, min_cells=5)["n_labels"] == 7
 
 
 def test_excluded_labels_and_skips():
@@ -97,3 +111,28 @@ def test_excluded_labels_and_skips():
         b.obs["cell_type"] = b.obs["cell_type"].astype(object)
         b.obs.iloc[0, 0] = None
         sam.ontology_consistency(b, "cell_type", OBO, CL)
+
+
+def test_p_value_matches_the_exact_mantel_permutation_distribution():
+    """With 5 labels the Mantel null has 5! = 120 relabellings: the sampled p converges on the exact one, which
+    permutes rows AND columns of the ontology distance matrix together (rows only would give 0.83 here)."""
+    from itertools import permutations
+
+    from scipy.stats import spearmanr
+
+    import spatial_anno_metrics as sam
+    from spatial_anno_metrics.ontology import _ontology_distances, _read_obo
+
+    labs = ["T", "B", "mono", "macrophage", "keratinocyte"]
+    a = _section(dict(zip(labs, map(tuple, np.random.default_rng(3).uniform(0, 8, (5, 3))))))
+    r = sam.ontology_consistency(a, "cell_type", OBO, {k: CL[k] for k in labs}, n_perm=5000)
+    E = np.asarray(a.obsm["X_pca"])
+    C = np.vstack([E[(a.obs["cell_type"] == lab).to_numpy()].mean(0) for lab in sorted(labs)])
+    De = np.sqrt(((C[:, None] - C[None]) ** 2).sum(-1))
+    Do = _ontology_distances([CL[k] for k in sorted(labs)], _read_obo(OBO))
+    iu = np.triu_indices(5, 1)
+    rho = spearmanr(De[iu], Do[iu])[0]
+    null = [spearmanr(De[iu], Do[np.ix_(p, p)][iu])[0] for p in map(list, permutations(range(5)))]
+    exact = np.mean(np.asarray(null) >= rho - 1e-12)
+    assert r["rho"] == pytest.approx(rho)
+    assert 0.4 < exact < 0.65 and r["p_value"] == pytest.approx(exact, abs=0.03)

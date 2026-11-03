@@ -1,6 +1,6 @@
 format-version: 1.2
 ontology: cl_tiny
-remark: Test fixture. A hand-made 15-term slice of the Cell Ontology (CL, CC BY 4.0, obophenotype/cell-ontology):
+remark: Test fixture. A hand-made 14-term slice of the Cell Ontology (CL, CC BY 4.0, obophenotype/cell-ontology):
 remark: real CL ids and names, is_a edges simplified. Includes a second is_a parent, an obsolete term and a Typedef.
 
 [Term]

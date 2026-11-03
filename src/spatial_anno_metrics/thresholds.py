@@ -99,6 +99,11 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
                                        "a cell"),
         "control_quantile": _e(0.95, f"{_PKG}: genes whose Moran's I exceeds this quantile of the controls'"),
     },
+    "ontology": {
+        "min_labels": _e(4, f"{_PKG}: labels with a CL id needed by ontology_consistency (6 label pairs)"),
+        "min_cells": _e(10, f"{_PKG}: cells a label needs for its embedding centroid to be used"),
+        "n_perm": _e(999, f"{_PKG}: label permutations for the Mantel-style p-value (floor 0.001)"),
+    },
     # Recorded, not wired: aqi.py keeps these literals. tests/test_thresholds.py checks that its parameter
     # defaults agree; the body literals (w_coh_range, softmin_floor, default_target_depth,
     # coverage_limited_no_dict_frac) are recorded only.

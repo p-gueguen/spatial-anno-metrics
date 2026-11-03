@@ -1,6 +1,8 @@
 #!/usr/bin/env Rscript
 # SpatialQM reference outputs -> tests/goldens/signalqc_spatialqm/expected.json. NOT run in CI.
-# Input: the Xenium-style crop folder written by `python make_inputs.py outs`.
+# Input: the Xenium-style crop folder written by `python make_inputs.py outs`, including its
+# fixtures.sha256.json (sha256 of the committed counts.npz / cells.csv / transcripts.npz it was built from),
+# copied into meta.input.sha256 so the golden test can check expected.json against the committed inputs.
 # Usage: Rscript make_expected.R <crop_outs_dir> <expected.json> <SpatialQM source checkout>
 #
 # SpatialQM (MIT), installed with pak from github.com/Center-for-Spatial-OMICs/SpatialQM. The sha comes from
@@ -30,6 +32,7 @@ stopifnot(!is.null(sha), identical(system2("git", c("-C", src, "rev-parse", "HEA
 
 mtx <- file.path(outs, "cell_feature_matrix", "matrix.mtx.gz")
 tx <- file.path(outs, "transcripts.csv.gz")
+fixture_sha <- jsonlite::read_json(file.path(outs, "fixtures.sha256.json"))
 cells_csv <- file.path(outs, "cells.csv.gz")
 X <- "Xenium"
 counts <- as(Matrix::readMM(mtx), "CsparseMatrix")
@@ -108,7 +111,7 @@ res$meta <- list(
                                     "BiocParallel", "BioQC", "coop", "data.table", "Matrix", "fs")), pv),
   input = list(n_cells = ncol(counts), n_features = nrow(counts), n_transcripts = nrow(txd),
                n_transcripts_unassigned = sum(txd$cell_id == "UNASSIGNED"),
-               n_features_by_type = as.list(table(feat$V3))),
+               n_features_by_type = as.list(table(feat$V3)), sha256 = fixture_sha),
   date = format(Sys.Date())
 )
 write_json(res, out_json, auto_unbox = TRUE, digits = NA, na = "null", pretty = TRUE)

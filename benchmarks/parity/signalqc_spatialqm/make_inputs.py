@@ -7,12 +7,15 @@ Data: 10x Xenium FFPE Human Breast Cancer Rep1 (Janesick et al. 2023), files and
   python make_inputs.py crop     # golden fixtures: counts.npz, cells.csv, transcripts.npz
   python make_inputs.py outs     # fixtures -> Xenium-style folder for make_expected.R + ours.json
 
-`outs` reads only the committed fixtures, so the SpatialQM input is reproducible from the repo.
+`outs` reads only the committed fixtures, so the SpatialQM input is reproducible from the repo, under either venv:
+cells.csv is copied byte for byte (a pandas round trip re-parses ~117 centroids one ulp differently on pandas 2.3
+vs 3.1). It also writes fixtures.sha256.json, which make_expected.R copies into meta.input.sha256.
 """
 from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 import math
 import shutil
@@ -134,8 +137,9 @@ def load_golden(g: Path):
     return X, {k: c[k] for k in ("feature_id", "feature_name", "feature_type")}, pd.read_csv(g / "cells.csv"), t
 
 
-def write_outs(X, feats, cells, t, outs: Path):
-    """The crop as a Xenium-1.3+-style folder (string cell ids, 'UNASSIGNED'), the format SpatialQM parses."""
+def write_outs(X, feats, cells, t, outs: Path, cells_csv: Path):
+    """The crop as a Xenium-1.3+-style folder (string cell ids, 'UNASSIGNED'), the format SpatialQM parses.
+    ``cells.csv.gz`` is the committed ``cells_csv`` gzipped as is (mtime 0), never re-written by pandas."""
     import scipy.io
 
     if outs.exists():
@@ -148,7 +152,8 @@ def write_outs(X, feats, cells, t, outs: Path):
     (mdir / "matrix.mtx").unlink()
     pd.DataFrame(feats).to_csv(mdir / "features.tsv.gz", sep="\t", header=False, index=False)
     cells["cell_id"].to_csv(mdir / "barcodes.tsv.gz", header=False, index=False)
-    cells.to_csv(outs / "cells.csv.gz", index=False)
+    with open(cells_csv, "rb") as src, gzip.GzipFile(outs / "cells.csv.gz", "wb", mtime=0) as dst:
+        shutil.copyfileobj(src, dst)
     cid = t["cell_id"].astype(str).astype(object)
     cid[t["cell_id"] == -1] = "UNASSIGNED"
     pd.DataFrame({"cell_id": cid, "overlaps_nucleus": t["overlaps_nucleus"],
@@ -179,13 +184,17 @@ def run_ours(X, feats, cells) -> dict:
     a.obsm["spatial"] = cells[["x_centroid", "y_centroid"]].to_numpy()
     out = {"sparsity": sq.sparsity(a), "detection_entropy": sq.detection_entropy(a),
            "signal_to_noise": sq.signal_to_noise(a), "tx_per_area": sq.tx_per_area(a),
-           "moran_signal": sq.moran_signal(a)}
+           "moran_signal": sq.moran_signal(a), "tx_per_cell": sq.tx_per_cell(a)}
+    out["moran_signal"].pop("per_feature")
+    for name in ("moran_signal", "signal_to_noise", "detection_entropy"):     # the SpatialQM recipes
+        r = getattr(sq, name)(a.copy(), method="spatialqm")
+        r.pop("per_feature", None)
+        out[f"{name}_spatialqm"] = r
     mi = a.uns["moranI"]["I"].reindex(feats["feature_name"])
     by_type = {t: mi[ftype == t] for t in np.unique(ftype)}
     out["moran_I_per_feature"] = {k: float(v) for k, v in mi.items()}
     ctrl_per_cell = np.asarray(X[:, ftype != "Gene Expression"].sum(1)).ravel()
     out["explain"] = {  # numbers that locate the gaps; not part of our API
-        "mean_tx_per_area": float(np.nanmean(a.obs["tx_per_area"])),
         "frac_cells_zero_control_counts": float((ctrl_per_cell == 0).mean()),
         "moran_nanmedian_by_feature_type": {t: float(np.nanmedian(v)) for t, v in by_type.items()},
         "moran_n_nan_by_feature_type": {t: int(v.isna().sum()) for t, v in by_type.items()},
@@ -195,7 +204,10 @@ def run_ours(X, feats, cells) -> dict:
 
 def cmd_outs(args):
     X, feats, cells, t = load_golden(args.golden)
-    write_outs(X, feats, cells, t, args.outs)
+    write_outs(X, feats, cells, t, args.outs, args.golden / "cells.csv")
+    sha = {f: hashlib.sha256((args.golden / f).read_bytes()).hexdigest()
+           for f in ("counts.npz", "cells.csv", "transcripts.npz")}
+    (args.outs / "fixtures.sha256.json").write_text(json.dumps(sha, indent=1))
     ours = run_ours(X, feats, cells)
     (args.outs / "ours.json").write_text(json.dumps(ours, indent=1, allow_nan=False))
     print(json.dumps({k: v for k, v in ours.items() if k != "moran_I_per_feature"}, indent=1))

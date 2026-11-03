@@ -1,9 +1,12 @@
 # SpatialQM signal-QC parity golden - Xenium breast crop
 
 **Status (2026-11-03): complete.** Inputs, generators and `expected.json` (SpatialQM's outputs on the crop)
-are committed. `test_signalqc_spatialqm_files.py` checks that the files parse, agree with each other, and that
-`expected.json` was computed on these inputs (`meta.input`). No metric is compared yet: the owning work
-package adds that test, using [Ours vs reference](#ours-vs-reference-on-the-crop) for what should match.
+are committed. `test_signalqc_spatialqm_files.py` checks that the files parse and agree with each other, that
+`expected.json` was computed from these exact bytes (`meta.input.sha256`, recorded by `make_inputs.py outs` and
+copied by `make_expected.R`), and that `expected.json` itself is unedited (its sha256 is pinned in the test).
+18 planted corruptions (8 that change a reference value or what it depends on, 10 structural) each fail it; a
+clean copy passes. `test_signalqc_spatialqm_metrics.py` compares our metrics with SpatialQM
+([0.7.0 parity](#070-parity)).
 
 ## Upstream
 
@@ -95,14 +98,35 @@ absolute, NaN at the same 7 features), so the right-hand column is checked, not 
 
 ## Files
 
-| file | content | md5 |
+| file | content | md5 (sha256 in `meta.input.sha256`) |
 |---|---|---|
 | `counts.npz` | CSR cells x features, 2000 x 541 (h5 counts): `data` int32, `indices` uint16, `indptr` int32, `shape` int64[2], `cell_id` int32, `feature_id` / `feature_name` / `feature_type` str. `np.load(..., allow_pickle=False)`. | `527d72bcfbf6a8a36648382a1eb0fb2c` |
 | `cells.csv` | crop rows of `cells.csv.gz`, same order as `counts.npz` rows (um, um^2); `total_counts` = row sum over all 541 features | `dc4f84f763fce622e087646c0d512b7d` |
 | `transcripts.npz` | per transcript: `feature_idx` uint16 (into the `counts.npz` features), `cell_id` int32 (-1 = unassigned), `overlaps_nucleus` uint8, `qv` float32; no coordinates (no metric here needs them) | `e8b78016f2eeb727ac4f23898c6d505f` |
-| `expected.json` | one key per SpatialQM function in the map above (scalar); `getMorans` = `{feature, type, I}` lists, 341 = 313 `Gene` + 28 `Control`, feature names as in `counts.npz`, NaN as null; `meta` = SpatialQM sha and version, R, `function_source`, `errors` (the Xenium-branch error of the two ratio functions), `calls`, `control_regex_hits_by_feature_type`, package versions, `input` counts, date. Floats at 15 significant digits. | `0b041ab9ac9d2d3de4c7776cafaddb80` |
+| `expected.json` | one key per SpatialQM function in the map above (scalar); `getMorans` = `{feature, type, I}` lists, 341 = 313 `Gene` + 28 `Control`, feature names as in `counts.npz`, NaN as null; `meta` = SpatialQM sha and version, R, `function_source`, `errors` (the Xenium-branch error of the two ratio functions), `calls`, `control_regex_hits_by_feature_type`, package versions, `input` counts and the fixtures' sha256, date. Floats at 15 significant digits. | sha256 `01a7b5aa1f62d50797c310816704ac16a7f2c5e623f4abd22872baa8a4bc07aa` (md5 `039654b9f76d806121c1b68e55c9114a`; `0b041ab9...` before `meta.input.sha256` was added, every other byte equal) |
 
-## Ours vs reference on the crop
+## 0.7.0 parity
+
+`test_signalqc_spatialqm_metrics.py`, both Pythons. SpatialQM picks controls by name; where that matters the test
+sets `var["control"]` to SpatialQM's regex to reproduce it, and also pins our feature-type rule.
+
+| SpatialQM | Ours (0.7.0) | Agreement |
+|---|---|---|
+| `getMorans` (341 features) | `moran_signal(method="spatialqm")["per_feature"]` | max abs 5.3e-15, NaN at the same 7; medians 0.06670 / -0.00771 |
+| `getMaxRatio` 4.33268 | `signal_to_noise(method="spatialqm")["max_signal_ratio_log10"]` | rel < 1e-12 (feature-type controls: 4.00065) |
+| `getMeanSignalRatio` 0.497023 | `...["mean_signal_ratio_log10"]` 0.497105 | 8.2e-5: no R recycling (SpatialQM's own order range 0.49696-0.49725); feature-type controls 0.50780 |
+| `getEntropy` 0.675553 | `detection_entropy(method="spatialqm")["entropy_bits"]` | rel < 1e-12 |
+| `getSparsity` | `sparsity()["zero_fraction"]` | rel < 1e-12 |
+| `getTxPerArea` 1.157125 | `tx_per_area()["mean_tx_per_area"]` | rel < 1e-12 |
+| `getTxPerCell` 128.261 | `tx_per_cell()["mean_tx_per_cell"]` | exact (feature-type controls: 128.1905) |
+| `getCellTxFraction` 0.999798 | `transcript_qc()["frac_tx_in_cells"]` | rel < 1e-12, with -1 or `"UNASSIGNED"` ids |
+| `getGlobalFDR` 5.92514e-05 | `transcript_qc()["fdr"] / 100` | rel < 1e-12 (`fdr` = 0.005925; feature-type negatives: 0.006644) |
+
+Default recipes on the crop (0.7.0): `moran_signal` genes 0.10637, controls -0.00058, separation 0.10695 (1 gene and
+138 controls excluded as undefined); `signal_to_noise` median 6.491 over the 224 cells with a control count, pooled
+9.511 (`eps=1e-9` gives the 0.6 values 27.956 / 32.705 exactly).
+
+## Ours vs reference on the crop (0.6, `f71512f`)
 
 Ours = `spatial_anno_metrics.signal_qc` at `f71512f` with default arguments, on an AnnData built from these
 files (X = counts of all 541 features, `var["control"]` = the 228 non-gene features, `obs["cell_area"]` and
@@ -145,7 +169,8 @@ Moran's I per feature along the walk (SpatialQM's recipe, then one change per co
 
 ## Findings
 
-For the owning work package; `src/` is untouched here.
+Findings 1-3 are fixed in 0.7.0 ([0.7.0 parity](#070-parity)): NaN-safe Moran summaries, no eps floor in the
+SNR, and SpatialQM methods that compute SpatialQM's quantities.
 
 On ours:
 
@@ -186,14 +211,19 @@ On SpatialQM (installed code at the sha above):
 
 ## Regenerate
 
-Generated 2026-11-03. From the repo root:
+Generated 2026-11-03. From the repo root. Step 3 gzips the committed `cells.csv` as is (a pandas round trip
+re-parsed 117 centroids one ulp differently under pandas 2.3.3 / venv310 than under 3.1.0 / venv312), so step 3
+and 4 give the same `expected.json` under either venv: checked, byte-identical from venv310 and venv312, and
+equal to the 0.6 file except the added `meta.input.sha256`. `meta.date` is the run date, so a run on another
+day differs in that line only. After regenerating, put the new sha256 of `expected.json` into
+`EXPECTED_SHA256` in `test_signalqc_spatialqm_files.py` and the Files table.
 
 ```bash
 PY=/srv/GT/analysis/pgueguen/sam_dev/venv310/bin/python   # anndata 0.11: h5ad readable by 0.11 and 0.13
 G=benchmarks/parity/signalqc_spatialqm
 PYTHONPATH=src $PY $G/make_inputs.py section   # 1. section.h5ad next to the downloaded files
 PYTHONPATH=src $PY $G/make_inputs.py crop      # 2. counts.npz, cells.csv, transcripts.npz (this folder)
-PYTHONPATH=src $PY $G/make_inputs.py outs      # 3. Xenium-style crop folder + ours.json, from the fixtures only
+PYTHONPATH=src $PY $G/make_inputs.py outs      # 3. crop folder + fixtures.sha256.json + ours.json, fixtures only
 # 4. SpatialQM into the dev R library (R 4.6; everything else comes from the system library). BioQC 1.40.0
 #    came from BiocManager; then, with pak (NMI was archived on CRAN on 2026-05-18):
 #    for (r in c("spatialreg", "fastglm", "url::https://cran.r-project.org/src/contrib/Archive/NMI/NMI_2.0.tar.gz",

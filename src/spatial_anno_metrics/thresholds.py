@@ -73,6 +73,18 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
         "alpha": _e(0.1, "miscoverage rate: 90 % target coverage, the usual default", False),
         "min_class_calibration": _e(10, f"{_PKG}: with fewer calibration cells a class uses the marginal "
                                         "threshold (class_conditional=True)"),
+        "ece_n_bins": _e(15, "Guo et al. 2017 (arXiv 1706.04599): 15 equal-width confidence bins", False),
+        "clustered_quantiles": _e([0.5, 0.6, 0.7, 0.8, 0.9], "Ding et al. 2023 (arXiv 2306.09335) s. 3: score "
+                                  "quantile levels (plus 1 - alpha) that embed a class for clustered conformal",
+                                  False),
+        "novelty_fdr": _e(0.1, "BH level for conformal novelty p-values (Bates et al. 2023 use 0.1)", False),
+        "novelty_frac_train": _e(0.5, f"{_PKG}: reference share that fits the novelty scorer; the rest "
+                                      "calibrates the p-values"),
+        "novelty_n_components": _e(20, f"{_PKG}: PCA components for the reconstruction-error score"),
+    },
+    "consensus": {
+        "min_share": _e(0.5, f"{_PKG}: vote share a label must exceed to be the consensus (strict majority; "
+                             "popV takes the plurality, which ancestor votes would always hand to the root)"),
     },
     "purity": {
         "detection_threshold": _e(0, f"{_PKG}: a marker is detected when its count is > 0, i.e. one count "

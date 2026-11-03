@@ -326,36 +326,71 @@ def _lognorm(X):
 
 def conformal_check(seeds):
     """Coverage of 90 % conformal sets: calibrated on the reference (not exchangeable with the section)
-    vs on a labelled 30 % of the section; marginal vs Mondrian on the rare type; query depth shift."""
+    vs on a labelled 30 % of the section; marginal vs Mondrian vs clustered Mondrian on the rare type; query
+    depth shift; calibration error (ECE) of the classifier on the section. ``held_out`` = "B": B is left out
+    of the reference, so the section's B cells are a truly novel type - do empty sets and conformal novelty
+    p-values (``nov_*``: PCA reconstruction error, BH 10 %) single them out, or also flag known cells that
+    only lost depth? ``nov_*`` use the reference with each cell thinned to a depth drawn from the section's
+    per-cell depths; ``nov_flag_known_unmatched`` the reference as it is (400 counts per cell vs 150)."""
     from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import roc_auc_score
+
+    def thin(X, depths, rng):                      # each reference cell thinned to a depth drawn from the section's
+        X = np.asarray(X.todense() if hasattr(X, "todense") else X).astype(int)
+        target = rng.choice(depths, len(X))[:, None]
+        return rng.binomial(X, np.clip(target / np.maximum(X.sum(1, keepdims=True), 1), 0, 1)).astype(float)
+
     rows = []
     for seed in range(seeds):
-        for depth_keep in [1.0, 0.5, 0.25]:
-            for rare in [0.15, 0.02]:
-                a = sim.rare_type(rare, seed) if depth_keep == 1.0 else sim.depth_loss(1 - depth_keep, seed)
-                if depth_keep != 1.0 and rare != 0.15:
-                    continue
-                ref = sim.reference(seed)
-                genes = list(ref.var_names)
-                clf = LogisticRegression(max_iter=500, C=0.3).fit(_lognorm(ref[:, genes].layers["counts"]),
-                                                                   ref.obs["cell_type"])
-                cls = clf.classes_
-                Pq = clf.predict_proba(_lognorm(a[:, genes].layers["counts"]))
-                yq = a.obs["truth"].to_numpy()
-                rng = np.random.default_rng(seed)
-                cal = rng.random(a.n_obs) < 0.3
-                ref_cal = sim.reference(seed + 100)
-                Pr = clf.predict_proba(_lognorm(ref_cal[:, genes].layers["counts"]))
-                for cal_name, (Pc, yc, Pqq, yqq) in {
-                        "reference": (Pr, ref_cal.obs["cell_type"].to_numpy(), Pq, yq),
-                        "section 30%": (Pq[cal], yq[cal], Pq[~cal], yq[~cal])}.items():
-                    for cc in (False, True):
-                        r = sam.conformal_prediction_sets(Pqq, cls, Pc, yc, alpha=0.1, class_conditional=cc,
-                                                          y_query=yqq)
-                        rows.append(dict(seed=seed, query_depth=depth_keep, T_CD8_share=rare, calibration=cal_name,
-                                         mondrian=cc, coverage=r["coverage"],
-                                         T_CD8_coverage=r["per_type_coverage"].get("T_CD8", np.nan),
-                                         mean_set_size=r["summary"]["mean_set_size"]))
+        for held_out in ["", "B"]:
+            for depth_keep in [1.0, 0.5, 0.25]:
+                for rare in [0.15, 0.02]:
+                    if (depth_keep != 1.0 or held_out) and rare != 0.15:
+                        continue
+                    a = sim.rare_type(rare, seed) if depth_keep == 1.0 else sim.depth_loss(1 - depth_keep, seed)
+                    ref = sim.reference(seed)
+                    genes = list(ref.var_names)
+                    kr = ref.obs["cell_type"].to_numpy() != held_out
+                    Xr = ref[:, genes].layers["counts"][kr]
+                    clf = LogisticRegression(max_iter=500, C=0.3).fit(_lognorm(Xr), ref.obs["cell_type"][kr])
+                    cls = clf.classes_
+                    Xq = a[:, genes].layers["counts"]
+                    Pq = clf.predict_proba(_lognorm(Xq))
+                    yq = a.obs["truth"].to_numpy()
+                    novel = yq == held_out
+                    rng = np.random.default_rng(seed)
+                    cal = rng.random(a.n_obs) < 0.3
+                    ref_cal = sim.reference(seed + 100)
+                    kc = ref_cal.obs["cell_type"].to_numpy() != held_out
+                    Pr = clf.predict_proba(_lognorm(ref_cal[:, genes].layers["counts"][kc]))
+                    ce = sam.conformal.calibration_error(Pq[~novel], cls, yq[~novel])
+                    Xm = _lognorm(thin(Xr, np.asarray(Xq.sum(1)).ravel(), np.random.default_rng(seed + 200)))
+                    rn = sam.conformal.conformal_novelty(_lognorm(Xq), Xm, method="pca", seed=seed)
+                    nv, pv = rn["novel"], rn["pvalues"]
+                    nv_raw = sam.conformal.conformal_novelty(_lognorm(Xq), _lognorm(Xr), method="pca", seed=seed)["novel"]
+                    nov = dict(ece=ce["ece"], classwise_ece=ce["classwise_ece"],
+                               nov_auc=roc_auc_score(novel, -pv) if held_out else np.nan,
+                               nov_flag_known=nv[~novel].mean(), nov_flag_novel=nv[novel].mean() if held_out else np.nan,
+                               nov_fdp=(~novel[nv]).mean() if held_out and nv.any() else np.nan,
+                               nov_flag_known_unmatched=nv_raw[~novel].mean())
+                    cals = {"reference": (Pr, ref_cal.obs["cell_type"].to_numpy()[kc], Pq, yq)}
+                    if not held_out:                       # a labelled section subset cannot hold an unknown type
+                        cals["section 30%"] = (Pq[cal], yq[cal], Pq[~cal], yq[~cal])
+                    for cal_name, (Pc, yc, Pqq, yqq) in cals.items():
+                        for cc in (False, True, "clustered"):
+                            r = sam.conformal_prediction_sets(Pqq, cls, Pc, yc, alpha=0.1, class_conditional=cc,
+                                                              y_query=yqq)
+                            known = yqq != held_out
+                            row = dict(seed=seed, query_depth=depth_keep, T_CD8_share=rare, calibration=cal_name,
+                                       mondrian=cc,
+                                       coverage=np.mean([yqq[i] in r["sets"][i] for i in np.flatnonzero(known)]),
+                                       T_CD8_coverage=r["per_type_coverage"].get("T_CD8", np.nan),
+                                       mean_set_size=r["summary"]["mean_set_size"], held_out=held_out,
+                                       covgap=np.mean([abs(v - 0.9) for t, v in r["per_type_coverage"].items()
+                                                       if t != held_out]),
+                                       pct_empty_known=np.mean(r["set_size"][known] == 0),
+                                       pct_empty_novel=np.mean(r["set_size"][~known] == 0) if held_out else np.nan)
+                            rows.append({**row, **nov})
     return pd.DataFrame(rows)
 
 

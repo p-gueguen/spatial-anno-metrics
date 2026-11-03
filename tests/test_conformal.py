@@ -87,3 +87,171 @@ def test_conformal_empty_calibration_is_skipped_not_all_inclusive():
     P = np.array([[0.9, 0.1], [0.2, 0.8]])
     out = em.conformal_prediction_sets(P, classes, np.empty((0, 2)), np.array([], dtype=str))
     assert out["status"] == "skipped" and "calibration" in out["reason"]
+
+
+# --------------------------------------------------------------------------- #
+# calibration error (ECE / class-wise ECE), CovGap, clustered Mondrian (ROADMAP #24)
+# --------------------------------------------------------------------------- #
+def test_ece_hand_computed():
+    """Top-label ECE on 4 cells, two sharing the (0.9, 1.0] bin: 0.5*|0.5-0.935| + 0.25*0.35 + 0.25*0.25."""
+    from spatial_anno_metrics import conformal as em
+
+    P = np.array([[0.95, 0.05], [0.92, 0.08], [0.65, 0.35], [0.25, 0.75]])
+    y = np.array(["A", "B", "A", "B"])
+    r = em.calibration_error(P, ["A", "B"], y, n_bins=10)
+    assert r["status"] == "ok"
+    assert r["ece"] == pytest.approx(0.3675)
+    assert r["accuracy"] == pytest.approx(0.75)
+
+
+def test_classwise_ece_matches_sklearn_calibration_curve():
+    """Class-wise ECE = mean over classes of the count-weighted |freq - mean p| per bin; sklearn's
+    calibration_curve gives the per-bin values independently (positive control for the binning)."""
+    from sklearn.calibration import calibration_curve
+
+    from spatial_anno_metrics import conformal as em
+
+    rng = np.random.default_rng(3)
+    classes = np.array(["A", "B", "C"])
+    P = rng.dirichlet([1, 1, 1], 3000)
+    y = np.array([rng.choice(classes, p=p ** 2 / (p ** 2).sum()) for p in P])     # miscalibrated on purpose
+    r = em.calibration_error(P, classes, y, n_bins=15)
+    want = []
+    for k, c in enumerate(classes):
+        frac, mean_p = calibration_curve(y == c, P[:, k], n_bins=15, strategy="uniform")
+        n_b = np.histogram(P[:, k], bins=np.linspace(0, 1, 16))[0]
+        n_b = n_b[n_b > 0]
+        want.append(float(np.sum(n_b / len(y) * np.abs(frac - mean_p))))
+    assert r["classwise_ece"] == pytest.approx(np.mean(want), abs=1e-12)
+    assert r["per_class_ece"] == pytest.approx(dict(zip(classes, want)), abs=1e-12)
+
+
+def test_ece_separates_calibrated_from_overconfident():
+    """Labels drawn from p: ECE ~ 0. Same labels, probabilities sharpened (p^4): ECE large."""
+    from spatial_anno_metrics import conformal as em
+
+    rng = np.random.default_rng(0)
+    classes = np.array(["A", "B", "C", "D"])
+    P = rng.dirichlet([1, 1, 1, 1], 20000)
+    y = classes[(rng.random(len(P))[:, None] > P.cumsum(1)).sum(1)]
+    sharp = P ** 4 / (P ** 4).sum(1, keepdims=True)
+    good, bad = em.calibration_error(P, classes, y), em.calibration_error(sharp, classes, y)
+    assert good["ece"] < 0.02 and good["classwise_ece"] < 0.02
+    assert bad["ece"] > 0.1 and bad["classwise_ece"] > good["classwise_ece"] + 0.02
+
+
+def test_calibration_error_refuses_bad_input():
+    from spatial_anno_metrics import conformal as em
+
+    with pytest.raises(ValueError, match="not in classes"):
+        em.calibration_error(np.array([[0.6, 0.4]]), ["A", "B"], ["C"])
+    with pytest.raises(ValueError, match="missing"):
+        em.calibration_error(np.array([[0.6, 0.4]]), ["A", "B"], np.array([None], dtype=object))
+    assert em.calibration_error(np.empty((0, 2)), ["A", "B"], np.array([], dtype=str))["status"] == "skipped"
+
+
+def test_covgap_is_mean_absolute_per_type_coverage_gap():
+    """Ding et al. 2023 CovGap = mean_y |coverage_y - (1 - alpha)|."""
+    from spatial_anno_metrics import conformal as em
+
+    rng = np.random.default_rng(0)
+    classes = np.array(["A", "B", "C", "D"])
+    y = rng.choice(classes, 1200)
+    P = _peaked_proba(y, classes, peak=0.7)
+    r = em.conformal_prediction_sets(P[800:], classes, P[:800], y[:800], alpha=0.1, y_query=y[800:])
+    want = np.mean([abs(v - 0.9) for v in r["per_type_coverage"].values()])
+    assert r["covgap"] == pytest.approx(want)
+
+
+def _two_difficulty_world(n_per_class, seed, K=40):
+    """K classes; the first half easy (true-class p ~ Beta(8, 2)), the second half hard (Beta(2, 3))."""
+    rng = np.random.default_rng(seed)
+    classes = np.array([f"c{k:02d}" for k in range(K)])
+    y = np.repeat(classes, n_per_class)
+    hard = np.isin(y, classes[K // 2:])
+    pt = np.where(hard, rng.beta(2, 3, len(y)), rng.beta(8, 2, len(y)))
+    P = np.repeat(((1 - pt) / (K - 1))[:, None], K, axis=1)
+    P[np.arange(len(y)), np.searchsorted(classes, y)] = pt
+    return classes, y, P
+
+
+def test_clustered_mondrian_lowers_covgap_and_finds_the_difficulty_groups():
+    """Few calibration cells per class: marginal over-covers easy and under-covers hard classes; clustered
+    Mondrian (Ding et al. 2023) pools similar classes and lowers CovGap."""
+    from spatial_anno_metrics import conformal as em
+
+    classes, y_cal, P_cal = _two_difficulty_world(30, seed=0)
+    _, y_q, P_q = _two_difficulty_world(200, seed=1)
+    kw = dict(alpha=0.1, y_query=y_q)
+    rm = em.conformal_prediction_sets(P_q, classes, P_cal, y_cal, **kw)
+    rk = em.conformal_prediction_sets(P_q, classes, P_cal, y_cal, class_conditional="clustered", **kw)
+    assert rk["summary"]["class_conditional"] == "clustered"
+    assert rk["covgap"] < rm["covgap"] - 0.03
+    hard = [c for c in classes[20:] if rk["clusters"][c] >= 0]
+    easy = [c for c in classes[:20] if rk["clusters"][c] >= 0]
+    assert len(hard) >= 10 and len(easy) >= 10
+    assert not ({rk["clusters"][c] for c in hard} & {rk["clusters"][c] for c in easy})   # never pooled together
+    assert np.mean([rk["per_type_coverage"][c] for c in classes[20:]]) >= 0.85
+
+
+def test_clustered_mondrian_rare_class_goes_to_the_null_cluster():
+    """A class with too few calibration cells to embed falls back to the marginal threshold (cluster -1)."""
+    from spatial_anno_metrics import conformal as em
+
+    classes, y_cal, P_cal = _two_difficulty_world(30, seed=0, K=10)
+    keep = (y_cal != "c09") | (np.cumsum(y_cal == "c09") <= 3)                # c09: 3 calibration cells
+    r = em.conformal_prediction_sets(P_cal, classes, P_cal[keep], y_cal[keep], class_conditional="clustered")
+    assert r["clusters"]["c09"] == -1
+    with pytest.raises(ValueError, match="class_conditional"):
+        em.conformal_prediction_sets(P_cal, classes, P_cal, y_cal, class_conditional="kmeans")
+
+
+# --------------------------------------------------------------------------- #
+# conformal novelty p-values (ROADMAP #20)
+# --------------------------------------------------------------------------- #
+def test_conformal_pvalues_and_bh_hand_and_scipy():
+    """p_j = (1 + #{cal >= s_j}) / (n_cal + 1); BH matches scipy's false_discovery_control."""
+    from scipy.stats import false_discovery_control
+
+    from spatial_anno_metrics.conformal import _bh, _conformal_pvalues
+
+    p = _conformal_pvalues(np.array([1.0, 2.0, 3.0, 4.0]), np.array([0.5, 2.0, 5.0]))
+    assert p == pytest.approx([5 / 5, 4 / 5, 1 / 5])
+    rng = np.random.default_rng(0)
+    pv = np.concatenate([rng.uniform(size=200), rng.uniform(0, 1e-3, 20)])
+    assert _bh(pv) == pytest.approx(false_discovery_control(pv, method="bh"))
+
+
+@pytest.mark.parametrize("method", ["pca", "iforest"])
+def test_conformal_novelty_flags_novel_and_controls_fdr(method):
+    """Inliers from the reference distribution vs a shifted novel population: novel cells get small p-values,
+    and the BH-flagged set keeps the inlier share near the FDR level; an all-inlier query flags (almost) none."""
+    from spatial_anno_metrics import conformal as em
+
+    rng = np.random.default_rng(0)
+    d = 30
+    W = rng.normal(size=(5, d))                              # inliers live near a 5-dim subspace
+    ref = rng.normal(size=(1000, 5)) @ W + 0.3 * rng.normal(size=(1000, d))
+    inl = rng.normal(size=(500, 5)) @ W + 0.3 * rng.normal(size=(500, d))
+    nov = rng.normal(size=(100, 5)) @ W + 0.3 * rng.normal(size=(100, d)) + 6.0 * rng.normal(size=(1, d))
+    q = np.vstack([inl, nov])
+    is_nov = np.r_[np.zeros(500, bool), np.ones(100, bool)]
+    r = em.conformal_novelty(q, ref, method=method, fdr=0.1, seed=0)
+    assert r["status"] == "ok" and r["summary"]["method"] == method
+    assert np.median(r["pvalues"][is_nov]) < 0.01 < np.median(r["pvalues"][~is_nov])
+    flagged = r["novel"]
+    assert flagged[is_nov].mean() > 0.8
+    assert (~is_nov[flagged]).mean() <= 0.15                      # false-discovery proportion
+    null = em.conformal_novelty(inl, ref, method=method, fdr=0.1, seed=0)
+    assert null["novel"].mean() <= 0.02
+
+
+def test_conformal_novelty_input_checks():
+    from spatial_anno_metrics import conformal as em
+
+    rng = np.random.default_rng(0)
+    with pytest.raises(ValueError, match="features"):
+        em.conformal_novelty(rng.normal(size=(5, 4)), rng.normal(size=(50, 3)))
+    with pytest.raises(ValueError, match="method"):
+        em.conformal_novelty(rng.normal(size=(5, 3)), rng.normal(size=(50, 3)), method="lof")
+    assert em.conformal_novelty(rng.normal(size=(5, 3)), rng.normal(size=(2, 3)))["status"] == "skipped"

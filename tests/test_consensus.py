@@ -1,0 +1,72 @@
+"""Tests for consensus.py - multi-annotator consensus with ontology-path voting (popV-style) and its entropy."""
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+import pytest
+
+anndata = pytest.importorskip("anndata")
+
+H = {"T_CD4": "T", "T_CD8": "T", "Treg": "T_CD4", "B": "Lymphoid", "T": "Lymphoid"}
+
+
+def _adata(rows):
+    """One cell per row; columns a0, a1, ... are the annotators."""
+    df = pd.DataFrame(rows, columns=[f"a{i}" for i in range(len(rows[0]))], dtype=object)
+    df.index = [f"c{i}" for i in range(len(df))]
+    return anndata.AnnData(X=np.zeros((len(df), 1), dtype="float32"), obs=df)
+
+
+def test_consensus_entropy_hand_cases():
+    from spatial_anno_metrics.consensus import consensus_entropy
+
+    a = _adata([["B", "B", "B"],                 # full agreement
+                ["T_CD4", "T_CD8", "T"],         # subtype split under one lineage
+                ["T_CD4", "T_CD4", "T_CD8"],     # majority subtype
+                ["Treg", "T_CD4", "T_CD8"],      # Treg votes for T_CD4 too -> T_CD4 has 2/3
+                ["B", "Myeloid", "Epi"],         # three roots: no label has a majority
+                ["B", "T_CD4", "Myeloid"]])      # B and T_CD4 both vote Lymphoid: 2/3 at the root
+    r = consensus_entropy(a, ["a0", "a1", "a2"], hierarchy=H)
+    assert r["status"] == "ok"
+    assert list(r["consensus"]) == ["B", "T", "T_CD4", "T_CD4", None, "Lymphoid"]
+    assert r["consensus_share"] == pytest.approx([1, 1, 2 / 3, 2 / 3, 1 / 3, 2 / 3])
+    h23 = -(2 / 3 * np.log(2 / 3) + 1 / 3 * np.log(1 / 3)) / np.log(3)
+    # entropy of the votes projected to the consensus depth: cell 1 -> T, T, T; cells 2-3 at depth 2 (Treg ->
+    # T_CD4); cell 4 (no consensus) at the roots; cell 5 at the roots: Lymphoid, Lymphoid, Myeloid
+    assert r["ontology_entropy"] == pytest.approx([0, 0, h23, h23, 1, h23])
+    assert r["entropy"] == pytest.approx([0, 1, h23, 1, 1, 1])             # flat: subtype splits count fully
+    s = r["summary"]
+    assert s["n_annotators"] == 3 and s["pct_no_consensus"] == pytest.approx(1 / 6)
+    assert s["mean_ontology_entropy"] < s["mean_entropy"]
+
+
+def test_consensus_without_hierarchy_is_flat_majority():
+    from spatial_anno_metrics.consensus import consensus_entropy
+
+    a = _adata([["T_CD4", "T_CD8", "T"], ["B", "B", "T"]])
+    r = consensus_entropy(a, ["a0", "a1", "a2"])
+    assert list(r["consensus"]) == [None, "B"]
+    assert r["ontology_entropy"] == pytest.approx(r["entropy"])
+    assert r["entropy"][0] == pytest.approx(1.0)
+
+
+def test_consensus_two_annotator_tie_has_no_consensus_without_a_shared_ancestor():
+    """Strict majority: 1 of 2 is not a consensus; with a hierarchy the shared parent is."""
+    from spatial_anno_metrics.consensus import consensus_entropy
+
+    a = _adata([["T_CD4", "T_CD8"]])
+    assert consensus_entropy(a, ["a0", "a1"])["consensus"][0] is None
+    assert consensus_entropy(a, ["a0", "a1"], hierarchy=H)["consensus"][0] == "T"
+
+
+def test_consensus_input_checks():
+    from spatial_anno_metrics.consensus import consensus_entropy
+
+    a = _adata([["B", None], ["B", "T"]])
+    with pytest.raises(ValueError, match="missing"):
+        consensus_entropy(a, ["a0", "a1"])
+    assert consensus_entropy(a, ["a0"])["status"] == "skipped"
+    with pytest.raises(ValueError, match="cycle"):
+        consensus_entropy(_adata([["X", "Y"]]), ["a0", "a1"], hierarchy={"X": "Y", "Y": "X"})
+    with pytest.raises(ValueError, match="min_share"):
+        consensus_entropy(_adata([["X", "Y"]]), ["a0", "a1"], min_share=0.4)

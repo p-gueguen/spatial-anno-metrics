@@ -68,12 +68,27 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
                                      "(docs/ROADMAP.md 8e)"),
         "nmp_max_neg_frac": _e(0.05, "SegTraQ markers_from_reference rarity rule (github.com/LazDaria/SegTraQ): "
                                      "a negative is detected in <= 5 % of the type's reference cells", False),
-        "nmp_min_other_frac": _e(0.25, "SegTraQ markers_from_reference rarity rule: ... and in >= 25 % of "
-                                       "another type's", False),
+        "nmp_min_other_frac": _e(0.25, f"{_PKG}: ... and in >= 25 % of another type's (SegTraQ's "
+                                       "markers_from_reference uses min_pos_frac=0.1 plus a DE step; "
+                                       "its 0.25 is MECR's detection floor)"),
         "ncp_coexpr_threshold": _e(0.1, f"{_PKG}: a gene pair co-detected in <= 10 % of the cells detecting "
                                         "either is non-coexpressed"),
         "ncp_max_genes": _e(400, f"{_PKG}: tractability cap on shared genes (top by reference mean)"),
         "ncp_max_pairs": _e(2000, f"{_PKG}: tractability cap on candidate pairs"),
+        "null_draws": _e(20, f"{_PKG}: draws of the detection-matched null for crisp_purity / mecr "
+                             "(docs/ROADMAP.md 8e)"),
+        "nmp_salas_max_share": _e(0.005, "Salas et al. 2025 NMP as txsim negative_marker_purity_reads: "
+                                         "(gene, type) is negative when the type holds < 0.5 % of the gene's "
+                                         "type-balanced reference expression", False),
+        "nmp_salas_min_cells": _e(10, "txsim negative_marker_purity_reads: types with >= 10 cells in both "
+                                      "section and reference", False),
+        "nmp_n_permutations": _e(20, "Salas et al. 2025 Methods: 0 = mean NMP over 20 random permutations of "
+                                     "the cell-type labels", False),
+        "coexpr_min_cells": _e(20, "txsim coexpression_similarity: a gene must be detected in >= 20 cells of "
+                                   "each modality", False),
+        "coexpr_target_sum": _e(1e4, f"{_PKG}: log1p(target_sum * counts / total) before the correlations "
+                                     "(txsim reads a lognorm layer; OpenProblems normalises to the median "
+                                     "total)"),
     },
     "spatial": {
         "coherence_n_neighs": _e(15, f"{_PKG}; Shang & Zhou 2022 use 10 neighbours (docs/ROADMAP.md #2)"),

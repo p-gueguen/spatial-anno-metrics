@@ -101,6 +101,15 @@ give different values (1.0 vs 0.999641 on the clean section), so the check tells
 
 ## Ours vs reference
 
+**Since 0.7.0** `nmp(score="salas")`, the default, re-implements txsim reads from the definitions above and
+matches it: overall, the 6 `per_celltype` and 22 `per_gene` values and the 20 stored-permutation values, max
+|diff| 8.7e-19 on both sections under Python 3.10 and 3.12 (`tests/test_purity.py::test_nmp_salas_matches_txsim_reads`,
+tolerance 1e-12; it fails when the 0.5 % cut is halved or multiplied by 20, or the per-pair clip is dropped,
+but not at x2: no pair here sits between 0.5 % and 1 %, so `test_nmp_salas_share_cut_is_strict` pins the cut). Its
+scaling draws its own 20 permutations (seed 0), so `b` differs from the stored ones: 0.833789 / 0.834392,
+scaled 1.0000 / 0.9838, the same to 4 decimals as `scaled_overall`. The Moldia reads criterion is not
+implemented. The v0.6.0 score below is `score="raw"`; its values are unchanged.
+
 Ours = `spatial_anno_metrics.nmp` at `f71512f` (v0.6.0), called as a user would: the full 102-gene section
 and the reference, labels in `obs['cell_type']`. A gene is a negative for type `t` when it is detected in
 <= 5 % of `t`'s reference cells and >= 25 % of another type's; each cell scores the fraction of its counts

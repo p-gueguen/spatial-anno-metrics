@@ -100,3 +100,54 @@ def test_cohens_d_is_undefined_not_zero_for_a_constant_marker_load():
     out = fd.marker_program_fidelity(a, "cell_type", {"T cell": ["CD3D"], "Mel": ["N0"]})
     assert out["per_type"]["Mel"]["cohens_d"] is None
     assert out["mean_cohens_d"] == pytest.approx(out["per_type"]["T cell"]["cohens_d"])
+
+
+def test_fidelity_reports_labels_without_markers():
+    from spatial_anno_metrics import fidelity as fd
+
+    a = _marker_adata()
+    a.obs["cell_type"] = a.obs["cell_type"].astype(str)
+    a.obs.loc[a.obs_names[:12], "cell_type"] = "NK"
+    ms = {"T cell": ["CD3D", "CD3E", "TRAC"], "Mel": ["MLANA", "SOX10", "DCT"], "B": ["NOT_ON_PANEL"]}
+    for fn in (fd.marker_program_fidelity, fd.marker_gene_overlap):
+        out = fn(a, "cell_type", ms)
+        assert out["labels_without_markers"] == ["NK"] and out["no_dict_frac"] == pytest.approx(0.1), fn
+
+
+def test_fidelity_int_labels_with_int_keys():
+    from spatial_anno_metrics import fidelity as fd
+
+    a = _marker_adata()
+    ms = {"T cell": ["CD3D", "CD3E", "TRAC"], "Mel": ["MLANA", "SOX10", "DCT"]}
+    want = fd.marker_program_fidelity(a, "cell_type", ms)
+    b = a.copy()
+    b.obs["cell_type"] = (b.obs["cell_type"] == "Mel").astype(int).to_numpy()
+    got = fd.marker_program_fidelity(b, "cell_type", {0: ms["T cell"], 1: ms["Mel"]})
+    assert got["mean_auc"] == pytest.approx(want["mean_auc"]) and set(got["per_type"]) == {"0", "1"}
+    assert fd.marker_gene_overlap(b, "cell_type", {0: ms["T cell"], 1: ms["Mel"]})["mean_overlap"] == \
+        pytest.approx(fd.marker_gene_overlap(a, "cell_type", ms)["mean_overlap"])
+
+
+def test_fidelity_sparse_matches_dense():
+    from scipy import sparse
+
+    from spatial_anno_metrics import fidelity as fd
+
+    ms = {"T cell": ["CD3D", "CD3E", "TRAC"], "Mel": ["MLANA", "SOX10", "DCT"]}
+    a = _marker_adata(correct=False, seed=4)
+    s = a.copy()
+    s.X = sparse.csr_matrix(s.X)
+    d1, d2 = fd.marker_program_fidelity(a, "cell_type", ms), fd.marker_program_fidelity(s, "cell_type", ms)
+    assert d1 == d2
+    o1 = fd.marker_gene_overlap(a, "cell_type", ms, n_top=5)
+    assert o1["per_type"] == fd.marker_gene_overlap(s, "cell_type", ms, n_top=5)["per_type"]
+
+
+def test_sparse_column_moments_equal_dense():
+    from scipy import sparse
+
+    from spatial_anno_metrics.fidelity import _mean_var
+
+    X = np.random.default_rng(0).poisson(1.5, size=(50, 7)).astype(float)
+    for got, want in zip(_mean_var(sparse.csr_matrix(X)), _mean_var(X)):
+        np.testing.assert_allclose(got, want, rtol=1e-12, atol=1e-12)

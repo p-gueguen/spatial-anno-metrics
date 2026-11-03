@@ -81,7 +81,11 @@ def main() -> None:
                            "per_gene_as_target": nmp.series(by_row)}
         results[s] = r
         a = nmp.to_adata(OUT / f"section_{s}.npz", key="cell_type")
-        ours[s] = sam.ncp(a, nmp.to_adata(OUT / "reference.npz", key="cell_type"))
+        ref_a = nmp.to_adata(OUT / "reference.npz", key="cell_type")
+        ours[s] = {**sam.ncp(a, ref_a),
+                   "coexpr": sam.coexpression_similarity(a, ref_a)["coexpression_similarity"],
+                   "coexpr_by_type": sam.coexpression_similarity(a, ref_a, label_key="cell_type")[
+                       "coexpression_similarity"]}
 
     nmp.write_json(OUT / "expected.json", {
         "generated": date.today().isoformat(),
@@ -89,13 +93,15 @@ def main() -> None:
         "lognorm_target_sum": TARGET_SUM,
         "results": results})
 
-    print("| section | txsim coexpression_similarity | txsim by cell type | Moldia NCP (pairs) | ours ncp |")
-    print("|---|---|---|---|---|")
+    print("| section | txsim coexpression_similarity | txsim by cell type | Moldia NCP (pairs) | ours ncp | "
+          "ours coexpression_similarity | ours, by cell type |")
+    print("|---|---|---|---|---|---|---|")
     for s in nmp.SECTIONS:
         r, m = results[s], results[s]["moldia_ncp"]
         print(f"| {s} | {r['txsim_coexpression_similarity']['overall']:.6f} | "
               f"{r['txsim_coexpression_similarity_by_celltype']['overall']:.6f} | "
-              f"{m['overall']:.6f} ({m['n_negative_pairs']}) | {ours[s].get('ncp', ours[s])} |")
+              f"{m['overall']:.6f} ({m['n_negative_pairs']}) | {ours[s].get('ncp', ours[s])} | "
+              f"{ours[s]['coexpr']:.6f} | {ours[s]['coexpr_by_type']:.6f} |")
     for s in nmp.SECTIONS:
         by_ct = results[s]["txsim_coexpression_similarity_by_celltype"]["per_celltype"]
         print(s, "by cell type:", {k: round(v, 6) for k, v in by_ct.items()},

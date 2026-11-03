@@ -103,3 +103,69 @@ def test_dictionary_coverage():
     out = dictionary_coverage(np.array(["A", "A", "B", "C"]), {"A": ["g1"], "B": [], "D": ["g2"]})
     assert out == {"no_dict_frac": 0.5, "labels_without_markers": ["B", "C"]}   # B empty, C absent
     assert dictionary_coverage(["A"], {"A": ["g1"]}) == {"no_dict_frac": 0.0, "labels_without_markers": []}
+
+
+def test_get_counts_checks_rows_beyond_the_first():
+    """Counts in row 0, a non-integer further down: still not raw counts."""
+    from spatial_anno_metrics._validate import get_counts
+
+    X = np.ones((10, 3))
+    X[7, 1] = 0.5
+    a = _adata(X)
+    with pytest.raises(ValueError, match="layer="):
+        get_counts(a, "counts")
+    _, w = _user_warnings(lambda: get_counts(a, None))
+    assert len(w) == 1
+
+
+def test_layer_is_keyword_only_in_every_public_function():
+    import inspect
+
+    import spatial_anno_metrics as sam
+
+    kinds = {}
+    for name in sam.__all__:
+        fn = getattr(sam, name)
+        if callable(fn) and "layer" in inspect.signature(fn).parameters:
+            kinds[name] = inspect.signature(fn).parameters["layer"].kind
+    assert {"panel_resolvability", "per_cell_confidence", "label_stability", "inter_sample_consistency"} <= set(kinds)
+    assert len(kinds) >= 18
+    assert [n for n, k in kinds.items() if k is not inspect.Parameter.KEYWORD_ONLY] == []
+
+
+def _nan_label_section():
+    """40 cells x 30 genes of counts with coordinates, an embedding, a sample column and 2 NaN labels."""
+    rng = np.random.default_rng(0)
+    X = rng.poisson(2.0, size=(40, 30)).astype("float32")
+    a = _adata(X, pd.Series(["A"] * 19 + [None] + ["B"] * 19 + [np.nan], dtype=object).to_numpy())
+    a.layers["counts"] = a.X.copy()
+    a.obsm["X_pca"] = rng.normal(size=(40, 5))
+    a.obsm["spatial"] = rng.uniform(0, 10, size=(40, 2))
+    a.obs["sample"] = ["s1", "s2"] * 20
+    a.obs["truth"] = ["A"] * 20 + ["B"] * 20
+    return a
+
+
+_MARKERS = {"A": ["g0", "g1"], "B": ["g2", "g3"]}
+_NAN_LABEL_CALLS = {
+    "internal_validity": lambda sam, a: sam.internal_validity(a, "cell_type"),
+    "inter_sample_consistency": lambda sam, a: sam.inter_sample_consistency(a, "cell_type", "sample"),
+    "marker_program_fidelity": lambda sam, a: sam.marker_program_fidelity(a, "cell_type", _MARKERS),
+    "marker_gene_overlap": lambda sam, a: sam.marker_gene_overlap(a, "cell_type", _MARKERS),
+    "avg_bio": lambda sam, a: sam.avg_bio(a, "cell_type", "truth"),
+    "panel_resolvability": lambda sam, a: sam.panel_resolvability(a, "cell_type", list(a.var_names)),
+    "pmp": lambda sam, a: sam.pmp(a, _MARKERS, "cell_type"),
+    "nmp": lambda sam, a: sam.nmp(a, a.copy(), "cell_type", "truth"),
+    "spatial_coherence": lambda sam, a: sam.spatial_coherence(a, "cell_type"),
+    "neighborhood_sanity": lambda sam, a: sam.neighborhood_sanity(a, "cell_type"),
+    "neighbor_contamination": lambda sam, a: sam.neighbor_contamination(a, _MARKERS, "cell_type"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_NAN_LABEL_CALLS))
+def test_every_label_metric_refuses_nan_labels(name):
+    """Each label metric routes its labels through check_labels (a bypass scores NaN as a type called 'nan')."""
+    import spatial_anno_metrics as sam
+
+    with pytest.raises(ValueError, match=r"obs\['cell_type'\] has 2 missing"):
+        _NAN_LABEL_CALLS[name](sam, _nan_label_section())

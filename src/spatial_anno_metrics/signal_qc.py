@@ -66,7 +66,8 @@ def moran_signal(adata, n_neighs: int = _thr("signal_qc", "moran_n_neighs"), gen
     Real genes carry spatial structure (I well above 0); control probes do not (I~0), so the
     **separation** between the two distributions is a reference-free spatial signal-quality score.
     Builds ``obsp['spatial_connectivities']`` via ``sq.gr.spatial_neighbors`` if absent, then calls
-    the fast, parallel ``sq.gr.spatial_autocorr``. Returns medians, the separation, and the fraction
+    the fast, parallel ``sq.gr.spatial_autocorr``; squidpy leaves ``uns['moranI']`` (and, when it built the
+    graph, ``uns['spatial_neighbors']``) on ``adata``. Returns medians, the separation, and the fraction
     of genes whose I exceeds the controls' 95th percentile (needs coords in ``obsm['spatial']``).
     Returns ``{status, median_gene_moran, median_control_moran, n_genes, n_controls, [separation,
     frac_genes_above_control_p95], matrix}``.

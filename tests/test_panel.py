@@ -49,3 +49,31 @@ def test_panel_resolvability_insufficient_overlap():
     a = _panel_ref()
     res = em.panel_resolvability(a, "cell_type", {"zzz1", "zzz2"}, target_depth=40)
     assert res["status"] == "skipped" and "0 genes shared" in res["reason"] and res["n_shared_genes"] == 0
+
+
+def _log_with_counts(a):
+    """The same cells with log1p(CP10k) in X and the raw counts in layers['counts']."""
+    b = a.copy()
+    b.layers["counts"] = a.X.copy()
+    X = np.asarray(a.X, dtype=float)
+    b.X = np.log1p(X / X.sum(1, keepdims=True) * 1e4).astype("float32")
+    return b
+
+
+def test_panel_resolvability_thins_the_count_layer_never_log_X():
+    """Thinning is load-bearing: log X must never be scored at full depth. The counts come from ``layer``."""
+    from spatial_anno_metrics import panel as em
+
+    a, panel = _panel_ref(), {f"g{i}" for i in range(39)}
+    raw = em.panel_resolvability(a, "cell_type", panel, target_depth=3)
+    full = em.panel_resolvability(a, "cell_type", panel, target_depth=1e6)
+    assert raw["macro_f1"] < full["macro_f1"] - 0.1               # 3 counts per cell blur the markers
+    b = _log_with_counts(a)
+    via_layer = em.panel_resolvability(b, "cell_type", panel, target_depth=3)
+    assert raw["matrix"] == "X" and via_layer["matrix"] == "layers['counts']"
+    assert via_layer["macro_f1"] == raw["macro_f1"] and via_layer["per_type"] == raw["per_type"]
+    b.layers["raw"] = b.layers.pop("counts")
+    named = em.panel_resolvability(b, "cell_type", panel, target_depth=3, layer="raw")
+    assert named["matrix"] == "layers['raw']" and named["macro_f1"] == raw["macro_f1"]
+    with pytest.raises(ValueError, match="layer="):                # log X, no counts layer: no silent full depth
+        em.panel_resolvability(b, "cell_type", panel, target_depth=3)

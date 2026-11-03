@@ -186,12 +186,12 @@ def nmp(adata, reference=None, label_key: str = "cell_type", ref_label_key: str 
     - cells of the listed types (absent from the reference, or no gene passes the rule) score 0 by
     construction, not because they are clean. The reference's own ``X`` is read for detection only."""
     if reference is None:
-        return {"status": "skipped", "reason": "no reference"}
+        return skip("no reference")
     import numpy as np
 
     shared = [g for g in adata.var_names if g in set(reference.var_names)]
     if not shared:
-        return {"status": "skipped", "reason": "no shared genes with reference"}
+        return skip("no shared genes with reference")
 
     labels = check_labels(adata, label_key)
     ref_labels = check_labels(reference, ref_label_key)
@@ -237,12 +237,12 @@ def ncp(adata, reference=None, coexpr_threshold: float = _thr("purity", "ncp_coe
     the top ``max_genes`` by reference mean expression and the candidate pairs to ``max_pairs`` (stable
     order, no RNG). Label-free (the reference's labels are not used). Returns ``{status, ncp, matrix}``."""
     if reference is None:
-        return {"status": "skipped", "reason": "no reference"}
+        return skip("no reference")
     import numpy as np
 
     shared = [g for g in adata.var_names if g in set(reference.var_names)]
     if len(shared) < 2:
-        return {"status": "skipped", "reason": "fewer than 2 shared genes with reference"}
+        return skip("fewer than 2 shared genes with reference")
 
     ref_idx = {g: i for i, g in enumerate(reference.var_names)}
     ref_gi = [ref_idx[g] for g in shared]
@@ -266,7 +266,7 @@ def ncp(adata, reference=None, coexpr_threshold: float = _thr("purity", "ncp_coe
             pairs.append((i, j))
     pairs = pairs[:max_pairs]  # deterministic cap
     if not pairs:
-        return {"status": "skipped", "reason": "no non-coexpressed reference gene pairs found"}
+        return skip("no non-coexpressed reference gene pairs found")
 
     var_idx = {g: i for i, g in enumerate(adata.var_names)}
     gi = [var_idx[g] for g in shared]

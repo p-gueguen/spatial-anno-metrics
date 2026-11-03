@@ -81,3 +81,22 @@ def test_fidelity_reads_counts_and_skips_a_single_label():
     for fn in (em.marker_program_fidelity, em.marker_gene_overlap):
         out = fn(a, "cell_type", markers, layer=None)
         assert out["status"] == "skipped" and "found 1" in out["reason"]
+
+
+def test_fidelity_skips_when_no_marker_is_on_the_panel():
+    from spatial_anno_metrics import fidelity as fd
+
+    a = _marker_adata()
+    off = {"T cell": ["NOPE1"], "Mel": ["NOPE2"]}
+    for out in (fd.marker_program_fidelity(a, "cell_type", off), fd.marker_gene_overlap(a, "cell_type", off)):
+        assert out["status"] == "skipped" and "on the panel" in out["reason"]
+
+
+def test_cohens_d_is_undefined_not_zero_for_a_constant_marker_load():
+    from spatial_anno_metrics import fidelity as fd
+
+    a = _marker_adata()
+    a.X[:, a.var_names.get_loc("N0")] = 0                        # a marker set that is all zeros
+    out = fd.marker_program_fidelity(a, "cell_type", {"T cell": ["CD3D"], "Mel": ["N0"]})
+    assert out["per_type"]["Mel"]["cohens_d"] is None
+    assert out["mean_cohens_d"] == pytest.approx(out["per_type"]["T cell"]["cohens_d"])

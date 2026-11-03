@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 
 from ._utils import _dense
-from ._validate import check_labels, skip
+from ._validate import check_labels, get_counts, skip
 from .external import external_scores
 from .thresholds import value as _thr
 
@@ -20,7 +20,7 @@ _C, _MAX_ITER, _SCALE = _thr("panel", "logreg_C"), _thr("panel", "logreg_max_ite
 # --------------------------------------------------------------------------- #
 def panel_resolvability(reference, label_key: str, panel_genes, target_depth: float = _thr("panel", "target_depth"),
                         *, max_cells_per_type: int = _thr("panel", "max_cells_per_type"),
-                        cv: int = _thr("panel", "cv_folds"), seed: int = 0) -> dict:
+                        cv: int = _thr("panel", "cv_folds"), seed: int = 0, layer: str | None = "counts") -> dict:
     """Can a target panel resolve this reference's cell types AT THE PANEL'S OWN DEPTH?
 
     Restrict the reference to the genes it shares with ``panel_genes``, **binomially thin each cell
@@ -38,11 +38,14 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
     meaningful for a **tissue-matched** reference x panel pair (a wrong-tissue reference can score
     high here and still annotate nonsense).
 
+    The counts to thin are the matrix chosen by ``layer`` (see ``get_counts``): a log-normalised ``X``
+    with no counts layer raises instead of being scored at full depth; a non-count matrix is rounded to
+    counts, with one warning.
+
     Returns ``{status, n_shared_genes, n_types, macro_f1, balanced_accuracy, ecs, frac_resolvable,
-    frac_not_resolvable, per_type: {ct: {f1, recall, precision, confused_with, confused_frac, tier}}}``.
+    frac_not_resolvable, per_type: {ct: {f1, recall, precision, confused_with, confused_frac, tier}}, matrix}``.
     Fewer than 25 shared genes or 2 types with >= 10 cells -> a skip (with ``n_shared_genes``, ``per_type``).
     """
-    import scipy.sparse as sp
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import precision_recall_fscore_support
     from sklearn.model_selection import StratifiedKFold, cross_val_predict
@@ -52,33 +55,27 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
     if len(shared) < _MIN_SHARED:
         return {**skip(f"{len(shared)} genes shared with the panel, need >= {_MIN_SHARED}"),
                 "n_shared_genes": len(shared), "per_type": {}}
-    sub = reference[:, shared].copy()
-    xs = sub.X[:200].toarray() if sp.issparse(sub.X) else np.asarray(sub.X[:200])
-    raw = bool(np.allclose(xs, np.round(xs)) and xs.max() > 1)
-    if not raw and "counts" in sub.layers:
-        sub.X = sub.layers["counts"]
-        raw = True
+    y = check_labels(reference, label_key)
+    mat, matrix = get_counts(reference[:, shared], layer)
     rng = np.random.default_rng(seed)
-    y = check_labels(sub, label_key)
     idx: list = []
     for ct in np.unique(y):
         pos = np.where(y == ct)[0]
         idx.extend(pos if len(pos) <= max_cells_per_type
                    else rng.choice(pos, max_cells_per_type, replace=False))
-    sub = sub[np.array(sorted(idx))].copy()
-    y = check_labels(sub, label_key)
+    idx = np.array(sorted(idx))
+    y = y[idx]
     keep = {ct for ct, n in zip(*np.unique(y, return_counts=True)) if n >= _MIN_CELLS}
     m = np.isin(y, list(keep))
-    sub, y = sub[m].copy(), y[m]
+    idx, y = idx[m], y[m]
     if len(np.unique(y)) < 2:
         return {**skip(f"fewer than 2 reference types with >= {_MIN_CELLS} cells"),
                 "n_shared_genes": len(shared), "per_type": {}}
-    if raw:                                                        # thin to the panel's real depth
-        A = (sub.X.toarray() if sp.issparse(sub.X) else np.asarray(sub.X)).astype(np.int64)
-        tot = A.sum(1, keepdims=True)
-        p = np.clip(target_depth / np.maximum(tot, 1), 0.0, 1.0)
-        sub.X = sp.csr_matrix(rng.binomial(A, np.broadcast_to(p, A.shape)).astype("float32"))
-    Xn = _dense(sub.X).astype(float)                             # library-size normalize + log1p (no scanpy dep)
+    A = np.rint(_dense(mat[idx])).astype(np.int64)                 # thin to the panel's real depth
+    tot = A.sum(1, keepdims=True)
+    p = np.clip(target_depth / np.maximum(tot, 1), 0.0, 1.0)
+    Xn = rng.binomial(A, np.broadcast_to(p, A.shape)).astype("float32").astype(float)
+    # library-size normalize + log1p (no scanpy dep)
     lib = Xn.sum(1, keepdims=True)
     lib[lib == 0] = 1.0
     X = np.log1p(Xn / lib * _SCALE)
@@ -107,4 +104,4 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
             "macro_f1": ext["macro_f1"], "balanced_accuracy": ext["balanced_accuracy"], "ecs": ext["ecs"],
             "frac_resolvable": float(np.mean([t == "resolvable" for t in tiers])),
             "frac_not_resolvable": float(np.mean([t == "not_resolvable" for t in tiers])),
-            "per_type": per}
+            "per_type": per, "matrix": matrix}

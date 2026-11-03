@@ -19,7 +19,8 @@ def marker_program_fidelity(adata, label_key: str, marker_sets: dict[str, list[s
     """Do the labels track the marker programs? Per type, AUC-ROC + Cohen's d of that type's
     marker-load score at ranking its own labeled cells above the rest (reference-free given the
     marker sets). Reads the count matrix chosen by ``layer`` (see ``get_counts``). Returns
-    ``{status, per_type: {auc, cohens_d, n}, mean_auc, mean_cohens_d, matrix}``; fewer than 2 labels -> a skip."""
+    ``{status, per_type: {auc, cohens_d, n}, mean_auc, mean_cohens_d, matrix}`` (``cohens_d`` is None when the
+    marker load is constant); fewer than 2 labels, or no type scorable, -> a skip."""
     from sklearn.metrics import roc_auc_score
 
     var_index = {g: i for i, g in enumerate(map(str, adata.var_names))}
@@ -45,11 +46,14 @@ def marker_program_fidelity(adata, label_key: str, marker_sets: dict[str, list[s
         pos, neg = score[y == 1], score[y == 0]
         num = (len(pos) - 1) * pos.var(ddof=1) + (len(neg) - 1) * neg.var(ddof=1)
         sd = np.sqrt(num / max(1, len(pos) + len(neg) - 2))
-        d = float((pos.mean() - neg.mean()) / sd) if sd > 0 else 0.0
+        d = float((pos.mean() - neg.mean()) / sd) if sd > 0 else None     # constant load: undefined
         per[t] = {"auc": auc, "cohens_d": d, "n": int(y.sum())}
         if auc is not None:
             aucs.append(auc)
-        ds.append(d)
+        if d is not None:
+            ds.append(d)
+    if not aucs and not ds:
+        return skip("no labelled type has a marker on the panel and cells on both sides")
     return {
         "status": "ok", "per_type": per,
         "mean_auc": float(np.mean(aucs)) if aucs else None,
@@ -64,7 +68,7 @@ def marker_gene_overlap(adata, label_key: str, marker_sets: dict[str, list[str]]
     the top-``n_top`` data-derived DE genes for that label (standardized in-vs-out mean difference).
     Reference-free given marker sets; the DE-overlap complement to :func:`marker_program_fidelity`'s
     ranking view. Reads the count matrix chosen by ``layer``. Returns ``{status, per_type: {overlap,
-    n_curated}, mean_overlap, matrix}``; fewer than 2 labels -> a skip."""
+    n_curated}, mean_overlap, matrix}``; fewer than 2 labels, or no type scorable, -> a skip."""
     genes = np.array(list(map(str, adata.var_names)))
     gene_set = set(genes)
     labels = check_labels(adata, label_key)
@@ -84,5 +88,7 @@ def marker_gene_overlap(adata, label_key: str, marker_sets: dict[str, list[str]]
         ov = len(top & set(cur)) / len(cur)
         per[t] = {"overlap": float(ov), "n_curated": len(cur)}
         fracs.append(ov)
+    if not fracs:
+        return skip("no labelled type has a marker on the panel and >= 2 cells on both sides")
     return {"status": "ok", "per_type": per, "mean_overlap": float(np.mean(fracs)) if fracs else None,
             "matrix": matrix}

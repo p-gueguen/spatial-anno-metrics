@@ -120,7 +120,8 @@ def hierarchical_accuracy(*, y_true, y_pred, hierarchy: dict[str, str],
 
 def composition_accuracy(*, y_true, y_pred) -> dict:
     """Predicted vs true cell-type **proportions**: L1 (total-variation-ish), Pearson r, and
-    Jensen-Shannon divergence. Keyword-only. Returns ``{status, l1, pearson, jsd, predicted, true}``."""
+    Jensen-Shannon divergence. Keyword-only. Returns ``{status, l1, pearson, jsd, predicted, true}``; ``pearson``
+    is NaN when undefined (one type, or equal shares on either side)."""
     import pandas as pd
     from scipy.spatial.distance import jensenshannon
 
@@ -130,7 +131,7 @@ def composition_accuracy(*, y_true, y_pred) -> dict:
     p = pred.value_counts(normalize=True).reindex(types).fillna(0).to_numpy()
     q = truth.value_counts(normalize=True).reindex(types).fillna(0).to_numpy()
     l1 = float(np.abs(p - q).sum())
-    pear = float(np.corrcoef(p, q)[0, 1]) if len(types) > 1 and p.std() > 0 and q.std() > 0 else 1.0
+    pear = float(np.corrcoef(p, q)[0, 1]) if len(types) > 1 and p.std() > 0 and q.std() > 0 else float("nan")
     jsd = float(jensenshannon(p, q) ** 2)                         # jensenshannon returns the distance (sqrt of div)
     return {"status": "ok", "l1": l1, "pearson": pear, "jsd": jsd,
             "predicted": dict(zip(types, p.tolist())), "true": dict(zip(types, q.tolist()))}

@@ -28,7 +28,7 @@ def _dense(x):
     return x.toarray() if hasattr(x, "toarray") else np.asarray(x)
 
 
-def per_cell_confidence(adata, marker_sets: dict[str, list[str]], layer: str | None = "counts", *,
+def per_cell_confidence(adata, marker_sets: dict[str, list[str]], *, layer: str | None = "counts",
                         key_added: tuple[str, str] = ("sam_marker_margin", "sam_marker_entropy")) -> dict:
     """Per-cell marker-score **margin** + **entropy** from panel-restricted lineage marker sets.
 
@@ -80,8 +80,8 @@ def _subsample_counts(counts, drop_frac: float, rng) -> "np.ndarray":
 
 
 def label_stability(adata, annotate_fn, drop_frac: float = _thr("confidence", "stability_drop_frac"),
-                    reps: int = _thr("confidence", "stability_reps"), seed: int = 0,
-                    layer: str | None = "counts", *, key_added: str = "sam_label_stability") -> dict:
+                    reps: int = _thr("confidence", "stability_reps"), seed: int = 0, *,
+                    layer: str | None = "counts", key_added: str = "sam_label_stability") -> dict:
     """Annotation robustness under transcript subsampling (reference-free). Baseline labels come from
     ``annotate_fn(adata) -> array[str] of length n_obs``; then for ``reps`` reps, drop ``drop_frac`` of
     each cell's counts, re-run ``annotate_fn`` on the thinned copy, and record the label-flip rate.

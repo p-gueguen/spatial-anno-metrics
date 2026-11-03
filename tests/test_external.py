@@ -71,6 +71,8 @@ def test_composition_accuracy():
     assert same["jsd"] == pytest.approx(0.0, abs=1e-9)
     diff = em.composition_accuracy(y_true=truth, y_pred=np.array(["A"] * 90 + ["B"] * 10))
     assert diff["l1"] > 0
+    flat = em.composition_accuracy(y_true=np.array(["A", "B"] * 5), y_pred=np.array(["A", "B"] * 5))
+    assert np.isnan(flat["pearson"])                              # equal shares: r is undefined, not 1.0
 
 
 def test_deconvolution_metrics_perfect_and_degraded():

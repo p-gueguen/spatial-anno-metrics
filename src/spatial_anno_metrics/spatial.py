@@ -77,15 +77,16 @@ def neighborhood_sanity(adata, label_key: str = "cell_type", n_neighs: int = _th
     (permutation z-score) and flags any type whose STRONGEST partner is a different type - a mild
     systematic-mislabeling smell (e.g. two labels that are really one, or a swap). Reference-free
     (labels + coords). Returns ``{status, categories, self_enrichment (diagonal), suspicious[...]}``; fewer
-    than 2 labels -> a skip. Runs on a copy of the label column (unused levels dropped): the caller's column
-    and ``uns`` are left as they are."""
+    than 2 labels -> a skip. Runs on a copy of the label column (unused levels dropped), so the caller's
+    column is left as it is; like the other spatial metrics it caches the spatial graph on ``adata`` when
+    absent (``obsp['spatial_connectivities']``, ``obsp['spatial_distances']``, ``uns['spatial_neighbors']``)."""
     import anndata as ad
     import pandas as pd
 
-    sq = _squidpy()
     labels = check_labels(adata, label_key)
     if len(np.unique(labels)) < 2:
         return skip(f"need >= 2 labels in adata.obs[{label_key!r}], found {len(np.unique(labels))}")
+    sq = _squidpy()
     _ensure_spatial_graph(adata, n_neighs=n_neighs)
     col = adata.obs[label_key]
     col = (col.cat.remove_unused_categories() if isinstance(col.dtype, pd.CategoricalDtype)
@@ -121,23 +122,26 @@ def neighbor_contamination(adata, marker_sets: dict[str, list[str]], label_key: 
     mislabel. Returns ``{status, mean_contamination, n_evaluable, source_target, n_source_target, matrix}``:
     ``source_target`` is the source (rows) x target (columns) mean per-cell contamination over the
     ``n_source_target`` evaluable target cells; ``matrix`` names the count matrix read (see ``get_counts``).
+    Fewer than 2 labels with an on-panel marker set, or no evaluable cell, -> a skip (nothing written).
     Re-implements SegTraQ's ``contamination_strength`` (github.com/LazDaria/SegTraQ), vectorized over
     cells; reuses ``obsp['spatial_connectivities']`` (squidpy kNN if absent)."""
     import pandas as pd
 
     labels = check_labels(adata, label_key)
     mat, matrix = get_counts(adata, layer)
+    panel = {g: i for i, g in enumerate(adata.var_names)}
+    sets = {ct: {g for g in mk if g in panel} for ct, mk in marker_sets.items()}
+    types = [str(t) for t in np.unique(labels) if sets.get(t)]
+    if len(types) < 2:
+        return skip(f"need >= 2 labels in adata.obs[{label_key!r}] with an on-panel marker set, found {len(types)}")
     _ensure_spatial_graph(adata, n_neighs=n_neighs)
     A = adata.obsp["spatial_connectivities"].tocsc()
 
-    panel = {g: i for i, g in enumerate(adata.var_names)}
-    sets = {ct: {g for g in mk if g in panel} for ct, mk in marker_sets.items()}
     genes = sorted(set().union(*sets.values()))
     col = {g: j for j, g in enumerate(genes)}
     sub = mat[:, [panel[g] for g in genes]]
     Xm = sub.toarray() if hasattr(sub, "toarray") else np.asarray(sub)        # cells x marker genes
     total = np.asarray(mat.sum(axis=1)).ravel().astype(float)
-    types = [str(t) for t in np.unique(labels) if sets.get(t)]
 
     local = np.zeros(Xm.shape, dtype=bool)             # cell x gene: a local contaminant of that cell
     M = pd.DataFrame(np.nan, index=types, columns=types)
@@ -161,10 +165,12 @@ def neighbor_contamination(adata, marker_sets: dict[str, list[str]], label_key: 
             local[np.ix_(tgt, g)] |= hit               # a gene two sources share is counted once per cell
 
     evaluable = local.any(axis=1)
+    if not evaluable.any():
+        return skip("no cell touches another marker-set type that could spill into it")
     frac = np.full(adata.n_obs, np.nan)
     frac[evaluable] = (Xm * local).sum(axis=1)[evaluable] / total[evaluable]
     adata.obs[key_added] = frac
-    out = {"status": "ok", "mean_contamination": float(np.nanmean(frac)) if evaluable.any() else float("nan"),
+    out = {"status": "ok", "mean_contamination": float(np.nanmean(frac)),
            "n_evaluable": int(evaluable.sum()), "source_target": M, "n_source_target": N, "matrix": matrix}
     _store(adata, "neighbor_contamination", out, key_added)
     return out

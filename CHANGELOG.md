@@ -44,10 +44,16 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
 
 **Count matrices**
 
-- Count-based metrics take `layer=` and name the matrix they read in the result (`"matrix": "layers['counts']"`
-  or `"X"`): `crisp_purity`, `mecr`, `pmp`, `nmp`, `ncp`, `neighbor_contamination`, `per_cell_confidence`,
-  `label_stability`, `marker_program_fidelity`, `marker_gene_overlap`, `moran_signal`, `signal_to_noise`,
-  `sparsity`, `detection_entropy`, `tx_per_area`, `run_signal_qc` and `inter_sample_consistency`.
+- Count-based metrics take a keyword-only `layer=` and name the matrix they read in the result
+  (`"matrix": "layers['counts']"` or `"X"`): `crisp_purity`, `mecr`, `pmp`, `nmp`, `ncp`, `neighbor_contamination`,
+  `per_cell_confidence`, `label_stability`, `marker_program_fidelity`, `marker_gene_overlap`, `moran_signal`,
+  `signal_to_noise`, `sparsity`, `detection_entropy`, `tx_per_area`, `run_signal_qc`, `inter_sample_consistency`
+  and `panel_resolvability`. `per_cell_confidence(adata, markers, "counts")` and a positional `layer` in
+  `label_stability` -> `layer="counts"`.
+- `panel_resolvability` always thins the counts chosen by `layer` to `target_depth`. Before, it guessed from the
+  first 200 rows whether `X` held counts and, when `X` was log-normalised and no `counts` layer existed, scored
+  it at full depth without a warning: the inflated macro F1 its docstring warns about (on a simulated reference
+  at `target_depth=3`, 1.00 instead of 0.65). That input now raises `ValueError` asking for `layer=`.
 - The default is `layer="counts"`. A missing layer falls back to `X` only when `X` holds raw counts (non-negative
   integers); otherwise the metric raises `ValueError` asking for `layer=`. Before, a missing or misspelled layer
   silently fell back to `X`, so log-normalised data was scored as counts. `layer=None` reads `X` as it is, with
@@ -90,8 +96,15 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   - `per_cell_confidence` with fewer than 2 marker sets on the panel (was margin 0 and entropy 1, written to
     `obs`);
   - `avg_bio` with fewer than 2 truth labels (was an ASW of 0.0);
+  - `marker_program_fidelity` and `marker_gene_overlap` when no type has a marker on the panel (was status
+    "ok" with `None` means and no reason);
+  - `neighbor_contamination` with fewer than 2 labels that have an on-panel marker set, or with no cell next to
+    another marker-set type (was status "ok", a NaN mean and an all-NaN `obs` column);
   - with fewer than 2 labels: `internal_validity`, `marker_program_fidelity`, `marker_gene_overlap`,
     `spatial_coherence` and `neighborhood_sanity` (`neighborhood_sanity` raised).
+- `marker_program_fidelity`: Cohen's d of a type whose marker load is constant is `None` (was 0.0) and is left
+  out of `mean_cohens_d`.
+- `composition_accuracy`: `pearson` is NaN when undefined, i.e. one type or equal shares on either side (was 1.0).
 
 ### Added
 

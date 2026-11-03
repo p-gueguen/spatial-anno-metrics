@@ -166,3 +166,21 @@ def test_spatial_key_added():
     b = _blocks(n_side=6)
     sp.spatial_coherence(b, label_key="cell_type", key_added="coh")
     assert "coh" in b.obs
+
+
+def test_neighbor_contamination_skips_without_two_typed_labels_or_contact():
+    """One label, every marker off the panel, or no cell touching another typed cell: a skip, no obs column."""
+    from scipy.sparse import csr_matrix
+
+    from spatial_anno_metrics import spatial as sp
+
+    one = _spill_tissue()
+    one.obs["cell_type"] = "T"
+    off = _spill_tissue()
+    apart = _spill_tissue()
+    apart.obsp["spatial_connectivities"] = csr_matrix((10, 10))
+    for a, markers, why in ((one, SPILL_MARKERS, "found 1"), (off, {"T": ["X1"], "Fib": ["X2"]}, "found 0"),
+                            (apart, SPILL_MARKERS, "no cell")):
+        out = sp.neighbor_contamination(a, markers)
+        assert out["status"] == "skipped" and why in out["reason"]
+        assert "sam_neighbor_contamination" not in a.obs and "sam" not in a.uns

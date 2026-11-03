@@ -1,0 +1,22 @@
+{
+  "title": "spatial-anno-metrics: cell-type annotation quality metrics for spatial and single-cell data",
+  "upload_type": "software",
+  "description": "A small Python package for asking whether a cell-type annotation is any good, organised by the evidence available: reference-free internal validity and inter-sample consistency, marker-program fidelity and marker co-expression purity, reference-based purity, spatial label coherence, per-cell confidence and conformal prediction sets, annotation-independent signal QC, and external scores for benchmarks with a ground truth. Each metric is attributed to its source.",
+  "creators": [
+    {
+      "name": "Gueguen, Paul",
+      "affiliation": "Functional Genomics Center Zurich (ETH Zurich / University of Zurich)",
+      "orcid": "0000-0003-2930-6073"
+    }
+  ],
+  "license": "MIT",
+  "keywords": [
+    "single-cell",
+    "spatial transcriptomics",
+    "cell-type annotation",
+    "quality control",
+    "metrics",
+    "xenium",
+    "deconvolution"
+  ]
+}

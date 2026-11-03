@@ -77,3 +77,67 @@ def test_panel_resolvability_thins_the_count_layer_never_log_X():
     assert named["matrix"] == "layers['raw']" and named["macro_f1"] == raw["macro_f1"]
     with pytest.raises(ValueError, match="layer="):                # log X, no counts layer: no silent full depth
         em.panel_resolvability(b, "cell_type", panel, target_depth=3)
+
+
+def _background_only_ref(private: bool, n=150, n_genes=60, n_types=6, seed=0):
+    """Six types that differ only by a mild per-type background programme (lognormal sigma 0.4 per gene),
+    plus, when ``private``, one strong private marker each. At depth 50 the background alone gives
+    macro-F1 ~0.73: above chance (1/6) but ~1 cell in 4 misassigned."""
+    rng = np.random.default_rng(seed)
+    base = rng.lognormal(0, 1, n_genes)
+    base *= 200 / base.sum()
+    blocks, labels = [], []
+    for k in range(n_types):
+        mu = base * rng.lognormal(0, 0.4, n_genes)
+        if private:
+            mu[k] += 100
+        blocks.append(rng.poisson(mu, size=(n, n_genes)))
+        labels += [f"T{k}"] * n
+    a = anndata.AnnData(X=np.vstack(blocks).astype("float32"))
+    a.var_names = [f"g{i}" for i in range(n_genes)]
+    a.obs["cell_type"] = labels
+    return a
+
+
+def test_panel_resolvability_no_private_markers_is_not_resolvable():
+    """ROADMAP 8h: with no private markers (macro-F1 ~0.7 at depth 50) no type is 'resolvable' any more; the
+    same types WITH a private marker each stay resolvable (positive control)."""
+    from spatial_anno_metrics import panel as em
+
+    bg = _background_only_ref(private=False)
+    r = em.panel_resolvability(bg, "cell_type", list(bg.var_names), target_depth=50)
+    assert r["n_types"] == 6 and 0.6 < r["macro_f1"] < 0.85
+    assert r["frac_resolvable"] == 0.0
+    assert all(d["f1_null"] == pytest.approx(1 / 6) for d in r["per_type"].values())
+    for d in r["per_type"].values():                             # chance-corrected F1: (f1 - null) / (1 - null)
+        assert d["f1_adjusted"] == pytest.approx((d["f1"] - 1 / 6) / (1 - 1 / 6))
+    pm = _background_only_ref(private=True)
+    rp = em.panel_resolvability(pm, "cell_type", list(pm.var_names), target_depth=50)
+    assert rp["frac_resolvable"] == 1.0
+
+
+def test_panel_resolvability_old_tiers_reproducible():
+    """The pre-0.7 tiers (raw F1 >= 0.5 / 0.3) come back when passed explicitly; F1s themselves are unchanged."""
+    from spatial_anno_metrics import panel as em
+
+    bg = _background_only_ref(private=False)
+    new = em.panel_resolvability(bg, "cell_type", list(bg.var_names), target_depth=50)
+    old = em.panel_resolvability(bg, "cell_type", list(bg.var_names), target_depth=50,
+                                 f1_resolvable=0.5, f1_weak=0.3, null_adjusted=False)
+    assert old["frac_resolvable"] == 1.0                         # the lenient verdict ROADMAP 8h describes
+    assert old["macro_f1"] == new["macro_f1"]
+    assert [d["f1"] for d in old["per_type"].values()] == [d["f1"] for d in new["per_type"].values()]
+
+
+def test_panel_resolvability_two_types_at_chance_are_not_resolvable():
+    """Two indistinguishable types score F1 ~0.5 = chance; the null-adjusted F1 is ~0, so neither is resolvable."""
+    from spatial_anno_metrics import panel as em
+
+    rng = np.random.default_rng(1)
+    a = anndata.AnnData(X=rng.poisson(4.0, size=(200, 30)).astype("float32"))
+    a.var_names = [f"g{i}" for i in range(30)]
+    a.obs["cell_type"] = ["A"] * 100 + ["B"] * 100
+    r = em.panel_resolvability(a, "cell_type", list(a.var_names), target_depth=50)
+    assert r["status"] == "ok" and len(r["per_type"]) == 2
+    assert all(d["f1_null"] == pytest.approx(0.5) for d in r["per_type"].values())
+    assert all(abs(d["f1_adjusted"]) < 0.3 and d["tier"] == "not_resolvable" for d in r["per_type"].values())

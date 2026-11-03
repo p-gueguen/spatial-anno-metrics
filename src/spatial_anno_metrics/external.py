@@ -1,23 +1,43 @@
-"""External harness (needs ground truth): AvgBIO, accuracy / F1 / ARI / kappa / ECS, hierarchical and
-composition accuracy, and the OpenProblems deconvolution proportion metrics."""
+"""External harness (needs ground truth).
+
+AvgBIO, accuracy / F1 / ARI / kappa / ECS, spatially aware ARI, hierarchical and composition accuracy, and the
+deconvolution proportion metrics (OpenProblems, Spotless, Li et al. 2022) with a rank aggregate over methods.
+"""
 from __future__ import annotations
 
 import numpy as np
 
+from ._hierarchy import ancestors, lca_depth
 from ._utils import _embedding
 from ._validate import check_labels, skip
 from .thresholds import value as _thr
 
-__all__ = ["avg_bio", "external_scores", "element_centric_similarity", "hierarchical_accuracy",
-           "composition_accuracy", "deconvolution_metrics"]
+__all__ = ["avg_bio", "external_scores", "element_centric_similarity", "spatial_ari", "hierarchical_accuracy",
+           "composition_accuracy", "deconvolution_metrics", "deconvolution_rank_score"]
 
 
 def avg_bio(adata, label_key: str, truth_key: str, embedding: str | None = "X_pca") -> dict:
-    """AvgBIO (Zhu 2026 / scIB): mean(ARI, NMI, scaled-ASW) - biological-structure conservation of a
-    labeling vs a ground truth. ARI/NMI compare ``label_key`` to ``truth_key``; ASW is the silhouette
-    of the TRUE labels in ``embedding`` (how well real types separate), scaled to [0,1]. External (needs
-    ground truth). Returns ``{status, ari, nmi, asw, avg_bio}``; fewer than 2 truth labels -> a skip (the
-    silhouette is undefined)."""
+    """AvgBIO (Zhu 2026 / scIB): mean(ARI, NMI, scaled ASW), biological structure kept vs a ground truth.
+
+    ARI/NMI compare ``label_key`` to ``truth_key``; ASW is the silhouette of the TRUE labels in ``embedding``
+    (how well real types separate), scaled to [0, 1].
+
+    Parameters
+    ----------
+    adata : anndata.AnnData
+        Cells with both label columns in ``obs``.
+    label_key : str
+        ``obs`` column with the labeling to score.
+    truth_key : str
+        ``obs`` column with the ground truth.
+    embedding : str or None
+        ``obsm`` key of the embedding for the silhouette (None or missing: PCA of X).
+
+    Returns
+    -------
+    dict
+        ``{status, ari, nmi, asw, avg_bio}``; fewer than 2 truth labels gives a skip (silhouette undefined).
+    """
     from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score, silhouette_score
 
     pred = check_labels(adata, label_key)
@@ -36,11 +56,22 @@ def avg_bio(adata, label_key: str, truth_key: str, embedding: str | None = "X_pc
 # External harness (needs ground truth)
 # --------------------------------------------------------------------------- #
 def external_scores(*, y_true, y_pred) -> dict:
-    """Reference-based scores of ``y_pred`` vs ground-truth ``y_true`` (benchmarks only). Keyword-only, in
-    sklearn's (y_true, y_pred) order.
+    """Reference-based scores of ``y_pred`` vs ground-truth ``y_true`` (benchmarks only).
 
-    Returns status, accuracy, balanced accuracy, macro/weighted/per-class F1, macro precision/recall,
-    ARI, AMI, NMI, Cohen's kappa, and ECS. Thin wrapper over ``sklearn.metrics`` + ``ecs``.
+    Thin wrapper over ``sklearn.metrics`` plus ``element_centric_similarity``.
+
+    Parameters
+    ----------
+    y_true : array-like of str
+        Ground-truth labels (keyword-only, sklearn order).
+    y_pred : array-like of str
+        Predicted labels.
+
+    Returns
+    -------
+    dict
+        ``{status, accuracy, balanced_accuracy, macro_f1, weighted_f1, precision_macro, recall_macro,
+        per_class_f1, ari, ami, nmi, kappa, ecs}``.
     """
     from sklearn.metrics import (accuracy_score, adjusted_mutual_info_score,
                                   adjusted_rand_score, balanced_accuracy_score, cohen_kappa_score,
@@ -71,14 +102,25 @@ def external_scores(*, y_true, y_pred) -> dict:
 # Element-Centric Similarity (Gates & Ahn 2019) - resolution-agnostic partition agreement
 # --------------------------------------------------------------------------- #
 def element_centric_similarity(a, b, alpha: float = _thr("external", "ecs_alpha")) -> dict:
-    """ECS between two hard labelings ``a`` and ``b`` over the same N elements (symmetric).
+    """Element-centric similarity (Gates et al. 2019) between two hard labelings of the same N elements.
 
-    Exact, vectorized closed form for hard partitions (the paper's affinity-matrix definition, with
-    the self-loop terms cancelling): for element k in a-cluster A (size nA) and b-cluster B (size
-    nB) with overlap nAB, the L1 affinity distance is
-    ``nAB*|α/nA − α/nB| + (nA−nAB)*α/nA + (nB−nAB)*α/nB`` and ``ECS_k = 1 − dist/(2α)``. Returns
-    ``{status, ecs}``: the mean over elements, in [0, 1]; 1.0 iff the partitions are identical.
-    Resolution-agnostic.
+    Exact, vectorized closed form for hard partitions (the paper's affinity-matrix definition, with the
+    self-loop terms cancelling): for element k in a-cluster A (size nA) and b-cluster B (size nB) with overlap
+    nAB, the L1 affinity distance is ``nAB*|α/nA − α/nB| + (nA−nAB)*α/nA + (nB−nAB)*α/nB`` and
+    ``ECS_k = 1 − dist/(2α)``. Symmetric and resolution-agnostic; matches clusim 0.4 to 1e-12
+    (``tests/goldens/ecs_clusim``).
+
+    Parameters
+    ----------
+    a, b : array-like
+        The two labelings.
+    alpha : float
+        Personalized-PageRank restart parameter; it cancels for hard partitions.
+
+    Returns
+    -------
+    dict
+        ``{status, ecs}``: the mean over elements, in [0, 1]; 1.0 iff the partitions are identical.
     """
     import pandas as pd
 
@@ -96,32 +138,180 @@ def element_centric_similarity(a, b, alpha: float = _thr("external", "ecs_alpha"
 
 
 # --------------------------------------------------------------------------- #
+# spARI (Yan, Feng & Luo, Biometrics 2025) - spatially aware adjusted Rand index
+# --------------------------------------------------------------------------- #
+def spatial_ari(*, y_true, y_pred, coords, alpha: float = _thr("external", "spari_alpha"),
+                max_cells: int | None = _thr("external", "spari_max_cells"), seed: int = 0) -> dict:
+    """Spatially aware Rand index (spRI) and its chance-adjusted form (spARI) of ``y_pred`` vs ``y_true``.
+
+    Yan, Feng & Luo, *Biometrics* 2025, doi 10.1093/biomtc/ujaf127 (preprint doi 10.1101/2025.03.25.645156).
+    Like the Rand index, every pair of cells on which both labelings agree (together in both, apart in both)
+    scores 1. A disagreeing pair scores by its distance ``d`` (coordinates min-max scaled to [0, 1] per axis):
+    together in ``y_pred`` but apart in ``y_true`` scores ``f(d) = alpha * exp(-d^2)`` (a wrong merge of
+    nearby cells is milder), apart in ``y_pred`` but together in ``y_true`` scores
+    ``h(d) = alpha * (1 - exp(-d^2))`` (a wrong split of distant cells is milder). spRI is the mean pair
+    score; spARI = (spRI - E) / (1 - E) with the authors' expectation
+    ``E = pq + (1-p)(1-q) + (1-p) q mean(f) + p (1-q) mean(h)`` (p, q: fractions of pairs together in
+    ``y_true`` / ``y_pred``; means over all pairs).
+    Implemented from that definition (the authors' R package is GPL and was not copied). As in their package,
+    a pair at distance 0 gets no spatial credit, and two one-cluster labelings score (1, 1). ``alpha = 0``
+    gives the Rand index and ARI exactly. Asymmetric: swapping ``y_true`` and ``y_pred`` swaps f and h.
+
+    Parameters
+    ----------
+    y_true : array-like of str
+        Reference labels (keyword-only, sklearn order).
+    y_pred : array-like of str
+        Labels to score.
+    coords : array-like, shape (n_cells, 2)
+        Spatial coordinates, e.g. ``adata.obsm['spatial']``.
+    alpha : float
+        Weight scale in [0, 1); keeps a disagreeing pair strictly below an agreeing one.
+    max_cells : int or None
+        The pair sums are O(n^2): above this many cells, a random subset of ``max_cells`` (after scaling the
+        coordinates on all cells) is scored. None scores every pair.
+    seed : int
+        Seed of the subsample.
+
+    Returns
+    -------
+    dict
+        ``{status, spri, spari, n_cells, subsampled}``; fewer than 2 cells gives a skip.
+    """
+    from scipy.spatial.distance import cdist
+
+    truth, pred = check_labels(y_true), check_labels(y_pred)
+    xy = np.asarray(coords, dtype=float)
+    if xy.ndim != 2 or xy.shape[0] != len(truth) or len(pred) != len(truth):
+        raise ValueError(f"coords {xy.shape}, y_true ({len(truth)}) and y_pred ({len(pred)}) must have one "
+                         "row per cell")
+    if not 0 <= alpha < 1:
+        raise ValueError(f"alpha must be in [0, 1), got {alpha}")
+    if len(truth) < 2:
+        return skip(f"need >= 2 cells, found {len(truth)}")
+    span = np.ptp(xy, axis=0)
+    xy = (xy - xy.min(0)) / np.where(span > 0, span, 1.0)
+    n = len(truth)
+    subsampled = max_cells is not None and n > max_cells
+    if subsampled:
+        keep = np.sort(np.random.default_rng(seed).choice(n, max_cells, replace=False))
+        truth, pred, xy, n = truth[keep], pred[keep], xy[keep], max_cells
+    base = {"n_cells": int(n), "subsampled": bool(subsampled)}
+    r = np.unique(truth, return_inverse=True)[1]
+    c = np.unique(pred, return_inverse=True)[1]
+    if r.max() == 0 and c.max() == 0:
+        return {"status": "ok", "spri": 1.0, "spari": 1.0, **base}
+
+    npairs = n * (n - 1) / 2
+    nij = np.zeros((r.max() + 1, c.max() + 1))
+    np.add.at(nij, (r, c), 1)
+    sa, sb = (nij.sum(1) ** 2).sum(), (nij.sum(0) ** 2).sum()
+    agree = npairs + (nij ** 2).sum() - 0.5 * (sa + sb)       # Rand-index agreements
+    s_sg = s_gs = f_all = h_all = 0.0                          # every unordered pair is seen twice below
+    step = max(1, 2_000_000 // n)
+    for i in range(0, n, step):
+        d2 = cdist(xy[i:i + step], xy, "sqeuclidean")
+        e = np.exp(-d2)
+        f = np.where(d2 > 0, alpha * e, 0.0)
+        h = np.where(d2 > 0, alpha * (1 - e), 0.0)
+        same_r = r[i:i + step, None] == r[None, :]
+        same_c = c[i:i + step, None] == c[None, :]
+        s_sg += f[same_c & ~same_r].sum()
+        s_gs += h[same_r & ~same_c].sum()
+        f_all += f.sum()
+        h_all += h.sum()
+    spri = (agree + (s_sg + s_gs) / 2) / npairs
+    p = 0.5 * (sa - n) / npairs
+    q = 0.5 * (sb - n) / npairs
+    expected = p * q + (1 - p) * (1 - q) + (1 - p) * q * f_all / 2 / npairs + p * (1 - q) * h_all / 2 / npairs
+    spari = 1.0 if expected == 1 else (spri - expected) / (1 - expected)
+    return {"status": "ok", "spri": float(spri), "spari": float(spari), **base}
+
+
+# --------------------------------------------------------------------------- #
 # Hierarchical & composition accuracy (external)
 # --------------------------------------------------------------------------- #
 def hierarchical_accuracy(*, y_true, y_pred, hierarchy: dict[str, str],
-                          partial: float = _thr("external", "hierarchical_partial")) -> dict:
-    """Accuracy with partial credit along a cell-type lineage tree. ``hierarchy`` maps
-    subtype -> parent lineage (labels absent from it are their own parent). A correct subtype
-    scores 1, a right-lineage/wrong-subtype scores ``partial``, a wrong lineage scores 0. Keyword-only.
-    Returns ``{status, hierarchical_accuracy, subtype_accuracy, lineage_accuracy}``."""
+                          partial: float = _thr("external", "hierarchical_partial"),
+                          credit: str = "lca") -> dict:
+    """Accuracy with credit by distance on a cell-type tree, plus the accuracy of coarse (non-leaf) calls.
+
+    ``credit='lca'`` (default since 0.7.0) scores each cell by the hierarchical F-measure of Kiritchenko et
+    al. 2006, from the depth of the lowest common ancestor (LCA) of truth and prediction: with every label
+    standing for itself plus its ancestors, ``hP = (lca + 1) / (depth(pred) + 1)`` and
+    ``hR = (lca + 1) / (depth(true) + 1)`` (a root has depth 0); the credit is their harmonic mean (0 under
+    different roots). An honest coarse call (the parent, 2/3 one level up) now outscores a wrong sibling
+    subtype (1/2), which the old flat ``partial`` could not tell apart. ``credit='lineage'`` is the pre-0.7.0
+    score: 1 exact, ``partial`` when truth and prediction share a root, else 0.
+
+    Parameters
+    ----------
+    y_true : array-like of str
+        Ground-truth labels (keyword-only, sklearn order).
+    y_pred : array-like of str
+        Predicted labels; may be coarse (an internal node of the tree).
+    hierarchy : dict
+        ``{child: parent}``; a label absent from it, or mapped to itself, is a root. Any depth.
+    partial : float
+        Credit for a shared root under ``credit='lineage'``; unused under ``'lca'``.
+    credit : {'lca', 'lineage'}
+        Scoring rule (see above).
+
+    Returns
+    -------
+    dict
+        ``{status, credit, hierarchical_accuracy, subtype_accuracy, lineage_accuracy, hierarchical_precision,
+        hierarchical_recall, coarse_call_frac, coarse_call_accuracy}``. ``hierarchical_accuracy`` is the mean
+        per-cell credit; ``subtype_accuracy`` exact matches; ``lineage_accuracy`` the fraction sharing a root
+        (for a two-level map, the old same-parent fraction); ``hierarchical_precision`` / ``_recall`` the
+        micro-averaged hP / hR. A coarse call is a prediction that is some label's parent in ``hierarchy``;
+        ``coarse_call_accuracy`` is the fraction of those that are the truth or one of its ancestors, NaN when
+        there are none.
+    """
+    import pandas as pd
+
+    if credit not in ("lca", "lineage"):
+        raise ValueError(f"credit must be 'lca' or 'lineage', got {credit!r}")
     pred = check_labels(y_pred)
     truth = check_labels(y_true)
-    pp = np.array([hierarchy.get(x, x) for x in pred])
-    pt = np.array([hierarchy.get(x, x) for x in truth])
-    exact = pred == truth
-    lineage = pp == pt
-    score = np.where(exact, 1.0, np.where(lineage, partial, 0.0))
+    codes, uniq = pd.factorize(pd.MultiIndex.from_arrays([truth, pred]))
+    internal = {v for k, v in hierarchy.items() if k != v}
+    rows = []
+    for t, p in uniq:                                          # one tree walk per distinct (truth, pred) pair
+        lca, dt, dp = lca_depth(t, p, hierarchy), len(ancestors(t, hierarchy)), len(ancestors(p, hierarchy))
+        shared = lca + 1                                       # nodes on both root paths (0: different roots)
+        hp, hr = shared / (dp + 1), shared / (dt + 1)
+        hf = 2 * hp * hr / (hp + hr) if shared else 0.0
+        score = hf if credit == "lca" else (1.0 if t == p else (partial if shared else 0.0))
+        rows.append((score, t == p, shared > 0, shared, dp + 1, dt + 1, p in internal, lca == dp))
+    v = np.array(rows, dtype=float)[codes]
+    coarse = v[:, 6].astype(bool)
     return {
-        "status": "ok", "hierarchical_accuracy": float(score.mean()),
-        "subtype_accuracy": float(exact.mean()),
-        "lineage_accuracy": float(lineage.mean()),
+        "status": "ok", "credit": credit, "hierarchical_accuracy": float(v[:, 0].mean()),
+        "subtype_accuracy": float(v[:, 1].mean()), "lineage_accuracy": float(v[:, 2].mean()),
+        "hierarchical_precision": float(v[:, 3].sum() / v[:, 4].sum()),
+        "hierarchical_recall": float(v[:, 3].sum() / v[:, 5].sum()),
+        "coarse_call_frac": float(coarse.mean()),
+        "coarse_call_accuracy": float(v[coarse, 7].mean()) if coarse.any() else float("nan"),
     }
 
 
 def composition_accuracy(*, y_true, y_pred) -> dict:
-    """Predicted vs true cell-type **proportions**: L1 (total-variation-ish), Pearson r, and
-    Jensen-Shannon divergence. Keyword-only. Returns ``{status, l1, pearson, jsd, predicted, true}``; ``pearson``
-    is NaN when undefined (one type, or equal shares on either side)."""
+    """Predicted vs true cell-type proportions from hard labels: L1, Pearson r and Jensen-Shannon divergence.
+
+    Parameters
+    ----------
+    y_true : array-like of str
+        Ground-truth labels (keyword-only, sklearn order).
+    y_pred : array-like of str
+        Predicted labels.
+
+    Returns
+    -------
+    dict
+        ``{status, l1, pearson, jsd, predicted, true}``; ``pearson`` is NaN when undefined (one type, or equal
+        shares on either side).
+    """
     import pandas as pd
     from scipy.spatial.distance import jensenshannon
 
@@ -137,27 +327,63 @@ def composition_accuracy(*, y_true, y_pred) -> dict:
             "predicted": dict(zip(types, p.tolist())), "true": dict(zip(types, q.tolist()))}
 
 
-def deconvolution_metrics(*, true_prop, pred_prop) -> dict:
-    """Score predicted vs ground-truth cell-type PROPORTION matrices (spots × cell-types) - the
-    OpenProblems ``task_spatial_decomposition`` metrics (+ RMSE / Pearson). This is the SOFT
-    per-spot sibling of ``composition_accuracy`` (which compares hard-label GLOBAL proportions):
-    use it to score a deconvolver's per-spot/per-cell proportion output (RCTD/TACCO/cell2location)
-    against known mixtures (pseudospots). The two matrices must share cell-type columns + spot rows.
-    Keyword-only.
+def _ssim_li(x, y) -> float:
+    """SSIM of two proportion vectors as in Li et al. 2022 (each scaled by its max; NaN for an all-zero one).
 
-    Returns ``{status, r2, jsd, jsd_per_spot, rmse, pearson}``:
-      * ``r2``          - ``sklearn.r2_score(true, pred, multioutput='uniform_average')`` (per cell
-                          type across spots, averaged; higher better) - the OpenProblems ``r2``.
-      * ``jsd``         - mean over cell types of ``scipy.jensenshannon(true[:,k], pred[:,k])``
-                          (axis=0; lower better) - the OpenProblems ``jsd`` (JS distance).
-      * ``jsd_per_spot``- mean over spots of the row-wise JS distance - the more standard per-spot
-                          deconvolution JSD (each spot's proportion vector is a distribution).
-      * ``rmse``        - RMSE over the whole matrix (lower better).
-      * ``pearson``     - mean per-cell-type Pearson r across spots (higher better).
+    Ported from QuKunLab/SpatialBenchmarking ``Benchmarking/GenesMetrics.py`` (``cal_ssim`` + ``scale_max``),
+    BSD-2-Clause, Copyright (c) 2021 Qu Kun Lab. ``M`` there is the larger max of the scaled vectors, i.e. 1.
+    """
+    with np.errstate(invalid="ignore", divide="ignore"):
+        x, y = x / x.max(), y / y.max()
+    mx, my = x.mean(), y.mean()
+    sx, sy = np.sqrt(((x - mx) ** 2).mean()), np.sqrt(((y - my) ** 2).mean())
+    sxy = ((x - mx) * (y - my)).mean()
+    L = max(x.max(), y.max())
+    c1, c2 = (0.01 * L) ** 2, (0.03 * L) ** 2
+    c3 = c2 / 2
+    return float((2 * mx * my + c1) / (mx ** 2 + my ** 2 + c1) * (2 * sx * sy + c2) / (sx ** 2 + sy ** 2 + c2)
+                 * (sxy + c3) / (sx * sy + c3))
+
+
+def deconvolution_metrics(*, true_prop, pred_prop) -> dict:
+    """Score predicted vs ground-truth cell-type proportion matrices (spots x cell types).
+
+    The soft, per-spot sibling of ``composition_accuracy``: score a deconvolver's per-spot proportions
+    (RCTD / TACCO / cell2location) against known mixtures such as pseudo-spots. ``r2`` and ``jsd`` are the
+    OpenProblems ``task_spatial_decomposition`` metrics (``tests/goldens/deconv_openproblems``); ``aupr`` is
+    the Spotless presence/absence score (Sang-aram et al., *eLife* 2024, doi 10.7554/elife.88431); ``ssim`` is
+    Li et al. 2022 (*Nat Methods*, doi 10.1038/s41592-022-01480-9).
+
+    Parameters
+    ----------
+    true_prop : array-like or DataFrame, shape (n_spots, n_types)
+        Ground-truth proportions (keyword-only).
+    pred_prop : array-like or DataFrame, shape (n_spots, n_types)
+        Predicted proportions, same rows and columns in the same order.
+
+    Returns
+    -------
+    dict
+        ``{status, r2, jsd, jsd_per_spot, rmse, pearson, aupr, ssim, ssim_per_type}``:
+
+        * ``r2`` - ``sklearn.r2_score(true, pred, multioutput='uniform_average')``, per cell type across
+          spots, averaged (higher better).
+        * ``jsd`` - mean over cell types of the JS distance between true and predicted columns (lower better).
+          A type absent from every true spot is undefined there and left out (OpenProblems returns NaN).
+        * ``jsd_per_spot`` - mean over spots of the row-wise JS distance.
+        * ``rmse`` - RMSE over the whole matrix (lower better).
+        * ``pearson`` - mean per-cell-type Pearson r across spots (higher better).
+        * ``aupr`` - average precision of the predicted proportions as scores for "type present in spot"
+          (true > 0), over all spot x type entries; NaN when every entry, or none, is present. Spotless used
+          precrec's interpolated PR area, which differs from average precision in the last digits.
+        * ``ssim_per_type`` - Li et al. SSIM of each type's column, both scaled by their max (keys: the
+          DataFrame columns, else column indices); NaN for an all-zero column. ``ssim`` is their mean over the
+          defined types (higher better).
     """
     from scipy.spatial.distance import jensenshannon
-    from sklearn.metrics import r2_score
+    from sklearn.metrics import average_precision_score, r2_score
 
+    names = list(getattr(true_prop, "columns", range(np.shape(true_prop)[1])))
     true = np.asarray(true_prop, dtype=float)
     pred = np.asarray(pred_prop, dtype=float)
     if true.shape != pred.shape:
@@ -171,4 +397,60 @@ def deconvolution_metrics(*, true_prop, pred_prop) -> dict:
     pears = [np.corrcoef(true[:, k], pred[:, k])[0, 1]
              for k in range(n_ct) if true[:, k].std() > 0 and pred[:, k].std() > 0]
     pearson = float(np.mean(pears)) if pears else float("nan")
-    return {"status": "ok", "r2": r2, "jsd": jsd_ct, "jsd_per_spot": jsd_spot, "rmse": rmse, "pearson": pearson}
+    present = (true > 0).ravel()
+    aupr = float(average_precision_score(present, pred.ravel())) if 0 < present.sum() < present.size \
+        else float("nan")
+    ssim = {name: _ssim_li(true[:, k], pred[:, k]) for k, name in enumerate(names)}
+    defined = [v for v in ssim.values() if np.isfinite(v)]
+    return {"status": "ok", "r2": r2, "jsd": jsd_ct, "jsd_per_spot": jsd_spot, "rmse": rmse,
+            "pearson": pearson, "aupr": aupr, "ssim": float(np.mean(defined)) if defined else float("nan"),
+            "ssim_per_type": ssim}
+
+
+_HIGHER_IS_BETTER = {"r2": True, "pearson": True, "aupr": True, "ssim": True,
+                     "rmse": False, "jsd": False, "jsd_per_spot": False}
+
+
+def deconvolution_rank_score(results: dict, metrics=("rmse", "jsd_per_spot", "aupr")) -> dict:
+    """Rank-aggregated score of several deconvolution methods on one dataset.
+
+    Each metric ranks the methods (1 = best, ties share their mean rank); a method's score is its mean rank
+    over ``metrics``. The default metrics are the three Spotless ranks on (RMSE, JSD, AUPR; Sang-aram et al.,
+    *eLife* 2024, doi 10.7554/elife.88431); Li et al. 2022's accuracy score averages ranks the same way over
+    PCC, SSIM, RMSE and JSD (pass ``metrics=('pearson', 'ssim', 'rmse', 'jsd')``). Spotless further scales
+    and averages over datasets; aggregate this function's per-dataset ranks for that.
+
+    Parameters
+    ----------
+    results : dict
+        ``{method: deconvolution_metrics(...) result}`` (any dict holding the metric keys).
+    metrics : sequence of str
+        Keys to rank on; each must be one of r2, pearson, aupr, ssim (higher better) or rmse, jsd,
+        jsd_per_spot (lower better).
+
+    Returns
+    -------
+    dict
+        ``{status, metrics, mean_rank, ranks, order}``: ``mean_rank`` ``{method: rank}`` (lower better),
+        ``ranks`` ``{metric: {method: rank}}``, ``order`` the methods best first. Fewer than 2 methods, or a
+        NaN metric value, gives a skip naming it.
+    """
+    from scipy.stats import rankdata
+
+    metrics = list(metrics)
+    unknown = [m for m in metrics if m not in _HIGHER_IS_BETTER]
+    if unknown:
+        raise ValueError(f"no known direction for {unknown}; use {sorted(_HIGHER_IS_BETTER)}")
+    methods = list(results)
+    if len(methods) < 2:
+        return skip(f"need >= 2 methods to rank, found {len(methods)}")
+    vals = np.array([[float(results[m][k]) for k in metrics] for m in methods])
+    bad = [(m, k) for i, m in enumerate(methods) for j, k in enumerate(metrics)
+           if not np.isfinite(vals[i, j])]
+    if bad:
+        return skip(f"undefined metric values (method, metric): {bad}")
+    ranks = {k: dict(zip(methods, rankdata(-vals[:, j] if _HIGHER_IS_BETTER[k] else vals[:, j]).tolist()))
+             for j, k in enumerate(metrics)}
+    mean_rank = {m: float(np.mean([ranks[k][m] for k in metrics])) for m in methods}
+    return {"status": "ok", "metrics": metrics, "mean_rank": mean_rank, "ranks": ranks,
+            "order": sorted(methods, key=mean_rank.get)}

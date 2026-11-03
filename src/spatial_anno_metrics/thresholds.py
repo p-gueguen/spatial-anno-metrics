@@ -93,6 +93,10 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
         "single_gene_entropy": _e(0.1, f"{_PKG}: normalised detection entropy below which one gene dominates "
                                        "a cell"),
         "control_quantile": _e(0.95, f"{_PKG}: genes whose Moran's I exceeds this quantile of the controls'"),
+        "spatialqm_moran_n_neighs": _e(20, "SpatialQM getMorans (Plummer et al. 2025, commit 36e1a59): "
+                                           "20 nearest neighbours weighted 1/d, row-standardised", False),
+        "spatialqm_pseudocount": _e(0.1, "SpatialQM getMeanSignalRatio (commit 36e1a59): pseudocount added to "
+                                         "the per-feature means before log10", False),
     },
     # Recorded, not wired: aqi.py keeps these literals. tests/test_thresholds.py checks that its parameter
     # defaults agree; the body literals (w_coh_range, softmin_floor, default_target_depth,

@@ -59,7 +59,7 @@ def _counts_fixture(n_per=70, n_bg=16, seed=0):
 
 
 def test_aqi_full_regime_bounds_and_softmin():
-    from spatial_anno_metrics import eval_metrics as em
+    from spatial_anno_metrics import battery as em
 
     a, ref, msets, genes = _counts_fixture()
     depth = float(np.median(np.asarray(a.layers["counts"]).sum(1)))
@@ -91,7 +91,7 @@ def test_aqi_full_regime_bounds_and_softmin():
 def test_aqi_a_is_a_ceiling_not_a_bottleneck():
     """A LOW adequacy caps the index (min), but a HIGH adequacy never lifts it above the {C,M} soft-min:
     that is the whole point of the 2026-07 correction (A anti-orders accuracy, so it may only cap)."""
-    from spatial_anno_metrics import eval_metrics as em
+    from spatial_anno_metrics import battery as em
 
     a, ref, msets, genes = _counts_fixture()
     depth = float(np.median(np.asarray(a.layers["counts"]).sum(1)))
@@ -108,7 +108,7 @@ def test_aqi_a_is_a_ceiling_not_a_bottleneck():
 
 
 def test_aqi_drops_undefined_components_and_flips_regime():
-    from spatial_anno_metrics import eval_metrics as em
+    from spatial_anno_metrics import battery as em
 
     a, _ref, msets, _genes = _counts_fixture()
     # <3 voters -> agreement UNDEFINED (abstention unavailable); no reference -> adequacy UNDEFINED. Both DROP.
@@ -123,7 +123,7 @@ def test_aqi_drops_undefined_components_and_flips_regime():
 
 
 def test_aqi_empty_active_set_is_none_not_zero():
-    from spatial_anno_metrics import eval_metrics as em
+    from spatial_anno_metrics import battery as em
 
     a, _ref, _m, _g = _counts_fixture()
     out = em.annotation_quality(a, label_key="cell_type", embedding="X_pca")  # no markers/ref/methods
@@ -135,7 +135,7 @@ def test_aqi_coverage_flags_a_collapsed_lineage():
     """The advisory coverage flag must catch a lineage the markers strongly support but the annotation
     dropped ENTIRELY - the AQI index blind spot confirmed on colon. Collapse type C into A: C's markers
     stay strong in those cells, no C label survives, so coverage.missing must name C."""
-    from spatial_anno_metrics import eval_metrics as em
+    from spatial_anno_metrics import battery as em
 
     a, _ref, msets, _genes = _counts_fixture()
     lab = a.obs["cell_type"].astype(str).to_numpy()
@@ -152,7 +152,7 @@ def test_aqi_coverage_flags_a_collapsed_lineage():
 
 
 def test_aqi_coverage_empty_when_all_lineages_present():
-    from spatial_anno_metrics import eval_metrics as em
+    from spatial_anno_metrics import battery as em
 
     a, _ref, msets, _genes = _counts_fixture()                  # A, B, C all annotated
     out = em.annotation_quality(a, label_key="cell_type", marker_sets=msets, embedding="X_pca")
@@ -164,7 +164,7 @@ def test_aqi_coverage_empty_when_all_lineages_present():
 def test_aqi_cov_ref_flags_dropped_reference_lineage():
     """Reference-anchored coverage catches a lineage ABUNDANT in the reference but absent from the labels -
     the fix for the marker-based blind spot on off-panel-marker panels (UM). Collapse C -> A."""
-    from spatial_anno_metrics import eval_metrics as em
+    from spatial_anno_metrics import battery as em
 
     a, ref, msets, genes = _counts_fixture()
     lab = a.obs["cell_type"].astype(str).to_numpy()
@@ -178,7 +178,7 @@ def test_aqi_cov_ref_flags_dropped_reference_lineage():
 
 
 def test_aqi_cov_ref_clears_when_reference_lineages_all_present():
-    from spatial_anno_metrics import eval_metrics as em
+    from spatial_anno_metrics import battery as em
 
     a, ref, msets, genes = _counts_fixture()                    # A, B, C all annotated == ref types
     out = em.annotation_quality(a, label_key="cell_type", marker_sets=msets, embedding="X_pca",
@@ -191,7 +191,7 @@ def test_aqi_no_dict_frac_discloses_uncovered_labels():
     """no_dict_frac = fraction of big cells whose label has NO on-panel marker set (a COVERAGE gap fixable
     by supplying reference-derived markers, not low signal). Makes a coverage-limited C legible instead of
     an opaque under-read - the MERSCOPE E14 case (curated dicts covered ~10/105 labels -> AQI 0.08)."""
-    from spatial_anno_metrics import eval_metrics as em
+    from spatial_anno_metrics import battery as em
 
     a, _ref, msets, _genes = _counts_fixture()                  # A, B, C each 70 cells
     msets_partial = {k: v for k, v in msets.items() if k != "C"}  # drop C's dict -> C is undeclared no-dict
@@ -203,7 +203,7 @@ def test_aqi_no_dict_frac_discloses_uncovered_labels():
 
 
 def test_aqi_no_dict_frac_zero_when_all_covered():
-    from spatial_anno_metrics import eval_metrics as em
+    from spatial_anno_metrics import battery as em
 
     a, _ref, msets, _genes = _counts_fixture()
     out = em.annotation_quality(a, label_key="cell_type", marker_sets=msets, embedding="X_pca")
@@ -214,7 +214,7 @@ def test_aqi_no_dict_frac_zero_when_all_covered():
 def test_aqi_no_dict_frac_forgives_declared_abstention():
     """A no-dict label that is DECLARED abstention is honest, not a coverage gap -> excluded from no_dict_frac
     (declared-abstention labels are already dropped from `big`)."""
-    from spatial_anno_metrics import eval_metrics as em
+    from spatial_anno_metrics import battery as em
 
     a, _ref, msets, _genes = _counts_fixture()
     msets_partial = {k: v for k, v in msets.items() if k != "C"}
@@ -225,7 +225,7 @@ def test_aqi_no_dict_frac_forgives_declared_abstention():
 
 def test_aqi_cohort_signal_surfaces_with_sample_key():
     """When a cohort exists (sample_key), inter-sample consistency is reported under `cohort` (not scored)."""
-    from spatial_anno_metrics import eval_metrics as em
+    from spatial_anno_metrics import battery as em
 
     a, _ref, msets, _genes = _counts_fixture()
     a.obs["sample"] = pd.Categorical(np.tile(["s1", "s2"], a.n_obs // 2 + 1)[:a.n_obs])

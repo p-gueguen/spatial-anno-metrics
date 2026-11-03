@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import numpy as np
 
+__all__ = ["spatial_coherence", "neighborhood_sanity", "neighbor_contamination"]
+
 
 def _ensure_spatial_graph(adata, n_neighs: int) -> None:
     """Build ``obsp['spatial_connectivities']`` via squidpy kNN if absent (needs ``obsm['spatial']``)."""

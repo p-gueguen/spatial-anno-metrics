@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import numpy as np
 
+__all__ = ["per_cell_confidence", "label_stability"]
+
 
 def _dense(x):
     return x.toarray() if hasattr(x, "toarray") else np.asarray(x)

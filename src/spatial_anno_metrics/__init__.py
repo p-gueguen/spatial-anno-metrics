@@ -16,59 +16,41 @@ organised by what evidence you have:
 See ``docs/cell-annotation-quality-metrics.md`` for the catalog + the sources each metric is from
 (scTypeEval, Zhu et al. 2026, SpatialQM/Center-for-Spatial-OMICs, OpenProblems, SpatialScribe QC L3).
 """
-from .confidence import (
-    label_stability,
-    per_cell_confidence,
-)
-from .eval_metrics import (
-    annotation_quality,
-    annotation_quality_index,
-    avg_bio,
-    composition_accuracy,
-    conformal_prediction_sets,
-    deconvolution_metrics,
-    element_centric_similarity,
-    external_scores,
-    hierarchical_accuracy,
-    inter_sample_consistency,
-    internal_validity,
-    isc_regime,
-    marker_gene_overlap,
-    marker_program_fidelity,
-    panel_resolvability,
-)
-from .purity import (
-    crisp_purity,
-    mecr,
-    ncp,
-    nmp,
-    pmp,
-)
-from .signal_qc import (
-    detection_entropy,
-    moran_signal,
-    run_signal_qc,
-    signal_to_noise,
-    sparsity,
-    tx_per_area,
-)
-from .spatial import (
-    neighbor_contamination,
-    neighborhood_sanity,
-    spatial_coherence,
-)
+from . import (aqi, battery, confidence, conformal, decomposition, external, fidelity, internal, isc, ontology,
+               panel, purity, signal_qc, spatial)
+from .aqi import *  # noqa: F403
+from .battery import *  # noqa: F403
+from .confidence import *  # noqa: F403
+from .conformal import *  # noqa: F403
+from .decomposition import *  # noqa: F403
+from .external import *  # noqa: F403
+from .fidelity import *  # noqa: F403
+from .internal import *  # noqa: F403
+from .isc import *  # noqa: F403
+from .ontology import *  # noqa: F403
+from .panel import *  # noqa: F403
+from .purity import *  # noqa: F403
+from .signal_qc import *  # noqa: F403
+from .spatial import *  # noqa: F403
 
 __version__ = "0.6.0"
 
-__all__ = [
-    "internal_validity", "inter_sample_consistency", "isc_regime", "marker_program_fidelity",
-    "marker_gene_overlap", "avg_bio",
-    "external_scores", "element_centric_similarity", "hierarchical_accuracy",
-    "composition_accuracy", "deconvolution_metrics", "panel_resolvability",
-    "annotation_quality", "annotation_quality_index", "conformal_prediction_sets",
-    "crisp_purity", "mecr", "pmp", "nmp", "ncp",
-    "spatial_coherence", "neighborhood_sanity", "neighbor_contamination",
-    "per_cell_confidence", "label_stability",
-    "moran_signal", "signal_to_noise", "sparsity", "detection_entropy",
-    "tx_per_area", "run_signal_qc",
-]
+# The public API is each module's __all__, in catalog order. eval_metrics (deprecated shim) is not imported here.
+__all__ = [name for mod in (internal, isc, fidelity, external, panel, battery, aqi, conformal, purity, spatial,
+                            confidence, signal_qc, ontology, decomposition) for name in mod.__all__]
+
+
+def __getattr__(name):
+    """``sam.eval_metrics`` used to be bound by this file: load the deprecated shim lazily. The import system
+    also lands here for ``from spatial_anno_metrics import eval_metrics``, so the warning is raised here, at the
+    caller's line (raised inside the shim it would point at importlib, which default filters hide)."""
+    if name != "eval_metrics":
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        shim = importlib.import_module(f"{__name__}.eval_metrics")
+    warnings.warn(shim._MESSAGE, DeprecationWarning, stacklevel=2)
+    return shim

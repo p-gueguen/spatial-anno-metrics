@@ -4,7 +4,7 @@ Ported from **SpatialQM** (Center for Spatial OMICs, github.com/Center-for-Spati
 an R package) - the metrics that score the *signal quality* of an imaging-ST section (is the
 measured expression real structured biology or background noise?) independent of any cell-type
 labels. They complement the contamination metrics in ``purity.py``, the section QC in ``qc.py``,
-and the label-quality battery in ``eval_metrics.py``.
+and the label-quality battery in ``battery.py``.
 
   * ``moran_signal``      - Moran's I spatial autocorrelation per gene vs per negative-control probe
                             (SpatialQM ``getMorans``). Real genes are spatially structured (high I);
@@ -29,6 +29,8 @@ Depends on: numpy, scipy; squidpy (``moran_signal`` only). Heavy imports live in
 from __future__ import annotations
 
 import numpy as np
+
+__all__ = ["moran_signal", "signal_to_noise", "sparsity", "detection_entropy", "tx_per_area", "run_signal_qc"]
 
 
 def _control_mask(adata) -> np.ndarray:

@@ -22,6 +22,9 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
         "n_neighbors": _e(30, f"{_PKG}: embedding kNN size for neighborhood purity"),
         "subsample": _e(2000, f"{_PKG}: cells used for the O(N^2) silhouettes"),
         "pca_n_components": _e(50, f"{_PKG}: PCA of X when obsm[embedding] is absent (also used by avg_bio)"),
+        "clisi_n_neighbors": _e(90, "scib-metrics benchmark kNN size for cLISI (perplexity 90 / 3 = 30)", False),
+        "isolated_f1_cuts_per_label": _e(2, f"{_PKG}: isolated-label F1 sweeps Ward cuts into 2 .. this x n_labels "
+                                            "clusters (scib sweeps Leiden resolutions 0.1-2)"),
     },
     "battery": {
         "n_neighbors": _e(30, f"{_PKG}: internal_validity kNN size inside annotation_quality"),

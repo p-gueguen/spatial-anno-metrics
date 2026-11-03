@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import sim  # noqa: E402
 
 import spatial_anno_metrics as sam  # noqa: E402
+from spatial_anno_metrics._validate import get_counts  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # metric adapters: fn(adata, ref) -> {name: value}
@@ -56,6 +57,7 @@ def _fresh_graph(a):
 
 
 L, SP, PUR, SIG, TR, REF = "label", "spatial", "purity", "signal", "truth", "ref"
+AN = "annotator"   # scores a reference-trained classifier, not the label column: must not move when only labels do
 
 
 @adapter("internal_validity", {
@@ -66,6 +68,47 @@ def _iv(a, ref):
     r = sam.internal_validity(a, "label", embedding="X_pca")
     return {f"iv.{k}": r.get(k, np.nan) for k in ["silhouette", "neighborhood_purity", "orbital_medoid", "ward_propmatch",
                                        "avg_similarity", "davies_bouldin", "calinski_harabasz", "integrated"]}
+
+
+@adapter("isolated_label_scores", {"iso.asw": (1, [L]), "iso.f1": (1, [L])})
+def _iso(a, ref):
+    r = sam.isolated_label_scores(a, "label", embedding="X_pca")
+    return {"iso.asw": r.get("asw", np.nan), "iso.f1": r.get("f1", np.nan)}
+
+
+@adapter("clisi", {"clisi": (1, [L])})
+def _clisi(a, ref):
+    return {"clisi": sam.clisi(a, "label", embedding="X_pca").get("clisi", np.nan)}
+
+
+# a toy Cell Ontology mirroring sim.HIERARCHY: T_CD4/T_CD8 under T, T/B/Myeloid under immune, Fibro/Epi under
+# structural. Split halves map to their type's term, a merged label to the pair's lowest common ancestor.
+_OBO_TERMS = {"cell": None, "immune": "cell", "structural": "cell", "T": "immune", "T_CD4": "T", "T_CD8": "T",
+              "B": "immune", "Myeloid": "immune", "Fibro": "structural", "Epi": "structural"}
+_MERGED = {"Fibro+Epi": "structural", "B+Myeloid": "immune", "T_CD4+T_CD8": "T"}
+
+
+def _obo_path():
+    import tempfile
+    p = Path(tempfile.gettempdir()) / f"sam_sweep_toy_{os.getpid()}.obo"
+    if not p.exists():
+        p.write_text("format-version: 1.2\n\n" + "\n".join(
+            f"[Term]\nid: TOY:{i:07d}\nname: {t}\n" + (f"is_a: TOY:{list(_OBO_TERMS).index(par):07d}\n" if par else "")
+            for i, (t, par) in enumerate(_OBO_TERMS.items())))
+    return p
+
+
+@adapter("ontology_consistency", {"onto.rho": (1, [L])})
+def _onto(a, ref):
+    cl = {t: f"TOY:{i:07d}" for i, t in enumerate(_OBO_TERMS)}
+    names = dict(zip(a.uns["hierarchy"], sim.TYPES))     # label vocabulary -> sim type (renamed edge cases too)
+    to_cl = {}
+    for lab in pd.unique(a.obs["label"].dropna().astype(str)):
+        t = names.get(lab) or names.get(lab.rsplit("_", 1)[0]) or _MERGED.get(lab)
+        if t is not None:
+            to_cl[lab] = cl[t]
+    r = sam.ontology_consistency(a, "label", _obo_path(), to_cl, embedding="X_pca", n_perm=199)
+    return {"onto.rho": r.get("rho", np.nan)}
 
 
 @adapter("inter_sample_consistency", {"isc.iscg": (1, [L, "isc"]), "isc.iscl": (1, [L, "isc"]),
@@ -86,16 +129,25 @@ def _mgo(a, ref):
     return {"mgo.mean_overlap": sam.marker_gene_overlap(a, "label", a.uns["marker_sets"], n_top=10).get("mean_overlap")}
 
 
-@adapter("purity", {"crisp_purity": (1, [PUR]), "mecr": (-1, [PUR]), "pmp": (1, [L, PUR])})
+@adapter("purity", {"crisp_purity": (1, [PUR]), "mecr": (-1, [PUR]), "pmp": (1, [L, PUR]),
+                    "pmp.no_dict_frac": (-1, [L])})
 def _pur(a, ref):
     ms = a.uns["marker_sets"]
+    r = sam.pmp(a, ms, "label")
     return {"crisp_purity": sam.crisp_purity(a, ms).get("crisp_purity"), "mecr": sam.mecr(a, ms).get("mecr"),
-            "pmp": sam.pmp(a, ms, "label").get("mean_pmp")}
+            "pmp": r.get("mean_pmp"), "pmp.no_dict_frac": r.get("no_dict_frac")}
 
 
 @adapter("nmp", {"nmp": (1, [L, PUR, REF])})
 def _nmp(a, ref):
     return {"nmp": sam.nmp(a, ref, "label", "cell_type").get("nmp")}
+
+
+@adapter("coexpression_similarity", {"coex.global": (1, [PUR, REF]), "coex.by_type": (1, [L, PUR, REF])})
+def _coex(a, ref):
+    return {"coex.global": sam.coexpression_similarity(a, ref).get("coexpression_similarity", np.nan),
+            "coex.by_type": sam.coexpression_similarity(a, ref, label_key="label").get("coexpression_similarity",
+                                                                                         np.nan)}
 
 
 @adapter("ncp", {"ncp": (1, [PUR, REF])})
@@ -110,11 +162,12 @@ def _nc(a, ref):
     return {"neighbor_contamination": r.get("mean_contamination")}
 
 
-@adapter("spatial_coherence", {"sc.mean_coherence": (1, [L, SP]), "sc.pas": (-1, [L, SP])})
+@adapter("spatial_coherence", {"sc.mean_coherence": (1, [L, SP]), "sc.pas": (-1, [L, SP]),
+                               "sc.chaos": (-1, [L, SP])})
 def _sc(a, ref):
     _fresh_graph(a)
     r = sam.spatial_coherence(a, "label")
-    return {"sc.mean_coherence": r.get("mean_coherence"), "sc.pas": r.get("pas")}
+    return {"sc.mean_coherence": r.get("mean_coherence"), "sc.pas": r.get("pas"), "sc.chaos": r.get("chaos")}
 
 
 @adapter("neighborhood_sanity", {"ns.n_suspicious": (-1, [L, SP])})
@@ -163,7 +216,8 @@ def _sig(a, ref):
 
 
 @adapter("external", {"ext.macro_f1": (1, [L, TR]), "ext.ari": (1, [L, TR]), "ext.ecs": (1, [L, TR]),
-                      "ext.hier_acc": (1, [L, TR]), "ext.comp_l1": (-1, [L, TR]), "ext.avg_bio": (1, [L, TR])})
+                      "ext.hier_acc": (1, [L, TR]), "ext.comp_l1": (-1, [L, TR]), "ext.avg_bio": (1, [L, TR]),
+                      "ext.spari": (1, [L, TR])})
 def _ext(a, ref):
     p, t = a.obs["label"], a.obs["truth"]          # raw columns: a NaN label must reach the label check
     e = sam.external_scores(y_true=t, y_pred=p)
@@ -171,7 +225,30 @@ def _ext(a, ref):
             "ext.hier_acc": sam.hierarchical_accuracy(y_true=t, y_pred=p,
                                                       hierarchy=a.uns["hierarchy"])["hierarchical_accuracy"],
             "ext.comp_l1": sam.composition_accuracy(y_true=t, y_pred=p)["l1"],
-            "ext.avg_bio": sam.avg_bio(a, "label", "truth").get("avg_bio")}
+            "ext.avg_bio": sam.avg_bio(a, "label", "truth").get("avg_bio"),
+            "ext.spari": (sam.spatial_ari(y_true=t, y_pred=p, coords=a.obsm["spatial"]).get("spari")
+                          if "spatial" in a.obsm else np.nan)}
+
+
+@adapter("calibration_novelty", {"cal.ece": (-1, [AN]), "nov.frac_novel": (-1, [AN])})
+def _cal(a, ref):
+    """A logistic classifier trained on the reference annotates the section: its ECE against the truth, and the
+    share of section cells conformal_novelty flags (reference thinned to the section's per-cell depths). Neither
+    reads ``obs['label']``; there is no novel type in the main scenarios (that is check_conformal.csv)."""
+    from sklearn.linear_model import LogisticRegression
+    genes = [g for g in ref.var_names if g in set(a.var_names)]
+    Xr = np.asarray(ref[:, genes].layers["counts"].todense())
+    Xq = get_counts(a[:, genes], "counts")[0]
+    Xq = np.asarray(Xq.todense()) if hasattr(Xq, "todense") else np.asarray(Xq)
+    clf = LogisticRegression(max_iter=500, C=0.3).fit(_lognorm(Xr), ref.obs["cell_type"])
+    y = a.obs["truth"].astype(str).to_numpy()
+    ece = (sam.calibration_error(clf.predict_proba(_lognorm(Xq)), clf.classes_, y) if set(y) <= set(clf.classes_)
+           else {})                                  # renamed-vocabulary edge cases: truth names not the classes
+    rng = np.random.default_rng(0)
+    depth = rng.choice(np.maximum(Xq.sum(1), 1), len(Xr))[:, None]
+    Xm = rng.binomial(Xr.astype(int), np.clip(depth / np.maximum(Xr.sum(1, keepdims=True), 1), 0, 1))
+    nov = sam.conformal_novelty(_lognorm(Xq), _lognorm(Xm), method="pca", seed=0)
+    return {"cal.ece": ece.get("ece", np.nan), "nov.frac_novel": nov.get("summary", {}).get("frac_novel", np.nan)}
 
 
 def run_adapters(a, ref, adapters):
@@ -220,7 +297,8 @@ DATA_EXPECT = {   # data-side scenarios: families (or metric names) that should 
     "depth_loss": {"sig.tx_per_area", "sig.zero_fraction"},
     "ambient": {"sig.snr", "sig.moran_gap", "sig.frac_above_ctrl"},
     "batch": {"isc"},
-    "coord_shuffle": {"sc.mean_coherence", "sc.pas", "ns.n_suspicious", "sig.moran_gap", "sig.frac_above_ctrl"},
+    "coord_shuffle": {"sc.mean_coherence", "sc.pas", "sc.chaos", "ns.n_suspicious", "sig.moran_gap",
+                      "sig.frac_above_ctrl"},
 }
 
 
@@ -232,7 +310,7 @@ def expectation(metric, scen, metrics=None):
     if kind == "label":
         return "down" if L in fam else "flat"
     if kind == "null":
-        return "flat" if (L in fam or PUR in fam) else None
+        return "flat" if fam & {L, PUR, AN} else None
     want = DATA_EXPECT.get(scen, set())
     if metric in want or fam & want:
         return "down"

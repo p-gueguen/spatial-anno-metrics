@@ -56,7 +56,7 @@ score_column <- function(ident) {
 
   key <- paste(cons$consistency_metric, cons$dissimilarity_method, sep = " | ")
   labels <- sort(unique(obs[[ident]]))
-  purged <- setNames(gsub(",", "", gsub(" |_|[+]|-", ".", labels)), labels)  # scTypeEval:::purge_label rule
+  purged <- setNames(scTypeEval:::purge_label(labels), labels)  # scTypeEval's own label clean-up, called not copied
   per_type <- lapply(labels, function(l) {
     v <- as.list(setNames(cons$measure[cons$celltype == purged[[l]]], key[cons$celltype == purged[[l]]]))
     p <- v[[local]] * v[[global]]

@@ -21,7 +21,7 @@ import scipy.io
 import scipy.sparse as sp
 
 from spatial_anno_metrics import inter_sample_consistency
-from spatial_anno_metrics.eval_metrics import _pseudobulk_profiles, _rcm_dissimilarity, _two_label_silhouette
+from spatial_anno_metrics.isc import _pseudobulk_profiles, _rcm_dissimilarity
 
 COLUMNS = ("annotation", "annotation_oversplit")
 
@@ -38,19 +38,12 @@ def purge_label(x: str) -> str:
 
 
 def score(a: ad.AnnData, col: str) -> dict:
-    res = inter_sample_consistency(a, col, "patient_bcc", counts_layer="counts")
-    # ISCG in scTypeEval's default space (README recipe: Pseudobulk:Cosine with reduction = TRUE, i.e. cosine
-    # on the first 30 PCs of the centred, unscaled pseudobulk matrix). Exact SVD here; scTypeEval uses irlba.
-    P, lab, smp, _ = _pseudobulk_profiles(a, col, "patient_bcc", min_cells=10, min_samples=5,
-                                          counts_layer="counts")
-    U, S, _ = np.linalg.svd(P - P.mean(0), full_matrices=False)
-    k = min(30, P.shape[0] - 1)
-    E = U[:, :k] * S[:k]
-    En = E / np.linalg.norm(E, axis=1, keepdims=True)
-    g_pca = _two_label_silhouette(1.0 - En @ En.T, lab)
-    res["per_type_iscg_pca30"] = {t: float(g_pca[lab == t].mean()) for t in np.unique(lab)}
+    """Ours in the raw space (= sTE reduction = FALSE), plus ISCG in our default 30-PC space (= sTE default)."""
+    res = inter_sample_consistency(a, col, "patient_bcc", layer="counts", reduction=None)
+    res["per_type_iscg_pca30"] = inter_sample_consistency(a, col, "patient_bcc", layer="counts")["per_type_iscg"]
+    P, lab, smp, _, _ = _pseudobulk_profiles(a, col, "patient_bcc", min_cells=10, min_samples=5, layer="counts")
     res["profile_ids"] = [f"{s}_{purge_label(t)}" for t, s in zip(lab, smp)]  # scTypeEval's row labels
-    res["rcm"] = _rcm_dissimilarity(P, smp)
+    res["rcm"] = _rcm_dissimilarity(P, smp, lab)
     return res
 
 
@@ -74,7 +67,8 @@ def compare(col: str, res: dict, exp: dict) -> None:
     for t, r in zip(sorted(res["per_type_iscg"]), R):
         print(f"| {t} | " + " | ".join(map(fmt, r)) + " |")
     print("| mean over labels | " + " | ".join(fmt(np.nanmean(c)) for c in R.T) + " |")
-    print(f"ours headline (profile-weighted): iscg {res['iscg']:.6f} iscl {res['iscl']:.6f} "
+    print(f"ours headline (label means): iscg {res['iscg']:.6f} iscl {res['iscl']:.6f}; profile-weighted: iscg "
+          f"{res['iscg_profile_mean']:.6f} iscl {res['iscl_profile_mean']:.6f}; "
           f"integrated {res['integrated']:.6f}; product of label means: ours "
           f"{R[:, 0].mean() * R[:, 4].mean():.6f}, sTE 30-PC {R[:, 3].mean() * R[:, 5].mean():.6f}, "
           f"sTE red=FALSE {R[:, 1].mean() * R[:, 5].mean():.6f}; geo NA labels: ours {int(np.isnan(R[:, 9]).sum())}, "
@@ -84,7 +78,6 @@ def compare(col: str, res: dict, exp: dict) -> None:
     D = e["dissimilarity"]["recip_classif:Match"]
     order = [D["labels"].index(i) for i in res["profile_ids"]]
     ref = np.array(D["matrix"], dtype=float)[np.ix_(order, order)]
-    ref[ref == 0.5] = 1.0  # get_consistency reads 0.5 as 1
     iu = np.triu_indices(len(order), 1)
     diff = np.flatnonzero(res["rcm"][iu] != ref[iu])
     print(f"RCM pairs differing ours vs SingleR: {len(diff)} of {len(iu[0])}; 0.5 entries in sTE: "

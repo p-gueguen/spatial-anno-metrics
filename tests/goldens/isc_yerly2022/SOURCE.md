@@ -106,7 +106,9 @@ Defaults read from the 1.1.2 source (identical in 1.0.0, see above):
 
 - **Filter**: a (sample, label) group needs >= `min_cells` = 10 cells; a label needs >= `min_samples` = 5 such
   samples, else it is reported as NA. Labels and sample ids go through `purge_label` (space, `_`, `+`, `-` -> `.`;
-  commas dropped), so `Normal_Kerat` is reported as `Normal.Kerat`.
+  commas dropped), so `Normal_Kerat` is reported as `Normal.Kerat`. `run_sctypeeval.R` calls
+  `scTypeEval:::purge_label` for its label map instead of copying the rule; re-run on 2026-11-03, it wrote an
+  `expected.json` byte-identical to the committed one (md5 `eb118de101ca5411f716c8c238d75204`).
 - **Pseudobulk**: sum of raw counts per group, then `Log1p` = log1p(x / column sum x 1e4) over every gene in the
   matrix, then restricted to the gene list; all-zero rows and columns are dropped.
 - **ISCG**: `run_dissimilarity()` defaults to `reduction = TRUE`: cosine between the first `ndim` = 30 PCs
@@ -128,7 +130,9 @@ Defaults read from the 1.1.2 source (identical in 1.0.0, see above):
 
 Ours: `spatial_anno_metrics` 0.6.0 (`f71512f`),
 `inter_sample_consistency(adata, <column>, "patient_bcc", counts_layer="counts")` on the committed files; the tables
-are printed by `make_golden.py`. sTE = scTypeEval 1.0.0. "ISCG sTE 30 PCs" is scTypeEval's default space; "product"
+are printed by `make_golden.py`. **Since 0.7.0** the default ISCG space is scTypeEval's (`reduction="pca"`,
+`n_pcs=30`: the "ISCG sTE 30 PCs" column, matched to 1.4e-6 / 8.5e-7); the "ISCG ours" column below is now
+`reduction=None`, and the headline `iscg` / `iscl` are label means. `make_golden.py` prints both. sTE = scTypeEval 1.0.0. "ISCG sTE 30 PCs" is scTypeEval's default space; "product"
 = ISCG x ISCL per label (ours: our ISCG, i.e. our `per_type_integrated`; sTE: its default ISCG); "geo. mean" =
 sqrt(sTE product), the README's integrated score.
 
@@ -161,9 +165,9 @@ sqrt(sTE product), the README's integrated score.
 | mean over labels | 0.825300 | 0.825300 | 0.875638 | 0.575964 | 0.575743 | 0.491403 | 0.527204 | 0.797440 (7 labels) |
 
 Both tools report Bcell (4 samples) and PlasmaCell (2) as not scored: ours in `dropped_types`, sTE as NA.
-Our headline `iscg` / `iscl` are means over pseudobulks, not labels (a label weighs by its number of samples):
-`annotation` 0.855469 / 1.000000, `annotation_oversplit` 0.825611 / 0.569124; `integrated` is the label mean of the
-products (0.854361 / 0.491403).
+Up to 0.6.x our headline `iscg` / `iscl` were means over pseudobulks, not labels (a label weighs by its number of
+samples): `annotation` 0.855469 / 1.000000, `annotation_oversplit` 0.825611 / 0.569124 (kept since 0.7.0 as
+`iscg_profile_mean` / `iscl_profile_mean`); `integrated` is the label mean of the products (0.854361 / 0.491403).
 
 **Dataset-level combined score**, three formulas (labels with a negative ISCL have no geometric mean; the mean then
 runs over the other 7 of 9):
@@ -196,7 +200,8 @@ runs over the other 7 of 9):
    default: cosine on 30 centred PCs. The default reads higher by +0.012 to +0.050 per label (mean +0.030) on
    `annotation`, +0.030 to +0.073 (mean +0.050) on `annotation_oversplit`. That is the projection alone: ours moved
    into the 30-PC space with an exact SVD (`make_golden.py`) matches the sTE default to 1.4e-6 and 8.5e-7, the
-   residual being irlba's truncated SVD against the exact one.
+   residual being irlba's truncated SVD against the exact one. **Closed in 0.7.0**: `reduction="pca"` (default)
+   is that exact-SVD space; `test_iscg_default_30_pcs_matches_sctypeeval` holds it within 2e-6.
 2. **ISCL classifier.** Ours: nearest profile by Spearman over all 2000 genes. sTE: SingleR classic (pairwise top
    markers, Spearman on their union, 0.8 quantile, fine-tuning, pruning). On the authors' labels both classifiers
    make the same mutual hits on every pair (check 4), so ISCL = 1 everywhere and the classifier is invisible. On
@@ -205,9 +210,15 @@ runs over the other 7 of 9):
    per-half ISCL differs by up to 0.30 (Tcell: ours 0.152, sTE 0.456), while the mean over the four halves agrees
    (0.0459 vs 0.0454) and the mean over all labels differs by 0.0002. Through our 0.45 ISCL guide threshold, ours
    reads all four halves as `merge`; sTE's values would read 3 of 4 (Tcell at 0.456 stays `consistent`).
+   0.7.0 adds `rcm_genes="markers"` (SingleR's classic marker union per training sample, no fine-tuning or
+   pruning): identical to SingleR on `annotation` (0 of 1,128 pairs differ) and 28 of 1,891 differing pairs on
+   `annotation_oversplit` (all genes: 30), per-half ISCL 0.143 / -0.095 / 0.088 / -0.229, so the halves stay
+   classifier noise; `rcm_genes=<gene list>` restricts the classifier to e.g. HVGs.
 3. **Label missing from a sample.** sTE scores a mutual hit 0.5 (read as 1) when either profile's label is absent
-   from the other sample; ours scores 0. Not exercised here: neither sTE matrix holds a 0.5 (Mast in BCC3 makes no
-   cross-label mutual hit), so this rule moves no number on this input and stays untested.
+   from the other sample; ours scored 0 up to 0.6.x. Not exercised here: neither sTE matrix holds a 0.5 (Mast in
+   BCC3 makes no cross-label mutual hit), so this rule moves no number on this input. **Implemented in 0.7.0**
+   (`_rcm_dissimilarity` returns 0 / 0.5 / 1 like `recip_classif`, read as 1 before the silhouette) and tested on
+   synthetic profiles in `tests/test_isc.py`; also as scTypeEval, a sample with < 2 profiles matches nothing.
 4. **Combined score.** The formula dominates: the README's geometric mean sits on a square-root scale, +0.070
    (ours, `annotation`) and +0.288 (ours, `annotation_oversplit`) above the paper's mean of products, and it is
    undefined for a negative ISCL (Fibroblast.Nspl2, Tcell.Nspl2 in both tools), so averaging the defined labels
@@ -215,8 +226,9 @@ runs over the other 7 of 9):
    (`annotation`) and is 0.016 lower on `annotation_oversplit`. Given the formula, the ISCG space adds +0.030 /
    +0.034 to the mean of products and the classifier moves it by 0.002 (over-split, 0.491403 vs 0.493365). Ours
    follows the paper (mean over labels of the per-label product).
-5. **Headline weighting.** Ours `iscg` / `iscl` average over pseudobulks (above); sTE reports per label only and the
-   paper averages over labels.
+5. **Headline weighting.** Up to 0.6.x ours `iscg` / `iscl` averaged over pseudobulks (above); sTE reports per
+   label only and the paper averages over labels. **Closed in 0.7.0**: label means, checked against
+   `mean_over_types` in `test_headline_is_the_mean_over_labels`.
 6. **HVGs and library size.** The same 2000 genes and gene-sum library sizes for both tools by construction; in
    normal use ours scores every gene in `adata` and scTypeEval its HVG list with all-gene library sizes.
 
@@ -229,6 +241,12 @@ runs over the other 7 of 9):
   matrix; per-label ISCL within 1e-12.
 - `test_rcm_classifier_gap_vs_singler`: our RCM matrix equals sTE's on `annotation` and differs on exactly 30 of
   1,891 pairs on `annotation_oversplit`, all between halves of one split label.
+- `test_iscg_default_30_pcs_matches_sctypeeval` (both columns): default ISCG within 2e-6 of sTE's 30-PC ISCG per
+  label and for the label mean; positive control: every label's 30-PC and `reduction = FALSE` references differ
+  by > 0.01.
+- `test_headline_is_the_mean_over_labels` (both columns): `iscg` = sTE `mean_over_types`; `iscg_profile_mean` =
+  the pre-0.7.0 headline.
+- `test_rcm_markers_vs_singler`: `rcm_genes="markers"` differs from SingleR on 0 / 1,128 and 28 / 1,891 pairs.
 
 Each of four one-line mutations of `eval_metrics.py` fails at least one test: library-size scale 1e6, 2-label `b`
 x 0.999, one-sided RCM hits counted as matches, RCM rows reversed.

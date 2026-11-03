@@ -32,7 +32,7 @@ def test_spatial_coherence_coherent_vs_shuffled():
 
     a = _blocks()
     coh = sp.spatial_coherence(a, label_key="cell_type", n_neighs=8)
-    assert "spatial_coherence" in a.obs
+    assert "sam_spatial_coherence" in a.obs and a.uns["sam"]["spatial_coherence"]["n_neighs"] == 8
     assert coh["mean_coherence"] > 0.8 and coh["pas"] < 0.15      # clean blocks: neighbors share label
     assert coh["status"] == "ok" and coh["n_neighs"] == 8
 
@@ -49,6 +49,23 @@ def test_neighborhood_sanity_clean_layout_not_flagged():
 
     out = sp.neighborhood_sanity(_blocks(), label_key="cell_type", n_neighs=8)
     assert out["status"] == "ok" and set(out["categories"]) == {"A", "B"}
+
+
+def test_neighborhood_sanity_leaves_the_label_column_alone():
+    """It used to cast the caller's label column to category and write squidpy's result into its uns; an
+    unused category level changed the result."""
+    from spatial_anno_metrics import spatial as sp
+
+    a = _blocks()
+    a.obs["cell_type"] = a.obs["cell_type"].astype(str).to_numpy().astype(object)
+    before = a.obs["cell_type"].copy()
+    out = sp.neighborhood_sanity(a, label_key="cell_type", n_neighs=8)
+    pd.testing.assert_series_equal(a.obs["cell_type"], before)
+    assert not any("nhood_enrichment" in k for k in a.uns)
+    b = _blocks()
+    b.obs["cell_type"] = pd.Categorical(b.obs["cell_type"].astype(str), categories=["A", "B", "Ghost"])
+    ghost = sp.neighborhood_sanity(b, label_key="cell_type", n_neighs=8)
+    assert ghost["categories"] == ["A", "B"] and ghost["self_enrichment"] == out["self_enrichment"]
     # a clean 2-block layout: each type's strongest partner is itself -> nothing suspicious
     assert out["suspicious"] == []
     assert len(out["self_enrichment"]) == 2
@@ -92,7 +109,7 @@ def test_neighbor_contamination_per_cell():
     # c0 1/10 next to a COL1A1+ Fib; c2/c3 no other type adjacent and c4's Fib neighbor detects no Fib marker
     # -> not evaluable; c6 ACTA2 2/10 is a marker of BOTH adjacent sources -> counted once; c9 has no counts
     want = [0.1, 0.0, np.nan, np.nan, np.nan, 0.0, 0.2, 0.0, 0.0, np.nan]
-    np.testing.assert_allclose(a.obs["neighbor_contamination"].to_numpy(), want)
+    np.testing.assert_allclose(a.obs["sam_neighbor_contamination"].to_numpy(), want)
     assert out["mean_contamination"] == pytest.approx(0.05) and out["n_evaluable"] == 6
     assert out["status"] == "ok" and out["matrix"] == "X"
 
@@ -102,7 +119,7 @@ def test_neighbor_contamination_without_neighbor_expression_check():
 
     a = _spill_tissue()
     sp.neighbor_contamination(a, SPILL_MARKERS, require_neighbor_expression=False)
-    assert a.obs["neighbor_contamination"].iloc[4] == pytest.approx(0.1)   # any adjacent Fib cell suffices
+    assert a.obs["sam_neighbor_contamination"].iloc[4] == pytest.approx(0.1)   # any adjacent Fib cell suffices
 
 
 def test_neighbor_contamination_ignores_own_markers():
@@ -117,7 +134,7 @@ def test_neighbor_contamination_ignores_own_markers():
     a.obs["cell_type"] = ["Fib", "SMC"]
     a.obsp["spatial_connectivities"] = csr_matrix(np.array([[0, 1], [1, 0]], dtype=float))
     sp.neighbor_contamination(a, SPILL_MARKERS)
-    np.testing.assert_allclose(a.obs["neighbor_contamination"].to_numpy(), [0.0, 0.0])
+    np.testing.assert_allclose(a.obs["sam_neighbor_contamination"].to_numpy(), [0.0, 0.0])
 
 
 def test_neighbor_contamination_source_target_matrix():
@@ -138,3 +155,14 @@ def test_spatial_label_metrics_skip_a_single_label():
     a.obs["cell_type"] = "A"
     for out in (sp.spatial_coherence(a, label_key="cell_type"), sp.neighborhood_sanity(a, label_key="cell_type")):
         assert out["status"] == "skipped" and "found 1" in out["reason"]
+
+
+def test_spatial_key_added():
+    from spatial_anno_metrics import spatial as sp
+
+    a = _spill_tissue()
+    sp.neighbor_contamination(a, SPILL_MARKERS, key_added="nc")
+    assert "nc" in a.obs and "sam_neighbor_contamination" not in a.obs
+    b = _blocks(n_side=6)
+    sp.spatial_coherence(b, label_key="cell_type", key_added="coh")
+    assert "coh" in b.obs

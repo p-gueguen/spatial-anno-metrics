@@ -124,7 +124,7 @@ def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[
     ``cohort`` reports inter-sample label consistency when ``cohort_result`` is passed (also not scored - its
     level does not transfer, like G). Pure/guarded; QC-safe.
     """
-    from .purity import pmp as _pmp
+    from .purity import _pmp_values
 
     labels = adata.obs[label_key].astype(str).to_numpy()
     abst = {str(x) for x in (abstention_labels or [])}
@@ -155,8 +155,7 @@ def annotation_quality_index(adata, label_key: str, marker_sets: dict[str, list[
     C = None
     if marker_sets:
         try:
-            _pmp(adata, marker_sets, label_key)                     # writes obs['pmp']
-            pv = np.asarray(adata.obs["pmp"], dtype=float)
+            pv = _pmp_values(adata, marker_sets, label_key, "counts")
             meds, defined = [], 0
             for t in big:
                 col = pv[labels == t]

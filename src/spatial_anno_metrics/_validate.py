@@ -52,6 +52,12 @@ def _count_like(M) -> bool:
     return bool(np.all(np.isfinite(v)) and np.all(v >= 0) and np.all(v == np.round(v)))
 
 
+def matrix_name(adata, layer: str | None) -> str:
+    """The name :func:`get_counts` reports for ``layer``, without reading the matrix: ``"layers['<layer>']"``
+    when the layer exists, else ``"X"`` (``get_counts`` raises instead when that ``X`` is not raw counts)."""
+    return f"layers[{layer!r}]" if layer is not None and layer in adata.layers else "X"
+
+
 def get_counts(adata, layer: str | None = "counts"):
     """``(matrix, which)``: the count matrix a count-based metric reads, and its name for the result.
 
@@ -64,13 +70,15 @@ def get_counts(adata, layer: str | None = "counts"):
     A chosen matrix that is not raw counts (non-integer or negative values) is used, with one ``UserWarning``.
     Every count-based metric returns ``which`` as ``"matrix"`` in its result.
     """
-    if layer is not None and layer not in adata.layers:
+    which = matrix_name(adata, layer)
+    if layer is not None and which == "X":                         # the named layer is missing
         if not _count_like(adata.X):
-            raise ValueError(f"layer {layer!r} is not in adata.layers ({sorted(adata.layers) or 'none'}) and X "
+            named = sorted(k for k in adata.layers if k is not None) or "none"   # anndata >= 0.12 lists X as None
+            raise ValueError(f"layer {layer!r} is not in adata.layers ({named}) and X "
                              "is not raw counts (negative or non-integer values): pass layer= naming the "
                              "raw-count layer, or layer=None to read X as it is")
-        return adata.X, "X"
-    mat, which = (adata.X, "X") if layer is None else (adata.layers[layer], f"layers[{layer!r}]")
+        return adata.X, which
+    mat = adata.X if which == "X" else adata.layers[layer]
     if not _count_like(mat):
         warnings.warn(f"{which} is not raw counts (negative or non-integer values) but this metric reads it as "
                       "counts; pass layer= naming the raw-count layer", UserWarning, stacklevel=3)

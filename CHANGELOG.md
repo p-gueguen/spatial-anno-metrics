@@ -58,6 +58,26 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
 - `inter_sample_consistency` keeps `layer=None` as its default (`X` averaged as it is, for log-normalised HVGs).
   A named layer selects the summed-counts recipe, as `counts_layer` did.
 
+**Outputs written to the AnnData**
+
+- Every function that writes per-cell values to `obs` takes `key_added=`. The default column names carry a
+  `sam_` prefix, so they no longer overwrite generic names such as `pmp` or `sparsity` that you may already use:
+  - `pmp`: `obs['pmp']` -> `obs['sam_pmp']`;
+  - `crisp_purity`: `crisp_impure` -> `sam_crisp_impure`;
+  - `nmp`: `nmp` -> `sam_nmp`;
+  - `spatial_coherence`: `spatial_coherence` -> `sam_spatial_coherence`;
+  - `neighbor_contamination`: `neighbor_contamination` -> `sam_neighbor_contamination`;
+  - `label_stability`: `label_stability` -> `sam_label_stability`;
+  - `sparsity`, `detection_entropy`, `tx_per_area`: -> `sam_sparsity`, `sam_detection_entropy`, `sam_tx_per_area`.
+  - Two functions write two columns, and their `key_added` is a pair: `per_cell_confidence`
+    (`marker_margin`, `marker_entropy` -> `("sam_marker_margin", "sam_marker_entropy")`) and `signal_to_noise`
+    (`mean_signal_ratio`, `max_signal_ratio` -> `("sam_mean_signal_ratio", "sam_max_signal_ratio")`).
+- `annotation_quality` and `annotation_quality_index` no longer write `obs['pmp']`. The AQI reads the PMP values
+  directly; its results are unchanged.
+- `neighborhood_sanity` no longer converts your label column to `category` and no longer writes
+  `uns['<label_key>_nhood_enrichment']`. It works on a copy of the column, without unused levels; before, an
+  unused level changed its result.
+
 **Labels and undefined scores**
 
 - A NaN / None label raises `ValueError` naming the column and the count. Before, pandas >= 3 raised a
@@ -74,6 +94,10 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
     `spatial_coherence` and `neighborhood_sanity` (`neighborhood_sanity` raised).
 
 ### Added
+
+- Each function that writes `obs` also keeps its scalar results in `adata.uns["sam"][<function name>]`, with
+  the column name(s) under `key_added`. Frames, per-type dicts and lists stay in the returned dict only, so the
+  AnnData still saves to h5ad.
 
 - `from_spatialdata(sdata, table_key="table")` (new module `io`): the AnnData table of a SpatialData object.
   Needs the optional `spatialdata` package.

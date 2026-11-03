@@ -59,8 +59,8 @@ def test_crisp_purity_clean_vs_contaminated():
     assert rc["status"] == "ok" and rc["matrix"] == "X"   # no counts layer: X holds the counts
     assert pc == pytest.approx(1.0)                       # exclusive markers never co-occur
     assert pd_ < pc                                       # contamination lowers purity
-    assert "crisp_impure" in clean.obs and clean.obs["crisp_impure"].sum() == 0
-    assert dirty.obs["crisp_impure"].sum() > 0
+    assert "sam_crisp_impure" in clean.obs and clean.obs["sam_crisp_impure"].sum() == 0
+    assert dirty.obs["sam_crisp_impure"].sum() > 0
 
 
 def test_mecr_clean_zero_contaminated_positive():
@@ -137,13 +137,35 @@ def test_pmp_writes_bounded_column_and_ranks_pure_above_contaminated():
 
     a = _section(0.3, seed=2)
     out = p.pmp(a, MARKERS, label_key="cell_type")
-    v = a.obs["pmp"].to_numpy()
+    v = a.obs["sam_pmp"].to_numpy()
     assert out["status"] == "ok" and out["mean_pmp"] == pytest.approx(np.nanmean(v))
-    assert "pmp" in a.obs
+    assert "sam_pmp" in a.obs and "pmp" not in a.obs
     finite = v[np.isfinite(v)]
     assert finite.size and finite.min() >= 0.0 and finite.max() <= 1.0
     # cells contaminated with the other lineage (first 60) have LOWER purity than the clean tail.
     assert np.nanmean(v[:60]) < np.nanmean(v[120:])
+
+
+def test_purity_outputs_key_added_and_uns_summary(tmp_path):
+    """obs columns are named by key_added (default sam_<name>); the scalar summary goes to uns['sam'][fn]
+    and stays h5ad-writable."""
+    from spatial_anno_metrics import purity as p
+    from spatial_anno_metrics.purity import _pmp_values
+
+    a = _section(0.3, seed=2)
+    out = p.pmp(a, MARKERS, key_added="my_pmp")
+    assert "my_pmp" in a.obs and "sam_pmp" not in a.obs
+    np.testing.assert_array_equal(a.obs["my_pmp"].to_numpy(), _pmp_values(a, MARKERS, "cell_type", "counts"))
+    assert a.uns["sam"]["pmp"] == {"status": "ok", "mean_pmp": out["mean_pmp"], "n_defined": out["n_defined"],
+                                   "matrix": "X", "key_added": "my_pmp"}
+    p.crisp_purity(a, MARKERS)
+    ref = _section(0.0, seed=5)
+    p.nmp(a, reference=ref)
+    assert {"sam_crisp_impure", "sam_nmp"} <= set(a.obs) and {"pmp", "crisp_purity", "nmp"} <= set(a.uns["sam"])
+    assert "types_without_negatives" not in a.uns["sam"]["nmp"]          # lists and frames stay in the result
+    a.write_h5ad(tmp_path / "a.h5ad")
+    back = anndata.read_h5ad(tmp_path / "a.h5ad")
+    assert back.uns["sam"]["pmp"]["key_added"] == "my_pmp"
 
 
 # --------------------------------------------------------------------------- #
@@ -164,7 +186,7 @@ def test_nmp_flags_negative_marker_contamination():
     dirty = _section(0.5, seed=6)        # query with heavy cross-lineage contamination
     out = p.nmp(dirty, reference=ref, label_key="cell_type", ref_label_key="cell_type")
     assert out["status"] == "ok"
-    assert "nmp" in dirty.obs and 0.0 <= out["mean_nmp"] <= 1.0
+    assert "sam_nmp" in dirty.obs and 0.0 <= out["mean_nmp"] <= 1.0
     assert out["mean_nmp"] > p.nmp(_section(0.0, seed=7), reference=ref)["mean_nmp"]
 
 

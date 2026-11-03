@@ -27,3 +27,17 @@ def test_annotation_quality_reports_a_failed_sub_metric_as_a_skip(blobs):
     a.obs["cell_type"] = "T0"
     iv = em.annotation_quality(a, label_key="cell_type", embedding="X_pca", compute_aqi=False)["internal_validity"]
     assert iv == {"status": "skipped", "reason": iv["reason"]} and "found 1" in iv["reason"]
+
+
+def test_annotation_quality_leaves_obs_alone(blobs):
+    """The AQI's purity term reads PMP values directly; the battery no longer writes obs['pmp']."""
+    import numpy as np
+
+    from spatial_anno_metrics import battery as em
+
+    a = blobs(n_per=60)
+    a.X = np.abs(np.round(a.X * 3))                    # counts-like, so the marker terms run
+    cols = list(a.obs.columns)
+    out = em.annotation_quality(a, label_key="cell_type", embedding="X_pca",
+                                marker_sets={"T0": ["0", "1"], "T1": ["2", "3"]})
+    assert out["aqi"]["components"]["C"] is not None and list(a.obs.columns) == cols

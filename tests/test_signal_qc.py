@@ -61,6 +61,11 @@ def test_signal_to_noise_positive_when_signal_above_control():
     assert out["status"] == "ok" and out["matrix"] == "X"
     assert out["median_mean_signal_ratio"] > 0                 # genes > controls (log2 ratio)
     assert out["median_max_signal_ratio"] > out["median_mean_signal_ratio"]
+    a = _spatial_adata()
+    sq.signal_to_noise(a)
+    assert {"sam_mean_signal_ratio", "sam_max_signal_ratio"} <= set(a.obs)
+    sq.signal_to_noise(a, key_added=("mean_r", "max_r"))
+    assert {"mean_r", "max_r"} <= set(a.obs)
 
 
 def test_signal_to_noise_skips_without_controls():
@@ -80,7 +85,7 @@ def test_sparsity():
     a = anndata.AnnData(X=sp.csr_matrix(X))
     out = sq.sparsity(a)
     assert out["zero_fraction"] == pytest.approx(0.5)
-    assert "sparsity" in a.obs
+    assert "sam_sparsity" in a.obs and a.uns["sam"]["sparsity"]["zero_fraction"] == pytest.approx(0.5)
 
 
 def test_detection_entropy_low_for_dominance_high_for_uniform():
@@ -90,9 +95,9 @@ def test_detection_entropy_low_for_dominance_high_for_uniform():
     X[0, 0] = 10.0                                             # one gene dominates -> entropy 0
     X[1, :5] = 1.0                                             # uniform over 5 genes -> entropy 1
     a = anndata.AnnData(X=sp.csr_matrix(X))
-    sq.detection_entropy(a)
-    assert a.obs["detection_entropy"].iloc[0] == pytest.approx(0.0, abs=1e-9)
-    assert a.obs["detection_entropy"].iloc[1] == pytest.approx(1.0, abs=1e-6)
+    sq.detection_entropy(a, key_added="ent")
+    assert a.obs["ent"].iloc[0] == pytest.approx(0.0, abs=1e-9)
+    assert a.obs["ent"].iloc[1] == pytest.approx(1.0, abs=1e-6)
 
 
 def test_tx_per_area():
@@ -102,7 +107,7 @@ def test_tx_per_area():
     a.obs["cell_area"] = 10.0
     out = sq.tx_per_area(a)
     assert out["median_tx_per_area"] > 0
-    assert "tx_per_area" in a.obs
+    assert "sam_tx_per_area" in a.obs
 
 
 def test_run_signal_qc_headline():

@@ -11,6 +11,9 @@ tissue geometry:
 * :func:`neighbor_contamination` - per-cell share of counts on markers of the ADJACENT cell types
   (spillover from neighbors) + a directed source x target matrix (SegTraQ ``contamination_strength``).
 
+Per-cell values go to ``obs[key_added]`` (default ``sam_<name>``) and the scalar summary to
+``uns['sam'][<function name>]``. The spatial graph is cached in ``obsp['spatial_connectivities']``.
+
 **Caveat (load-bearing):** rare infiltrating cells are legitimately spatially incoherent. Use these
 to DOWN-WEIGHT / flag, never to hard-delete. Source: SpatialScribe QC Layer-6; grounded in Salas
 et al. Nat Methods 2025. Depends on: numpy, scipy; squidpy (builds/uses the spatial graph).
@@ -20,7 +23,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ._utils import _squidpy
+from ._utils import _squidpy, _store
 from ._validate import check_labels, get_counts, skip
 
 __all__ = ["spatial_coherence", "neighborhood_sanity", "neighbor_contamination"]
@@ -34,8 +37,8 @@ def _ensure_spatial_graph(adata, n_neighs: int) -> None:
 
 
 def spatial_coherence(adata, label_key: str = "cell_type", n_neighs: int = 15,
-                      pas_threshold: float = 0.2) -> dict:
-    """Per-cell fraction of same-label spatial neighbors (writes ``obs['spatial_coherence']``), plus the
+                      pas_threshold: float = 0.2, *, key_added: str = "sam_spatial_coherence") -> dict:
+    """Per-cell fraction of same-label spatial neighbors (writes ``obs[key_added]``), plus the
     dataset **PAS** (Proportion of Abnormal Spots = fraction of cells with < ``pas_threshold`` same-label
     neighbors). Reuses ``obsp['spatial_connectivities']`` (built via squidpy kNN with ``n_neighs`` if
     absent). Reference-free (labels + coords). Returns ``{status, pas, mean_coherence, n_neighs,
@@ -57,11 +60,13 @@ def spatial_coherence(adata, label_key: str = "cell_type", n_neighs: int = 15,
     deg = np.asarray(A.sum(1)).ravel()
     with np.errstate(divide="ignore", invalid="ignore"):
         frac = np.where(deg > 0, same / deg, np.nan)
-    adata.obs["spatial_coherence"] = frac
+    adata.obs[key_added] = frac
 
     pas = float(np.mean(np.nan_to_num(frac, nan=1.0) < pas_threshold))
-    return {"status": "ok", "pas": pas, "mean_coherence": float(np.nanmean(frac)), "n_neighs": n_neighs,
-            "pas_threshold": pas_threshold}
+    out = {"status": "ok", "pas": pas, "mean_coherence": float(np.nanmean(frac)), "n_neighs": n_neighs,
+           "pas_threshold": pas_threshold}
+    _store(adata, "spatial_coherence", out, key_added)
+    return out
 
 
 def neighborhood_sanity(adata, label_key: str = "cell_type", n_neighs: int = 6, seed: int = 0) -> dict:
@@ -69,7 +74,9 @@ def neighborhood_sanity(adata, label_key: str = "cell_type", n_neighs: int = 6, 
     (permutation z-score) and flags any type whose STRONGEST partner is a different type - a mild
     systematic-mislabeling smell (e.g. two labels that are really one, or a swap). Reference-free
     (labels + coords). Returns ``{status, categories, self_enrichment (diagonal), suspicious[...]}``; fewer
-    than 2 labels -> a skip."""
+    than 2 labels -> a skip. Runs on a copy of the label column (unused levels dropped): the caller's column
+    and ``uns`` are left as they are."""
+    import anndata as ad
     import pandas as pd
 
     sq = _squidpy()
@@ -77,12 +84,14 @@ def neighborhood_sanity(adata, label_key: str = "cell_type", n_neighs: int = 6, 
     if len(np.unique(labels)) < 2:
         return skip(f"need >= 2 labels in adata.obs[{label_key!r}], found {len(np.unique(labels))}")
     _ensure_spatial_graph(adata, n_neighs=n_neighs)
-    if not isinstance(adata.obs[label_key].dtype, pd.CategoricalDtype):
-        adata.obs[label_key] = adata.obs[label_key].astype("category")
-    sq.gr.nhood_enrichment(adata, cluster_key=label_key, seed=seed, show_progress_bar=False)
-    res = adata.uns.get(f"{label_key}_nhood_enrichment", {})
-    z = np.asarray(res.get("zscore", np.array([])))
-    cats = list(adata.obs[label_key].cat.categories)
+    col = adata.obs[label_key]
+    col = (col.cat.remove_unused_categories() if isinstance(col.dtype, pd.CategoricalDtype)
+           else col.astype("category"))
+    tmp = ad.AnnData(obs=pd.DataFrame({label_key: col}))
+    tmp.obsp["spatial_connectivities"] = adata.obsp["spatial_connectivities"]
+    z = np.asarray(sq.gr.nhood_enrichment(tmp, cluster_key=label_key, seed=seed, show_progress_bar=False,
+                                          copy=True)[0])
+    cats = list(col.cat.categories)
     diag = np.diag(z) if z.ndim == 2 and z.shape[0] == z.shape[1] else np.array([])
 
     suspicious = []
@@ -98,11 +107,11 @@ def neighborhood_sanity(adata, label_key: str = "cell_type", n_neighs: int = 6, 
 
 def neighbor_contamination(adata, marker_sets: dict[str, list[str]], label_key: str = "cell_type",
                            n_neighs: int = 6, require_neighbor_expression: bool = True, *,
-                           layer: str | None = "counts") -> dict:
+                           layer: str | None = "counts", key_added: str = "sam_neighbor_contamination") -> dict:
     """Spillover from ADJACENT cells (reference-free: labels + coords + curated ``marker_sets``). For a
     cell of type t, a gene is a local contaminant when it is a marker of a type s touching the cell and not
     a marker of t; with ``require_neighbor_expression`` a touching s cell must also detect it. Writes
-    ``obs['neighbor_contamination']`` = the cell's counts on its local contaminants / its total counts (NaN
+    ``obs[key_added]`` = the cell's counts on its local contaminants / its total counts (NaN
     when no other marker-set type touches it, or its own type has no marker set). The spatial counterpart
     to :func:`~spatial_anno_metrics.purity.pmp` / ``nmp``, which cannot tell a neighbor's spillover from a
     mislabel. Returns ``{status, mean_contamination, n_evaluable, source_target, n_source_target, matrix}``:
@@ -150,6 +159,8 @@ def neighbor_contamination(adata, marker_sets: dict[str, list[str]], label_key: 
     evaluable = local.any(axis=1)
     frac = np.full(adata.n_obs, np.nan)
     frac[evaluable] = (Xm * local).sum(axis=1)[evaluable] / total[evaluable]
-    adata.obs["neighbor_contamination"] = frac
-    return {"status": "ok", "mean_contamination": float(np.nanmean(frac)) if evaluable.any() else float("nan"),
-            "n_evaluable": int(evaluable.sum()), "source_target": M, "n_source_target": N, "matrix": matrix}
+    adata.obs[key_added] = frac
+    out = {"status": "ok", "mean_contamination": float(np.nanmean(frac)) if evaluable.any() else float("nan"),
+           "n_evaluable": int(evaluable.sum()), "source_target": M, "n_source_target": N, "matrix": matrix}
+    _store(adata, "neighbor_contamination", out, key_added)
+    return out

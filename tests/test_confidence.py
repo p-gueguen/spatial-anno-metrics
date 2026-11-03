@@ -42,6 +42,18 @@ def test_per_cell_confidence_margin_and_entropy():
     assert clean["mean_entropy"] < amb["mean_entropy"]      # ambiguous cells: flatter softmax
 
 
+def test_per_cell_confidence_writes_two_named_columns():
+    from spatial_anno_metrics import confidence as cf
+
+    a = _section()
+    cf.per_cell_confidence(a, MARKERS)
+    assert {"sam_marker_margin", "sam_marker_entropy"} <= set(a.obs)
+    cf.per_cell_confidence(a, MARKERS, key_added=("m", "e"))
+    assert {"m", "e"} <= set(a.obs) and a.uns["sam"]["per_cell_confidence"]["key_added"] == ["m", "e"]
+    with pytest.raises(TypeError, match="two column names"):
+        cf.per_cell_confidence(a, MARKERS, key_added="me")
+
+
 def _marker_argmax(adata):
     """A tiny marker-argmax labeller for the stability callback (mean expr per set)."""
     import numpy as np
@@ -61,7 +73,7 @@ def test_label_stability_low_flip_for_separated_cells():
 
     a = _section(seed=2)
     out = cf.label_stability(a, _marker_argmax, drop_frac=0.2, reps=4, seed=3)
-    assert "label_stability" in a.obs
+    assert "sam_label_stability" in a.obs and a.uns["sam"]["label_stability"]["reps"] == 4
     assert 0.0 <= out["mean_flip_rate"] <= 1.0
     assert out["mean_flip_rate"] < 0.1                     # well-separated markers -> stable under 20% dropout
     assert out["status"] == "ok" and out["matrix"] == "layers['counts']"
@@ -74,7 +86,7 @@ def test_per_cell_confidence_skips_with_fewer_than_two_marker_sets():
     a = _section()
     out = cf.per_cell_confidence(a, {"T": MARKERS["T"], "Ghost": ["not_on_panel"]})
     assert out["status"] == "skipped" and "found 1" in out["reason"]
-    assert "marker_margin" not in a.obs
+    assert "sam_marker_margin" not in a.obs and "per_cell_confidence" not in a.uns.get("sam", {})
 
 
 def test_label_stability_does_not_truncate_float_values():

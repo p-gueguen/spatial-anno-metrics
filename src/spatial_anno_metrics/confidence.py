@@ -9,13 +9,15 @@ metrics. All reference-free:
   each cell's counts, re-annotate via a caller-supplied ``annotate_fn``, measure the label-flip rate
   (MERFISH: ~20% dropout flips 10-15% of labels). Annotator-agnostic (pass any labeller).
 
-Source: SpatialScribe QC Layer-5. Depends on: numpy (scipy for sparse). See
+Per-cell values go to ``obs[key_added]`` (default ``sam_<name>``) and the scalar summary to
+``uns['sam'][<function name>]``. Source: SpatialScribe QC Layer-5. Depends on: numpy (scipy for sparse). See
 ``docs/cell-annotation-quality-metrics.md`` §3d.
 """
 from __future__ import annotations
 
 import numpy as np
 
+from ._utils import _store
 from ._validate import get_counts, skip
 
 __all__ = ["per_cell_confidence", "label_stability"]
@@ -25,15 +27,18 @@ def _dense(x):
     return x.toarray() if hasattr(x, "toarray") else np.asarray(x)
 
 
-def per_cell_confidence(adata, marker_sets: dict[str, list[str]], layer: str | None = "counts") -> dict:
+def per_cell_confidence(adata, marker_sets: dict[str, list[str]], layer: str | None = "counts", *,
+                        key_added: tuple[str, str] = ("sam_marker_margin", "sam_marker_entropy")) -> dict:
     """Per-cell marker-score **margin** + **entropy** from panel-restricted lineage marker sets.
 
     Per set, the score is the cell's mean expression over that set's on-panel genes; the margin is
     ``top1 - top2`` across sets (high = one lineage clearly wins) and the entropy is the normalized
-    Shannon entropy of the softmax over set scores (0 = decisive, 1 = uniform / guessing). Writes
-    ``obs['marker_margin']`` and ``obs['marker_entropy']``; returns ``{status, mean_margin, mean_entropy,
+    Shannon entropy of the softmax over set scores (0 = decisive, 1 = uniform / guessing). Writes the margin
+    and the entropy to the two obs columns named by ``key_added``; returns ``{status, mean_margin, mean_entropy,
     n_sets, matrix}``. Reference-free (needs marker sets). Reads the count matrix chosen by ``layer`` (see
     ``get_counts``). Fewer than 2 marker sets on the panel -> a skip (no runner-up, so no margin)."""
+    if isinstance(key_added, str) or len(key_added) != 2:
+        raise TypeError("key_added takes two column names: (margin column, entropy column)")
     panel = set(adata.var_names)
     mat, matrix = get_counts(adata, layer)
     var_idx = {g: i for i, g in enumerate(adata.var_names)}
@@ -56,10 +61,12 @@ def per_cell_confidence(adata, marker_sets: dict[str, list[str]], layer: str | N
     P /= P.sum(1, keepdims=True)
     with np.errstate(divide="ignore", invalid="ignore"):
         ent = -(P * np.log(np.clip(P, 1e-12, 1.0))).sum(1) / np.log(P.shape[1])
-    adata.obs["marker_margin"] = margin
-    adata.obs["marker_entropy"] = ent
-    return {"status": "ok", "mean_margin": float(np.mean(margin)), "mean_entropy": float(np.mean(ent)),
-            "n_sets": len(names), "matrix": matrix}
+    adata.obs[key_added[0]] = margin
+    adata.obs[key_added[1]] = ent
+    out = {"status": "ok", "mean_margin": float(np.mean(margin)), "mean_entropy": float(np.mean(ent)),
+           "n_sets": len(names), "matrix": matrix}
+    _store(adata, "per_cell_confidence", out, key_added)
+    return out
 
 
 def _subsample_counts(counts, drop_frac: float, rng) -> "np.ndarray":
@@ -72,11 +79,11 @@ def _subsample_counts(counts, drop_frac: float, rng) -> "np.ndarray":
 
 
 def label_stability(adata, annotate_fn, drop_frac: float = 0.2, reps: int = 5, seed: int = 0,
-                    layer: str | None = "counts") -> dict:
+                    layer: str | None = "counts", *, key_added: str = "sam_label_stability") -> dict:
     """Annotation robustness under transcript subsampling (reference-free). Baseline labels come from
     ``annotate_fn(adata) -> array[str] of length n_obs``; then for ``reps`` reps, drop ``drop_frac`` of
     each cell's counts, re-run ``annotate_fn`` on the thinned copy, and record the label-flip rate.
-    Writes ``obs['label_stability']`` in [0,1] (higher = LESS stable); returns ``{status, mean_flip_rate,
+    Writes ``obs[key_added]`` in [0,1] (higher = LESS stable); returns ``{status, mean_flip_rate,
     reps, drop_frac, matrix}``. ``annotate_fn`` is any labeller (marker argmax, a classifier, ...); the thinned
     copy carries the reduced counts in both ``.X`` and (if ``layer`` present) that layer. The counts are
     the matrix chosen by ``layer`` (see ``get_counts``)."""
@@ -93,6 +100,8 @@ def label_stability(adata, annotate_fn, drop_frac: float = 0.2, reps: int = 5, s
         lab = np.asarray(annotate_fn(tmp)).astype(str)
         flips += (lab != base).astype(float)
     stability = flips / max(1, reps)
-    adata.obs["label_stability"] = stability
-    return {"status": "ok", "mean_flip_rate": float(np.mean(stability)), "reps": reps, "drop_frac": drop_frac,
-            "matrix": matrix}
+    adata.obs[key_added] = stability
+    out = {"status": "ok", "mean_flip_rate": float(np.mean(stability)), "reps": reps, "drop_frac": drop_frac,
+           "matrix": matrix}
+    _store(adata, "label_stability", out, key_added)
+    return out

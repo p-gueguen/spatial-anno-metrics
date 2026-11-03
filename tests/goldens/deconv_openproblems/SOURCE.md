@@ -78,3 +78,12 @@ uv pip install --python <venv>/bin/python --exclude-newer 2025-06-12 anndata sci
 Used here: Python 3.12.13, anndata 0.11.4, scikit-learn 1.7.0, scipy 1.15.3, numpy 2.3.0, pandas 2.3.0 (the
 upstream metrics run in the `openproblems/base_python:1` image). The script stops if the clone is not at the
 pinned commit, rewrites this directory and prints the table above.
+
+## Test
+
+`tests/test_external.py::test_deconvolution_matches_openproblems_golden` compares `r2` (all three pairs) and `jsd`
+(`close`, `noisy`) at rel/abs 1e-12, and for `absent_type` asserts the upstream NaN and that ours equals the
+mean JS distance of the four defined cell types. Positive control: adding 1e-9 to one expected value fails it.
+The SSIM, AUPR and rank-score keys added in 0.7.0 have no reference outputs here: running the Li et al. 2022
+reference code was not permitted in the generating session, so `_ssim_li` is checked against the paper's formula
+in `test_deconvolution_ssim_and_aupr` instead.

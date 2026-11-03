@@ -9,3 +9,5 @@ dist/
 venv/
 .coverage
 htmlcov/
+docs/_build/
+docs/generated/

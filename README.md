@@ -115,7 +115,7 @@ sam.deconvolution_metrics(true_prop=true_prop, pred_prop=pred_prop)    # R2, JSD
 ## Choosing metrics
 
 Don't compute everything — pick the battery for your situation. The
-[decision guide](docs/cell-annotation-quality-metrics.md#1-decision-guide) maps
+[decision guide](docs/cell-annotation-quality-metrics.md#1-decision-guide--which-metrics-to-compute) maps
 *what you have* (ground truth? replicates? markers? coords?) to *what to compute*. Two rules that
 save you: **margin > absolute score** for confidence, and keep **≥1 method-independent metric**
 (marker-only) so you're not circular with a reference.

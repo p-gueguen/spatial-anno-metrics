@@ -19,28 +19,27 @@
 
 ## Table of contents
 
-1. [Decision guide — which metrics to compute](#1-decision-guide)
-2. [External / reference-based metrics (ground truth or trusted reference)](#2-external)
-3. [Internal / reference-free metrics (the default regime)](#3-internal)
-   - 3a. [Cluster-validity / separation (scTypeEval + classics)](#3a-cluster-validity)
-   - 3b. [Inter-sample consistency — ISC (scTypeEval)](#3b-isc)
-   - 3c. [Marker / contamination purity (reference-free)](#3c-purity)
-   - 3d. [Per-cell confidence / uncertainty](#3d-confidence)
-   - 3e. [Spatial-context metrics (spatial only)](#3e-spatial)
-   - 3f. [Reference-anchored specificity (needs a matched profile, not labels)](#3f-anchored)
-   - 3g. [Marker-program fidelity (needs marker sets, not truth)](#3g-marker-fidelity)
-   - 3h. [Signal-quality QC (annotation-independent; SpatialQM)](#3h-signal-qc)
-   - 3i. [Ontology label-relation consistency (needs a CL id map, not truth)](#3i-ontology)
-4. [What we standardize on — default metric batteries](#4-batteries)
-5. [Master metric table (quick reference)](#5-master-table)
-6. [Implementation status (package modules)](#6-implementation)
-7. [scTypeEval — what it adds and how to fold it in](#7-sctypeeval)
-8. [Cross-cutting rules & anti-patterns](#8-rules)
+1. [Decision guide — which metrics to compute](#1-decision-guide--which-metrics-to-compute)
+2. [External / reference-based metrics (ground truth or trusted reference)](#2-external--reference-based-metrics-ground-truth-or-trusted-reference)
+3. [Internal / reference-free metrics (the default regime)](#3-internal--reference-free-metrics-the-default-regime)
+   - 3a. [Cluster-validity / separation (scTypeEval + classics)](#3a-cluster-validity--separation-sctypeeval--classics)
+   - 3b. [Inter-sample consistency — ISC (scTypeEval)](#3b-inter-sample-consistency--isc-sctypeeval)
+   - 3c. [Marker / contamination purity (reference-free)](#3c-marker--contamination-purity-reference-free)
+   - 3d. [Per-cell confidence / uncertainty](#3d-per-cell-confidence--uncertainty)
+   - 3e. [Spatial-context metrics (spatial only)](#3e-spatial-context-metrics-spatial-only)
+   - 3f. [Reference-anchored specificity (needs a matched profile, not labels)](#3f-reference-anchored-specificity-needs-a-matched-profile-not-per-cell-labels)
+   - 3g. [Marker-program fidelity (needs marker sets, not truth)](#3g-marker-program-fidelity-needs-marker-sets-not-ground-truth)
+   - 3h. [Signal-quality QC (annotation-independent; SpatialQM)](#3h-signal-quality-qc-annotation-independent-spatialqm)
+   - 3i. [Ontology label-relation consistency (needs a CL id map, not truth)](#3i-ontology-label-relation-consistency-needs-a-label---cl-id-map-not-ground-truth)
+4. [What we standardize on — default metric batteries](#4-what-we-standardize-on--default-metric-batteries)
+5. [Master metric table (quick reference)](#5-master-metric-table-quick-reference)
+6. [Implementation status (package modules)](#6-implementation-status)
+7. [scTypeEval — what it adds and how to fold it in](#7-sctypeeval--what-it-adds-and-how-to-fold-it-in)
+8. [Cross-cutting rules & anti-patterns](#8-cross-cutting-rules--anti-patterns)
 9. [References](#9-references)
 
 ---
 
-<a name="1-decision-guide"></a>
 ## 1. Decision guide — which metrics to compute
 
 Pick the column that matches what you actually have. This is the whole document in one table; the rest is detail.
@@ -55,11 +54,10 @@ Pick the column that matches what you actually have. This is the whole document 
 | **Spatial coordinates** | Internal (§3e) | **Spatial coherence / PAS**, neighborhood enrichment sanity. Down-weight, never delete (rare infiltrating cells are legitimately incoherent). |
 | **A targeted panel** (Xenium/CosMx) | Internal (§3c, §3f) + panel gate | Everything above **plus panel adequacy** (can the panel even resolve the type — [`cell-annotation-qc.md` §7](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/cell-annotation-qc.md)). |
 
-> Most SpatialScribe deliveries land in rows 4–7 simultaneously (labels + embedding + markers + coords, no truth). The **default spatial battery** in [§4](#4-batteries) is exactly that combination.
+> Most SpatialScribe deliveries land in rows 4–7 simultaneously (labels + embedding + markers + coords, no truth). The **default spatial battery** in [§4](#4-what-we-standardize-on--default-metric-batteries) is exactly that combination.
 
 ---
 
-<a name="2-external"></a>
 ## 2. External / reference-based metrics (ground truth or trusted reference)
 
 Use these **only** when you have labels you trust as truth — a manual gold standard, a held-out benchmark, or (with caveats) a reference atlas. They answer "how close is the predicted labeling to the reference labeling?"
@@ -110,7 +108,7 @@ The load-bearing finding of the Zhu et al. 2026 spatial benchmark (this paper �
 
 - **AvgBIO** (Average Biological Conservation, from scIB) — a summary of structure-preservation metrics, each oriented larger-is-better and scaled to [0,1], then averaged. **Exact form used in Zhu 2026:** `AvgBIO = mean(ARI, NMI, ASW_scaled)` with `ASW_scaled = (ASW+1)/2` (ASW = Average Silhouette Width on the labeled embedding). Reduces over-reliance on any single metric.
 - **Marker-gene overlap** — overlap between each method's data-derived per-type DE genes (top 10 / 20 / 30) and the reference cell-type marker genes: do the labels reproduce the *known* markers?
-- **ssGSEA program concordance + AUC-ROC on enrichment** — score each cell against ground-truth marker/pathway sets with ssGSEA, then per type compute the **AUC-ROC** of that enrichment score ranking predicted-positive above predicted-negative cells. Directly asks: does a method's label assignment track the cells' actual marker-program enrichment? (Reference-free given marker sets — see [§3g](#3g-marker-fidelity).)
+- **ssGSEA program concordance + AUC-ROC on enrichment** — score each cell against ground-truth marker/pathway sets with ssGSEA, then per type compute the **AUC-ROC** of that enrichment score ranking predicted-positive above predicted-negative cells. Directly asks: does a method's label assignment track the cells' actual marker-program enrichment? (Reference-free given marker sets — see [§3g](#3g-marker-program-fidelity-needs-marker-sets-not-ground-truth).)
 - **Cohen's d (score separability)** — standardized effect size of how cleanly a method's binary type call separates target vs non-target cells on the marker-enrichment score.
 
 **Rule:** in any benchmark, report at least one fidelity metric next to accuracy/F1.
@@ -122,18 +120,16 @@ The Zhu 2026 framework adds three axes plain accuracy misses:
 - **Hierarchical annotation accuracy** (the "accuracy tree") — accuracy scored *along the cell-type lineage hierarchy*, so a call that gets the **major class right but the subtype wrong** earns partial credit instead of a flat miss. Credit is by distance on the label tree: the hierarchical F-measure of Kiritchenko et al. 2006 from the lowest-common-ancestor depth. An honest coarse call (the parent) earns 2/3 and a wrong sibling subtype 1/2, so the score prefers 'T cell' over a confident wrong 'CD8 T' for a CD4 T cell. A flat 0.5 for both cannot tell them apart. Report **accuracy on coarse (non-leaf) calls** next to it: a method that hedges to the parent is right more often at lower resolution. This is the principled fix for the granularity trap (§8): a coarse-vs-fine mismatch should not be penalized like a lineage error. Pair with **subtype-level accuracy** (accuracy restricted to fine subtypes) to see *where* resolution breaks down.
 - **Cell-type composition / proportion accuracy** — compare predicted vs true **cell-type proportions**. Two settings: (i) **hard labels → global proportions** per section/condition (`composition_accuracy`: L1 / Pearson / JSD on the length-K proportion vectors) — catches methods that get per-cell labels roughly right but distort the population mix (the paper tracks this across a kidney injury–repair time course); (ii) **soft per-spot proportion matrices** (spots × cell-types), i.e. **deconvolution** output — scored with the **OpenProblems `task_spatial_decomposition`** metrics: **R²** (`r2_score(true, pred, multioutput='uniform_average')`, per cell type averaged; ↑) and **JSD** (mean over cell types of `scipy.jensenshannon(true[:,k], pred[:,k])`, axis=0; ↓), plus **RMSE** and per-spot JSD. Use (ii) to score a deconvolver's proportion output (RCTD/TACCO/cell2location weights) against known mixtures / pseudospots (`external.deconvolution_metrics`). Presence/absence **AUPR** (Spotless, Sang-aram et al. eLife 2024: predicted proportions as scores for 'type present in spot') and per-type **SSIM** after max-scaling (Li et al. Nat Methods 2022) are also returned. To compare several deconvolvers on one dataset, `deconvolution_rank_score` averages per-metric ranks (Spotless: RMSE, JSD, AUPR; Li et al.'s accuracy score: PCC, SSIM, RMSE, JSD).
 - **Decomposition purity** (`decomposition.decomposition_purity`): 1 - the largest normalised deconvolution weight per cell (RCTD full mode). Higher = more of the cell's expression assigned outside its dominant type. Spatial Touchstone used this as a segmentation-error readout. It depends on the reference; the code follows SegTraQ `rctd_contamination` (MIT).
-- **Robustness to reference volume** — re-run with the reference **down-sampled** (e.g. 25/50/75%) and track accuracy / macro-F1 degradation. A method whose accuracy collapses as the reference shrinks is fragile in the common low-reference regime. Distinct from **query** subsampling ([§3d](#3d-confidence)), which needs no reference.
+- **Robustness to reference volume** — re-run with the reference **down-sampled** (e.g. 25/50/75%) and track accuracy / macro-F1 degradation. A method whose accuracy collapses as the reference shrinks is fragile in the common low-reference regime. Distinct from **query** subsampling ([§3d](#3d-per-cell-confidence--uncertainty)), which needs no reference.
 
 *(Practical fourth axis in the paper — **scalability**: wall-clock time + peak memory. Not a quality metric, but the reason GraphST OOM'd on 1.37 M cells; track it when method choice must scale.)*
 
 ---
 
-<a name="3-internal"></a>
 ## 3. Internal / reference-free metrics (the default regime)
 
 No ground truth. These test whether a labeling is **self-consistent** — with the embedding, the markers, the neighbors, and across samples. This is what you compute on a real delivery.
 
-<a name="3a-cluster-validity"></a>
 ### 3a. Cluster-validity / separation (scTypeEval + classics)
 
 Treat each annotated cell type as a cluster and ask: is it **cohesive** (cells of a type are similar) and **separated** (distinct from other types)? Computed in an embedding (PCA/latent) or in a pseudobulk/expression space.
@@ -158,7 +154,6 @@ Interpreting on sparse panels: silhouette on a raw sparse Xenium matrix is noisy
 
 `internal_validity` computes neighbourhood purity, orbital-medoid and average similarity on every cell and the O(N^2) parts (silhouettes, Ward-PropMatch, Davies-Bouldin, Calinski-Harabasz) on a `subsample` (default 2,000; 5,000 inside `annotation_quality`). An undefined silhouette (one label or only singletons in the subsample) is NaN with a reason, never 0.
 
-<a name="3b-isc"></a>
 ### 3b. Inter-sample consistency — ISC (scTypeEval)
 
 **The distinctive scTypeEval contribution**, now a preprint: Garnica, Andreatta & Carmona, *Evaluating cell type annotations in single-cell omics in the absence of ground truth*, bioRxiv 2026-06-12, DOI [10.64898/2026.06.10.731285](https://doi.org/10.64898/2026.06.10.731285) (scTypeEval is on Bioconductor; benchmark code [carmonalab/ISC_benchmark_reproducibility](https://github.com/carmonalab/ISC_benchmark_reproducibility); data Zenodo [10.5281/zenodo.18921437](https://doi.org/10.5281/zenodo.18921437)). Premise: a label is useful only if it captures a molecular pattern that is **reproducible across biological replicates**. ISC turns replicates into a reference-free quality signal, one score per label.
@@ -200,7 +195,6 @@ Interpreting on sparse panels: silhouette on a raw sparse Xenium matrix is noisy
 
 This is genuinely additive to `cell-annotation-qc.md` (which has no multi-sample notion) and to FGCZ practice: when a report has replicates, ISC answers "is this cluster a real cell type or a batch/over-clustering artifact?" without any atlas.
 
-<a name="3c-purity"></a>
 ### 3c. Marker / contamination purity (reference-free)
 
 Do a cell's transcripts belong to its assigned type, or are they a spillover mixture? These need only **marker gene sets** (no reference atlas). Detailed in [`cell-annotation-qc.md` §6](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/cell-annotation-qc.md); summarized here because they are core annotation-quality metrics, and several are already implemented in [`compare_rctd_tacco.py`](https://github.com/p-gueguen/spatial-scribe/blob/main/scripts/split/compare_rctd_tacco.py).
@@ -217,7 +211,6 @@ Do a cell's transcripts belong to its assigned type, or are they a spillover mix
 
 These are the metrics the RCTD-vs-TACCO-into-SPLIT comparison uses, and they are the reference-free way to *quantify contamination* — the dominant iST annotation-quality problem.
 
-<a name="3d-confidence"></a>
 ### 3d. Per-cell confidence / uncertainty
 
 Per-cell "how sure are we about *this* label?" Detailed in [`cell-annotation-qc.md` §8 + §10](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/cell-annotation-qc.md); the metrics:
@@ -236,7 +229,6 @@ Per-cell "how sure are we about *this* label?" Detailed in [`cell-annotation-qc.
 - **Consensus entropy with ontology-path voting** (popV, Ergen et al. 2024): when several annotators label the same cells, each label also votes for its ancestors, and the consensus is the deepest label with a majority. The entropy of the votes, projected to that depth, measures disagreement without penalising subtype splits. `consensus_entropy` in `consensus.py`.
 - **Annotation stability under subsampling** — drop ~20% of a cell's transcripts, re-annotate, measure label-flip rate; reference-free, evidence-backed (MERFISH: ~20% dropout flips 10–15% of labels). Implemented in `annotate.py` (`annotation_stability`).
 
-<a name="3e-spatial"></a>
 ### 3e. Spatial-context metrics (spatial only)
 
 Does the label make **spatial sense**? Blind to non-spatial metrics. Detailed in [`cell-annotation-qc.md` §9](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/cell-annotation-qc.md):
@@ -249,7 +241,6 @@ Does the label make **spatial sense**? Blind to non-spatial metrics. Detailed in
 
 **Caveat (load-bearing):** coherence, PAS and CHAOS detect *random* label noise only. They are blind to a compact mislabelled patch, they *rise* when two neighbouring types are merged into one label (0.904 → 0.961 in the synthetic `merge` scenario, mean coherence 0.918 → 0.966 and PAS 0.024 → 0.011 from 0 to 3 merges), and they fall for correctly labelled infiltrating cells (`infiltration`: PAS 0.024 → 0.163). PAS stays at 0.023-0.025 whatever the size of a compact mislabelled patch (`patch_error`). Use them to **down-weight**, never to hard-delete or to rank annotations by correctness.
 
-<a name="3f-anchored"></a>
 ### 3f. Reference-anchored specificity (needs a matched profile, not per-cell labels)
 
 Between purely internal and fully external: these need a **matched scRNA/snRNA reference profile** but not per-cell ground truth. From Salas et al. 2025:
@@ -260,7 +251,6 @@ Between purely internal and fully external: these need a **matched scRNA/snRNA r
 
 > Terminology trap (kept from `cell-annotation-qc.md`): **NCP** (negative *co-expression* purity, reference-anchored) ≠ the 10x **negative *control-probe* rate** (background binding). Different things; keep separate.
 
-<a name="3g-marker-fidelity"></a>
 ### 3g. Marker-program fidelity (needs marker sets, not ground truth)
 
 A powerful family the Zhu 2026 benchmark formalizes: given curated marker/program sets, you can measure whether the **labels track the biology without per-cell ground truth** — so these run on real deliveries, not just benchmarks. They are the §2.5 fidelity metrics in their reference-free form:
@@ -270,9 +260,8 @@ A powerful family the Zhu 2026 benchmark formalizes: given curated marker/progra
 - **Cohen's d** — standardized target-vs-non-target separation on the enrichment score (effect size, not just AUC).
 - **Marker-gene overlap** — overlap of a label's data-derived top-N DE genes with its curated markers.
 
-Use these when you have marker sets but no truth (the usual FGCZ case), as the **fidelity** complement to the **purity** metrics in [§3c](#3c-purity): purity asks "is the cell contaminated?", fidelity asks "does the label match the cell's program?".
+Use these when you have marker sets but no truth (the usual FGCZ case), as the **fidelity** complement to the **purity** metrics in [§3c](#3c-marker--contamination-purity-reference-free): purity asks "is the cell contaminated?", fidelity asks "does the label match the cell's program?".
 
-<a name="3h-signal-qc"></a>
 ### 3h. Signal-quality QC (annotation-independent; SpatialQM)
 
 Upstream of annotation quality is *signal* quality: does the section carry real, structured biology above background? These are **label-independent** - they score the data, not the labels - and are ported from the **SpatialQM** R package (Plummer et al., Center for Spatial Omics, St. Jude; released with the Spatial Touchstone study - see §9). Implemented in `signal_qc.py`, **squidpy-compatible** and fast:
@@ -301,7 +290,6 @@ Upstream of annotation quality is *signal* quality: does the section carry real,
 
 These gate whether annotation should be trusted *at all* on a section (they sit alongside Layer 0-3 of the spatial funnel); run them before the label-quality metrics above. `signal_qc.run_signal_qc(adata)` returns the headline.
 
-<a name="3i-ontology"></a>
 ### 3i. Ontology label-relation consistency (needs a label -> CL id map, not ground truth)
 
 When the labels are Cell Ontology terms, their relations are a prior on the embedding: a T cell should sit
@@ -330,7 +318,6 @@ different, own statistic (`is_a` shortest path, Spearman, Mantel test), not a po
 
 ---
 
-<a name="4-batteries"></a>
 ## 4. What we standardize on — default metric batteries
 
 The authoritative recommendation: don't compute everything; compute the right battery for the scenario. Each battery is ordered (compute the first few always; add the rest if cheap/available).
@@ -357,7 +344,6 @@ The authoritative recommendation: don't compute everything; compute the right ba
 
 ---
 
-<a name="5-master-table"></a>
 ## 5. Master metric table (quick reference)
 
 Regime: **E** = external (needs truth) · **I** = internal (reference-free) · **A** = reference-anchored (needs a matched profile, not labels). Needs: L=labels, R=reference atlas, M=marker sets, S=biological replicates (samples), XY=spatial coords, Z=molecule/z data.
@@ -408,7 +394,6 @@ Regime: **E** = external (needs truth) · **I** = internal (reference-free) · *
 
 ---
 
-<a name="6-implementation"></a>
 ## 6. Implementation status
 
 **In SpatialScribe — contamination + confidence + spatial** (reference-free): `purity.py` (MECR, CRISP, PMP, NMP/NCP guards), `annotate.py` (marker margin, entropy path, subsampling stability, penalized-posterior confidence + abstention), `panel_check.py` (panel adequacy + identifiability AUC), `spatial.py` (spatial coherence, PAS, neighborhood sanity, neighbor contamination), and `scripts/split/compare_rctd_tacco.py` (on-target specificity, marker purity, on-target retention, MECR panel).
@@ -449,7 +434,6 @@ annotation_quality(adata, label_key, marker_sets=None, sample_key=None) -> dict 
 
 ---
 
-<a name="7-sctypeeval"></a>
 ## 7. scTypeEval — what it adds and how to fold it in
 
 [**scTypeEval**](https://github.com/carmonalab/scTypeEval) (Carmona lab; Bioconductor) is the R package behind the ISC preprint (§3b; Garnica, Andreatta & Carmona 2026). Inputs: count matrix + metadata / Seurat / SCE; feature selection by HVGs (scran), marker genes, or a custom list; dissimilarities `Pseudobulk:{Euclidean,Cosine,Pearson}`, `WasserStein`, `recip_classif:{Match,Score}`; consistency metrics `silhouette`, `2label_silhouette`, `NeighborhoodPurity`, `ward_PropMatch`, `Orbital_medoid`, `Average_similarity`; optional PCA.
@@ -468,7 +452,6 @@ annotation_quality(adata, label_key, marker_sets=None, sample_key=None) -> dict 
 
 ---
 
-<a name="8-rules"></a>
 ## 8. Cross-cutting rules & anti-patterns
 
 - **No ground truth is the default.** Reach for §3, not §2, on real deliveries. Report external metrics only on benchmarks.
@@ -494,7 +477,6 @@ annotation_quality(adata, label_key, marker_sets=None, sample_key=None) -> dict 
 
 ---
 
-<a name="9-references"></a>
 ## 9. References
 
 **This catalog builds on the FGCZ research docs** — see them for the spatial-funnel detail and verified sources:

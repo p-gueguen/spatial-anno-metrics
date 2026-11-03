@@ -17,6 +17,9 @@ def _e(value, source, provisional=True):
     return {"value": value, "source": source, "provisional": provisional}
 
 
+#: ``THRESHOLDS[module][name] = {"value": ..., "source": "...", "provisional": bool}``: every
+#: hard-coded constant, keyed by the module that reads it. Editing it does not change any default
+#: (see the module docstring).
 THRESHOLDS: dict[str, dict[str, dict]] = {
     "internal": {
         "n_neighbors": _e(30, f"{_PKG}: embedding kNN size for neighborhood purity"),

@@ -1,6 +1,5 @@
 """Sphinx configuration for the spatial-anno-metrics docs (ReadTheDocs builds it from .readthedocs.yaml)."""
 from importlib.metadata import version as _version
-from pathlib import Path
 
 project = "spatial-anno-metrics"
 author = "Paul Gueguen"
@@ -39,12 +38,6 @@ intersphinx_mapping = {
 }
 
 exclude_patterns = ["_build", "ROADMAP.md", "**.ipynb_checkpoints"]
-
-# tutorials/xenium_breast.ipynb lands in a separate change; until it does, its toctree entry is the only
-# missing document and must not fail a -W build.
-suppress_warnings = []
-if not (Path(__file__).parent / "tutorials" / "xenium_breast.ipynb").exists():
-    suppress_warnings.append("toc.not_readable")
 
 html_theme = "furo"
 html_title = f"spatial-anno-metrics {release}"

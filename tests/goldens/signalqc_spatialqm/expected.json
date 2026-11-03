@@ -88,6 +88,11 @@
         "Gene Expression": 313,
         "Negative Control Codeword": 41,
         "Negative Control Probe": 28
+      },
+      "sha256": {
+        "counts.npz": "485a31b89af1a1f579aa460634579f65f64626875f54c414db4b7607f95d7934",
+        "cells.csv": "01edc342ba6a946500eaf1d5169f58b49b7b557d8e1a12d57502b8b6f7723c6d",
+        "transcripts.npz": "15b17e62a606648ce4e3e08f0344ebc0cd4d5f530dbafbf997e113103ca1512a"
       }
     },
     "date": "2026-11-03"

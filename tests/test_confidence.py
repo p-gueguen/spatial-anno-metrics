@@ -109,3 +109,40 @@ def test_label_stability_does_not_truncate_float_values():
         cf.label_stability(a, total, drop_frac=1e-9, reps=1, layer=None)
     assert seen[1] == a.n_obs * a.n_vars                    # every 0.6 kept as 1 count (astype(int) gave 0)
     assert sum(issubclass(x.category, UserWarning) for x in w) == 1
+
+
+def test_label_stability_negative_control_random_labeller_flips_often():
+    """A labeller that ignores the data must look unstable (2 labels at random: ~50 % flips per rep)."""
+    from spatial_anno_metrics import confidence as cf
+
+    rng = np.random.default_rng(0)
+    a = _section(seed=4)
+    out = cf.label_stability(a, lambda x: rng.choice(["T", "Mal"], size=x.n_obs), drop_frac=0.2, reps=4)
+    assert 0.4 < out["mean_flip_rate"] < 0.6
+
+
+def test_label_stability_hands_the_labeller_a_slim_object_not_a_full_copy():
+    """Each rep gets obs/var/obsm/uns and the thinned counts in X and layers[layer]; other layers (the memory
+    cost of adata.copy(), and unthinned data a labeller could silently read) are not carried. The caller's
+    object is untouched."""
+    from spatial_anno_metrics import confidence as cf
+
+    a = _section(n=40, seed=5)
+    a.layers["lognorm"] = np.log1p(a.X)
+    a.obsm["X_pca"] = np.zeros((a.n_obs, 2))
+    a.uns["note"] = "x"
+    seen = []
+
+    def layers(x):
+        return sorted(k for k in x.layers if k is not None)        # anndata >= 0.12 lists X as None
+
+    def fn(x):
+        seen.append((layers(x), "X_pca" in x.obsm, x.uns.get("note"), list(x.obs.columns)))
+        if x is not a:
+            x.obs["scribble"] = 1                                   # must not reach the caller's obs
+        return _marker_argmax(x)
+
+    cf.label_stability(a, fn, reps=2)
+    assert seen[0][0] == ["counts", "lognorm"]                      # the baseline call gets the caller's object
+    assert seen[1] == (["counts"], True, "x", ["cell_type"]) and seen[2][0] == ["counts"]
+    assert "scribble" not in a.obs and layers(a) == ["counts", "lognorm"]

@@ -76,3 +76,8 @@ uv pip install --python <venv>/bin/python clusim==0.4 pandas   # pandas: for our
 
 Used here: Python 3.12.13, clusim 0.4, numpy 2.5.4, scipy 1.18.1, python-igraph 1.0.0, networkx 3.7,
 mpmath 1.4.1, pandas 3.1.0. The script rewrites this directory and prints the table above.
+
+## Test
+
+`tests/test_external.py::test_ecs_matches_clusim_golden` compares our `ecs` on all five pairs at both alphas
+(rel/abs 1e-12). Positive control: adding 1e-9 to one expected value fails it.

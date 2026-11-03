@@ -391,7 +391,8 @@ def deconv_check(seeds):
         noise = pd.DataFrame(rng.dirichlet(np.ones(T.shape[1]), T.shape[0]), index=T.index, columns=T.columns)
         for s in [0, 0.1, 0.25, 0.5, 1.0]:
             r = sam.deconvolution_metrics(true_prop=T, pred_prop=(1 - s) * T + s * noise)
-            rows.append(dict(seed=seed, noise=s, r2=r["r2"], jsd=r["jsd"], rmse=r["rmse"]))
+            rows.append(dict(seed=seed, noise=s, r2=r["r2"], jsd=r["jsd"], rmse=r["rmse"], aupr=r["aupr"],
+                             ssim=r["ssim"]))
     return pd.DataFrame(rows)
 
 

@@ -50,6 +50,9 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
         "ecs_alpha": _e(0.9, "Gates & Ahn 2019 element-centric similarity; clusim's default", False),
         "hierarchical_partial": _e(0.5, f"{_PKG}: credit for the right lineage, wrong subtype "
                                         "(docs/ROADMAP.md #9 proposes credit by LCA depth)"),
+        "spari_alpha": _e(0.8, "Yan, Feng & Luo 2025 (Biometrics, doi 10.1093/biomtc/ujaf127): spARI default",
+                          False),
+        "spari_max_cells": _e(5000, f"{_PKG}: cells sampled for spARI (the pair sums are O(n^2))"),
     },
     "panel": {
         "target_depth": _e(50.0, f"{_PKG}: counts per cell to thin the reference to"),

@@ -99,11 +99,14 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
                                      "total)"),
     },
     "spatial": {
-        "coherence_n_neighs": _e(15, f"{_PKG}; Shang & Zhou 2022 use 10 neighbours (docs/ROADMAP.md #2)"),
-        "pas_threshold": _e(0.2, f"{_PKG}: a cell with < 20 % same-label neighbours is abnormal; Shang & Zhou "
-                                 "2022 use <= 40 % (docs/ROADMAP.md #2)"),
+        "coherence_n_neighs": _e(10, "Shang & Zhou 2022 (10.1038/s41467-022-34879-1) PAS: the 10 nearest "
+                                     "neighbours (0.6.x used 15)", False),
+        "pas_threshold": _e(0.4, "Shang & Zhou 2022 PAS: abnormal when the label differs from >= 6 of 10 "
+                                 "neighbours, i.e. same-label fraction <= 0.4 (0.6.x: < 0.2)", False),
         "sanity_n_neighs": _e(6, f"{_PKG}: spatial kNN graph for neighborhood_sanity"),
         "contamination_n_neighs": _e(6, f"{_PKG}: spatial kNN graph for neighbor_contamination"),
+        "contamination_n_perm": _e(199, f"{_PKG}: permutations for neighbor_contamination's p_value "
+                                        "(smallest p = 1/200)"),
     },
     "confidence": {
         "stability_drop_frac": _e(0.2, f"{_PKG} (SpatialScribe QC Layer-5): share of transcripts dropped"),

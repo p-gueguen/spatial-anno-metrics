@@ -145,7 +145,7 @@ def test_neighbor_contamination_source_target_matrix():
     assert m.loc["Fib", "T"] == pytest.approx(0.15) and n.loc["Fib", "T"] == 2    # c0 0.1, c6 0.2
     assert m.loc["SMC", "T"] == pytest.approx(0.2) and n.loc["SMC", "T"] == 1
     assert m.loc["T", "Fib"] == pytest.approx(0.0) and n.loc["T", "Fib"] == 3     # c1, c5, c7
-    assert np.isnan(m.loc["Fib", "SMC"]) and n.loc["Fib", "SMC"] == 0             # never adjacent
+    assert np.isnan(m.loc["Fib", "SMC"]) and np.isnan(n.loc["Fib", "SMC"])        # never adjacent: NaN, as SegTraQ
 
 
 def test_spatial_label_metrics_skip_a_single_label():
@@ -184,3 +184,333 @@ def test_neighbor_contamination_skips_without_two_typed_labels_or_contact():
         out = sp.neighbor_contamination(a, markers)
         assert out["status"] == "skipped" and why in out["reason"]
         assert "sam_neighbor_contamination" not in a.obs and "sam" not in a.uns
+
+
+# --------------------------------------------------------------------------- #
+# 0.7.0: PAS to the cited definition, CHAOS, the graph cache
+# --------------------------------------------------------------------------- #
+def _scatter(n=600, seed=0):
+    """Random points, labels from 6 noisy patches of 3 types (a mix of clean and mixed neighbourhoods)."""
+    from scipy.spatial import cKDTree
+
+    rng = np.random.default_rng(seed)
+    xy = rng.uniform(0, 30, (n, 2))
+    lab = cKDTree(rng.uniform(0, 30, (6, 2))).query(xy)[1] % 3
+    flip = rng.random(n) < 0.3
+    lab[flip] = rng.integers(0, 3, flip.sum())
+    a = anndata.AnnData(X=np.zeros((n, 2), dtype="float32"))
+    a.obs_names = [f"c{i}" for i in range(n)]
+    a.obsm["spatial"] = xy
+    a.obs["cell_type"] = pd.Categorical(np.array(["A", "B", "C"])[lab])
+    return a
+
+
+def test_pas_defaults_are_shang_zhou_2022():
+    """Abnormal = the label differs from >= 6 of the 10 nearest neighbours (fx_PAS in SpatialPCA)."""
+    import inspect
+
+    from scipy.spatial import cKDTree
+
+    from spatial_anno_metrics import spatial as sp
+
+    sig = inspect.signature(sp.spatial_coherence).parameters
+    assert sig["n_neighs"].default == 10 and sig["pas_threshold"].default == 0.4
+    a = _scatter()
+    out = sp.spatial_coherence(a)
+    xy, lab = a.obsm["spatial"], a.obs["cell_type"].to_numpy()
+    nn = cKDTree(xy).query(xy, k=11)[1][:, 1:]                  # 10 nearest, self excluded
+    want = np.mean((lab[nn] != lab[:, None]).sum(axis=1) >= 6)
+    assert 0.05 < want < 0.95 and out["pas"] == pytest.approx(want)
+
+
+def test_pas_threshold_is_inclusive():
+    """A cell with exactly 4 of 10 same-label neighbours (0.4) is abnormal; 5 of 10 is not."""
+    from scipy.sparse import csr_matrix
+
+    from spatial_anno_metrics import spatial as sp
+
+    for n_same, want in ((4, 1 / 11), (5, 0.0)):
+        a = anndata.AnnData(X=np.zeros((11, 1), dtype="float32"))
+        a.obs_names = [f"c{i}" for i in range(11)]
+        a.obs["cell_type"] = ["A"] + ["A"] * n_same + ["B"] * (10 - n_same)
+        a.obsp["spatial_connectivities"] = csr_matrix((np.ones(10), (np.zeros(10, int), np.arange(1, 11))),
+                                                      shape=(11, 11))   # only c0 has neighbours
+        out = sp.spatial_coherence(a)
+        assert a.obs["sam_spatial_coherence"].iloc[0] == pytest.approx(n_same / 10)
+        assert out["pas"] == pytest.approx(want)
+
+
+def test_spatial_coherence_honours_n_neighs_over_a_cached_graph():
+    """A graph another call cached (another n_neighs) used to be reused silently."""
+    import squidpy as sq
+
+    from spatial_anno_metrics import spatial as sp
+
+    fresh = sp.spatial_coherence(_scatter(), n_neighs=10)
+    a = _scatter()
+    sp.neighborhood_sanity(a, n_neighs=6)                       # caches a 6-NN graph
+    assert sp.spatial_coherence(a, n_neighs=10)["pas"] == pytest.approx(fresh["pas"])
+    b = _scatter()
+    sq.gr.spatial_neighbors(b, coord_type="generic", n_neighs=6)  # a squidpy graph built elsewhere
+    assert sp.spatial_coherence(b, n_neighs=10)["mean_coherence"] == pytest.approx(fresh["mean_coherence"])
+    assert b.uns["spatial_neighbors"]["params"]["n_neighbors"] == 6   # ... and left in place
+    assert sp.spatial_coherence(b, n_neighs=10, graph="obsp")["mean_coherence"] != pytest.approx(
+        fresh["mean_coherence"])                                 # graph="obsp" uses it as it is
+
+
+def test_spatial_coherence_dense_graph():
+    from spatial_anno_metrics import spatial as sp
+
+    a = _scatter(n=200)
+    ref = sp.spatial_coherence(a)
+    b = _scatter(n=200)
+    b.obsp["spatial_connectivities"] = a.obsp["spatial_connectivities"].toarray()
+    assert sp.spatial_coherence(b)["pas"] == pytest.approx(ref["pas"])
+
+
+def _chaos_by_hand(xy, lab):
+    """SpatialPCA's CHAOS definition (Shang & Zhou 2022, Methods): coordinates scaled per axis, each cell's
+    distance to its nearest same-label cell, summed over labels and divided by N (a singleton adds 0)."""
+    z = (xy - xy.mean(0)) / xy.std(0, ddof=1)
+    tot = 0.0
+    for t in np.unique(lab):
+        p = z[lab == t]
+        if len(p) > 1:
+            d = np.sqrt(((p[:, None] - p[None]) ** 2).sum(-1))
+            np.fill_diagonal(d, np.inf)
+            tot += d.min(1).sum()
+    return tot / len(lab)
+
+
+def test_chaos_coherent_vs_shuffled():
+    from spatial_anno_metrics import spatial as sp
+
+    a = _blocks(n_side=10)
+    coh = sp.spatial_coherence(a)
+    b = _blocks(n_side=10)
+    b.obs["cell_type"] = pd.Categorical(np.random.default_rng(1).permutation(b.obs["cell_type"].to_numpy()))
+    shuf = sp.spatial_coherence(b)
+    assert coh["chaos"] < shuf["chaos"]
+    for x in (a, b):
+        want = _chaos_by_hand(x.obsm["spatial"], x.obs["cell_type"].to_numpy())
+        assert sp.spatial_coherence(x)["chaos"] == pytest.approx(want)
+    c = _scatter(n=100)
+    c.obs["cell_type"] = c.obs["cell_type"].astype(str)
+    c.obs.iloc[0, 0] = "lonely"                                  # a singleton label adds 0, N still counts it
+    assert sp.spatial_coherence(c)["chaos"] == pytest.approx(
+        _chaos_by_hand(c.obsm["spatial"], c.obs["cell_type"].to_numpy()))
+
+
+def test_chaos_nan_without_coordinates():
+    from spatial_anno_metrics import spatial as sp
+
+    a = _spill_tissue()                                          # a hand graph, no obsm['spatial']
+    assert np.isnan(sp.spatial_coherence(a)["chaos"])
+
+
+def test_neighborhood_sanity_flags_two_types_forced_adjacent():
+    """Positive control: A and B alternate column by column (every A touches B), C is its own block."""
+    from spatial_anno_metrics import spatial as sp
+
+    a = _blocks()
+    i = np.round(a.obsm["spatial"][:, 0]).astype(int)
+    a.obs["cell_type"] = pd.Categorical(np.where(i >= 20, "C", np.where(i % 2 == 0, "A", "B")))
+    out = sp.neighborhood_sanity(a, n_neighs=8)
+    flagged = {d["type"]: d["stronger_with"] for d in out["suspicious"]}
+    assert flagged == {"A": "B", "B": "A"}
+
+
+# --------------------------------------------------------------------------- #
+# neighbor_contamination: pinned behaviour (WF1 review) and the 0.7.0 additions
+# --------------------------------------------------------------------------- #
+def _tiny(X, var, labels, edges, n=None, directed=False):
+    from scipy.sparse import csr_matrix
+
+    n = n or len(labels)
+    i, j = zip(*edges)
+    r, c = (list(i), list(j)) if directed else (list(i + j), list(j + i))
+    a = anndata.AnnData(X=np.asarray(X, dtype="float32"))
+    a.var_names = var
+    a.obs_names = [f"c{k}" for k in range(n)]
+    a.obs["cell_type"] = labels
+    a.obsp["spatial_connectivities"] = csr_matrix((np.ones(len(r)), (r, c)), shape=(n, n))
+    return a
+
+
+def test_neighbor_contamination_or_across_sources():
+    """A T cell touching only an ACTA2+ Fib, with an SMC elsewhere (SMC also lists ACTA2): still 0.2."""
+    from spatial_anno_metrics import spatial as sp
+
+    var = ["CD3E", "COL1A1", "ACTA2", "MYH11"]
+    X = [[8, 0, 2, 0], [0, 5, 5, 0], [0, 0, 5, 5], [0, 0, 5, 5]]   # T, Fib, SMC, SMC
+    a = _tiny(X, var, ["T", "Fib", "SMC", "SMC"], [(0, 1), (2, 3)])
+    sp.neighbor_contamination(a, SPILL_MARKERS)
+    assert a.obs["sam_neighbor_contamination"].iloc[0] == pytest.approx(0.2)
+
+
+def test_neighbor_contamination_graph_direction():
+    """Row i of the graph lists i's neighbours (SegTraQ's convention), on an asymmetric graph."""
+    from spatial_anno_metrics import spatial as sp
+
+    var = ["CD3E", "COL1A1"]
+    X = [[9, 1], [0, 10]]
+    a = _tiny(X, var, ["T", "Fib"], [(0, 1)], directed=True)     # c0 lists c1; c1 lists nobody
+    sp.neighbor_contamination(a, SPILL_MARKERS)
+    np.testing.assert_allclose(a.obs["sam_neighbor_contamination"].to_numpy(), [0.1, np.nan])
+    b = _tiny(X, var, ["T", "Fib"], [(1, 0)], directed=True)     # c1 lists c0
+    sp.neighbor_contamination(b, SPILL_MARKERS)
+    np.testing.assert_allclose(b.obs["sam_neighbor_contamination"].to_numpy(), [np.nan, 0.0])
+
+
+def test_neighbor_contamination_matrix_is_the_mean():
+    """Three T cells next to a Fib: 0.1, 0.1, 0.4 -> 0.2 (the median would be 0.1)."""
+    from spatial_anno_metrics import spatial as sp
+
+    X = [[9, 1], [9, 1], [6, 4], [0, 10]]
+    a = _tiny(X, ["CD3E", "COL1A1"], ["T", "T", "T", "Fib"], [(0, 3), (1, 3), (2, 3)])
+    out = sp.neighbor_contamination(a, SPILL_MARKERS)
+    assert out["source_target"].loc["Fib", "T"] == pytest.approx(0.2)
+
+
+def test_neighbor_contamination_skips_nested_sets_like_mecr():
+    """T = {CD3E} sits inside CD4 T = {CD3E, CD4}: hierarchical, not spillover (mecr skips the pair too)."""
+    from spatial_anno_metrics import spatial as sp
+
+    X = [[8, 2, 0], [8, 2, 0], [0, 0, 10]]                      # CD3E CD4 COL1A1
+    a = _tiny(X, ["CD3E", "CD4", "COL1A1"], ["T", "CD4 T", "Fib"], [(0, 1), (1, 2)])
+    out = sp.neighbor_contamination(a, {"T": ["CD3E"], "CD4 T": ["CD3E", "CD4"], "Fib": ["COL1A1"]})
+    assert np.isnan(a.obs["sam_neighbor_contamination"].iloc[0])   # its only neighbour is its subtype
+    assert np.isnan(out["source_target"].loc["CD4 T", "T"])
+
+
+def test_neighbor_contamination_int_keys():
+    """Integer labels with an int-keyed marker_sets used to give all-NaN and a 0x0 matrix."""
+    from spatial_anno_metrics import spatial as sp
+
+    a = _spill_tissue()
+    want = sp.neighbor_contamination(a, SPILL_MARKERS)["mean_contamination"]
+    code = {"T": 0, "Fib": 1, "SMC": 2}
+    b = _spill_tissue()
+    b.obs["cell_type"] = [code[x] for x in b.obs["cell_type"]]
+    out = sp.neighbor_contamination(b, {code[k]: v for k, v in SPILL_MARKERS.items()})
+    assert out["mean_contamination"] == pytest.approx(want) and out["n_evaluable"] == 6
+
+
+def test_neighbor_contamination_dense_graph_and_sparse_counts():
+    from scipy.sparse import csr_matrix
+
+    from spatial_anno_metrics import spatial as sp
+
+    a = _spill_tissue()
+    sp.neighbor_contamination(a, SPILL_MARKERS)
+    b = _spill_tissue()
+    b.obsp["spatial_connectivities"] = b.obsp["spatial_connectivities"].toarray()
+    b.X = csr_matrix(b.X)
+    sp.neighbor_contamination(b, SPILL_MARKERS)
+    np.testing.assert_allclose(b.obs["sam_neighbor_contamination"], a.obs["sam_neighbor_contamination"])
+
+
+def test_neighbor_contamination_explicit_negatives():
+    """SegTraQ's marker format: only the target's listed negatives that a neighbour type lists as positive."""
+    from spatial_anno_metrics import spatial as sp
+
+    a = _spill_tissue()
+    markers = {"T": {"positive": ["CD3E"], "negative": ["COL1A1"]},
+               "Fib": {"positive": ["COL1A1", "ACTA2"]}, "SMC": {"positive": ["ACTA2", "MYH11"]}}
+    sp.neighbor_contamination(a, markers)
+    v = a.obs["sam_neighbor_contamination"].to_numpy()
+    assert v[0] == pytest.approx(0.1)                            # COL1A1 from c1 still counts
+    assert v[6] == pytest.approx(0.0)                            # its 2 ACTA2 are not a listed T negative (0.2 implicit)
+    assert v[1] == pytest.approx(0.0)                            # Fib without negatives: implicit rule
+
+
+def test_neighbor_contamination_reports_dictionary_coverage():
+    from spatial_anno_metrics import spatial as sp
+
+    a = _spill_tissue()
+    a.obs["cell_type"] = ["T", "Fib", "T", "T", "T", "Fib", "T", "Fib", "Mystery", "T"]
+    out = sp.neighbor_contamination(a, {"T": ["CD3E"], "Fib": ["COL1A1", "ACTA2"]})
+    assert out["labels_without_markers"] == ["Mystery"] and out["no_dict_frac"] == pytest.approx(0.1)
+
+
+def test_neighbor_contamination_delaunay_graph():
+    import squidpy as sq
+
+    from spatial_anno_metrics import spatial as sp
+
+    a = _scatter(n=300)
+    rng = np.random.default_rng(3)
+    X = rng.poisson(1.0, (300, 4)).astype("float32")
+    a = anndata.AnnData(X=X, obs=a.obs, obsm={"spatial": a.obsm["spatial"]})
+    a.var_names = ["a1", "b1", "c1", "bg"]
+    ms = {"A": ["a1"], "B": ["b1"], "C": ["c1"]}
+    out = sp.neighbor_contamination(a, ms, graph="delaunay")
+    assert out["graph"] == "delaunay"
+    b = a.copy()
+    sq.gr.spatial_neighbors(b, coord_type="generic", delaunay=True)
+    ref = sp.neighbor_contamination(b, ms, graph="obsp")
+    assert out["mean_contamination"] == pytest.approx(ref["mean_contamination"])
+    knn = sp.neighbor_contamination(a.copy(), ms)
+    assert knn["graph"] == "knn(n_neighs=6)" and knn["mean_contamination"] != pytest.approx(
+        out["mean_contamination"])
+
+
+def _two_block_probe(spill: bool, seed=0, n_rows=20, coexpr_border=37.0):
+    """A 20-column grid (rook contacts): columns 0-9 A, 10-19 B. B carries its marker 'b'; A cells in column 9
+    touch B. co-expression: every A cell expresses b (~3.4 % of counts, 3.7 % at the border); spillover: only
+    the border A cells carry b (~4 %), the others ~0.1 %."""
+    from scipy.sparse import csr_matrix
+
+    rng = np.random.default_rng(seed)
+    cells = [(c, r) for c in range(20) for r in range(n_rows)]
+    idx = {p: k for k, p in enumerate(cells)}
+    e = [(idx[(c, r)], idx[(c + dc, r + dr)]) for c, r in cells for dc, dr in ((1, 0), (0, 1))
+         if (c + dc, r + dr) in idx]
+    i, j = zip(*e)
+    n = len(cells)
+    col = np.array([c for c, _ in cells])
+    is_a = col < 10
+    border = col == 9
+    mb = np.where(is_a, np.where(border, 40.0, 1.0) if spill else np.where(border, coexpr_border, 34.0), 500.0)
+    X = np.column_stack([rng.poisson(np.where(is_a, 1000 - mb - 60, 0)),
+                         rng.poisson(np.where(is_a, 0, 500)) + rng.poisson(np.where(is_a, mb, 0)),
+                         rng.poisson(60, n)]).astype("float32")
+    a = anndata.AnnData(X=X)
+    a.var_names = ["a", "b", "bg"]
+    a.obs_names = [f"c{k}" for k in range(n)]
+    a.obs["cell_type"] = np.where(is_a, "A", "B")
+    a.obsp["spatial_connectivities"] = csr_matrix((np.ones(2 * len(i)), (i + j, j + i)), shape=(n, n))
+    return a
+
+
+def test_neighbor_contamination_baseline_separates_spillover_from_coexpression():
+    """docs/ROADMAP.md #19: raw B->A 0.037 (co-expression) vs 0.040 (spillover) look alike; the same-type
+    cells away from the border (0.034 vs 0.001) and the permutation p separate them."""
+    from spatial_anno_metrics import spatial as sp
+
+    ms = {"A": ["a"], "B": ["b"]}
+    co = sp.neighbor_contamination(_two_block_probe(spill=False), ms, n_perm=999, seed=0)
+    sp_ = sp.neighbor_contamination(_two_block_probe(spill=True), ms, n_perm=999, seed=0)
+    for out, raw, base in ((co, 0.037, 0.034), (sp_, 0.040, 0.001)):
+        assert out["source_target"].loc["B", "A"] == pytest.approx(raw, abs=0.002)
+        assert out["baseline"].loc["B", "A"] == pytest.approx(base, abs=0.001)
+        assert out["excess"].loc["B", "A"] == pytest.approx(
+            out["source_target"].loc["B", "A"] - out["baseline"].loc["B", "A"])
+        assert out["n_baseline"].loc["B", "A"] == 180
+    assert sp_["excess"].loc["B", "A"] > 0.035 and co["excess"].loc["B", "A"] < 0.005
+    assert sp_["p_value"].loc["B", "A"] == pytest.approx(1 / 1000)
+    assert co["p_value"].loc["B", "A"] > sp_["p_value"].loc["B", "A"]
+    pure = sp.neighbor_contamination(_two_block_probe(spill=False, coexpr_border=34.0), ms, n_perm=999, seed=0)
+    assert pure["p_value"].loc["B", "A"] > 0.05                  # co-expression alone, no border excess
+    off = sp.neighbor_contamination(_two_block_probe(spill=True), ms, n_perm=0)
+    assert np.isnan(off["p_value"].loc["B", "A"]) and off["excess"].loc["B", "A"] > 0.035
+
+
+def test_contamination_p_value_is_one_sided():
+    """A DEPLETION next to the source (fewer source-marker counts than far away) is not spillover: p ~ 1."""
+    from spatial_anno_metrics.spatial import _perm_p
+
+    rng = np.random.default_rng(0)
+    far, near = rng.normal(0.03, 0.005, 100), rng.normal(0.01, 0.005, 20)
+    assert _perm_p(near, far, 199, np.random.default_rng(0)) > 0.9
+    assert _perm_p(far[:20], near, 199, np.random.default_rng(0)) == pytest.approx(1 / 200)

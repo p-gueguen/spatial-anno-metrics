@@ -4,6 +4,10 @@ from __future__ import annotations
 import importlib
 import inspect
 
+import pytest
+
+anndata = pytest.importorskip("anndata")
+
 # (module, function, parameter) -> (THRESHOLDS module, name). aqi.py keeps its literals (only its PMP call may
 # change), so its rows guard the table against drifting from the code.
 DEFAULTS = {

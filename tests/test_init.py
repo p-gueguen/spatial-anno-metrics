@@ -1,6 +1,10 @@
 """Tests for the package __init__ - version and public names."""
 from __future__ import annotations
 
+import pytest
+
+anndata = pytest.importorskip("anndata")
+
 
 def test_version_is_a_string():
     import spatial_anno_metrics as sam

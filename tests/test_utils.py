@@ -5,6 +5,8 @@ import sys
 
 import pytest
 
+anndata = pytest.importorskip("anndata")
+
 
 def test_squidpy_import_failure_becomes_an_import_error(monkeypatch):
     """squidpy can fail with a non-ImportError (a dask NotImplementedError seen in the wild): re-raise it as an

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import pytest
 
+anndata = pytest.importorskip("anndata")
+
 PARENT = {"CD4 T": "T", "CD8 T": "T", "T": "Lymphoid", "B": "Lymphoid", "Epi": "Epi"}   # Epi: its own parent
 
 

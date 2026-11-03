@@ -6,7 +6,8 @@ organised by what evidence you have:
   * reference-free internal validity (scTypeEval family) + inter-sample consistency;
   * marker-program fidelity (reference-free, given marker sets): AUC-ROC / Cohen's d;
   * marker co-expression / contamination purity: reference-free CRISP / MECR / PMP + reference-based NMP / NCP;
-  * spatial label quality: spatial coherence + PAS, neighborhood-enrichment sanity (labels vs geometry);
+  * spatial label quality: spatial coherence + PAS, neighborhood-enrichment sanity (labels vs geometry),
+    neighbor contamination (spillover from adjacent cell types);
   * per-cell confidence (reference-free, marker sets): marker-score margin + entropy, label stability;
   * external harness (needs ground truth): F1 / ARI / kappa / ECS / hierarchical / composition / AvgBIO;
   * deconvolution proportion metrics (OpenProblems): R2 / JSD / RMSE;
@@ -52,11 +53,12 @@ from .signal_qc import (
     tx_per_area,
 )
 from .spatial import (
+    neighbor_contamination,
     neighborhood_sanity,
     spatial_coherence,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "internal_validity", "inter_sample_consistency", "isc_regime", "marker_program_fidelity",
@@ -65,7 +67,7 @@ __all__ = [
     "composition_accuracy", "deconvolution_metrics", "panel_resolvability",
     "annotation_quality", "annotation_quality_index", "conformal_prediction_sets",
     "crisp_purity", "mecr", "pmp", "nmp", "ncp",
-    "spatial_coherence", "neighborhood_sanity",
+    "spatial_coherence", "neighborhood_sanity", "neighbor_contamination",
     "per_cell_confidence", "label_stability",
     "moran_signal", "signal_to_noise", "sparsity", "detection_entropy",
     "tx_per_area", "run_signal_qc",

@@ -3,28 +3,15 @@
 **Status:** authoritative design reference (the metrics catalog) · **Scope:** cell-type annotation quality for scRNA-seq **and** imaging spatial transcriptomics (Xenium / MERSCOPE / CosMx) · **Audience:** anyone evaluating "is this cell-type annotation any good?" — in a package, a custom report, or a benchmark.
 
 > **📦 Reading this inside the `spatial-anno-metrics` package.** This catalog originated in the
-> **SpatialScribe** project and is vendored here as the package's reference. Two mappings to keep in mind:
-> - **Code paths:** where §6 and the master table cite `src/spatialscribe/analysis/eval_metrics.py` /
->   `signal_qc.py`, the code in *this* package lives at `src/spatial_anno_metrics/eval_metrics.py` /
->   `signal_qc.py` and is imported as `spatial_anno_metrics.eval_metrics` / `.signal_qc` (top-level
->   re-exports: `import spatial_anno_metrics as sam; sam.internal_validity(...)`). As of **v0.3.0**,
->   many metrics the tables attribute to SpatialScribe modules or mark "—" now ship here:
->   - **§3c/§3f purity** (`purity.py`): `crisp_purity`, `mecr`, `pmp`, `nmp`, `ncp`.
->   - **§3e spatial label quality** (`spatial.py`): `spatial_coherence` (+ PAS), `neighborhood_sanity`.
->   - **§3d per-cell confidence** (`confidence.py`): `per_cell_confidence` (marker margin + entropy),
->     `label_stability` (subsampling flip-rate, annotator-agnostic via a callback).
->   - **§3a / §3g / external** (`eval_metrics.py`): Davies-Bouldin + Calinski-Harabasz (inside
->     `internal_validity`), `marker_gene_overlap`, `avg_bio` (AvgBIO), and `conformal_prediction_sets`.
->   - **§3b ISC** (`eval_metrics.py`, v0.5.0): `inter_sample_consistency` returns the Garnica et al. 2026 pair
->     ISCG / ISCL, their product, and a per-label `isc_regime` (consistent / merge / split / remove).
->
->   So the "In code" column citing `purity.py` / `spatial.py` / `annotate.py` (margin/entropy/stability)
->   or "—" for those metrics is superseded by the package. Metrics still attributed to `annotate.py`
->   (the confidence *funnel*), `panel_check.py`, and `methods.py` remain SpatialScribe-pipeline-only.
-> - **Companion docs:** relative links to `cell-annotation-qc.md`, `annotation_qc_thresholds.yaml`, and
->   `annotation-method-selection.md` refer to sibling docs in the SpatialScribe repo, not this one.
+> [**SpatialScribe**](https://github.com/p-gueguen/spatial-scribe) project and is vendored here as the
+> package's reference. The §5 master table's "In code" column names the module of *this* package
+> (`src/spatial_anno_metrics/`, imported as `import spatial_anno_metrics as sam`); rows marked
+> "SpatialScribe only" live in the pipeline, not here. §6 describes the SpatialScribe integration
+> (`qc.run_funnel`) and keeps its original module paths. Links to `cell-annotation-qc.md`,
+> `annotation_qc_thresholds.yaml` and `annotation-method-selection.md` point to the public
+> SpatialScribe repo.
 
-> **Why this document exists, and how it relates to the others.** We already have [`cell-annotation-qc.md`](cell-annotation-qc.md), which is excellent — but it is a **spatial pipeline QC funnel** (six ordered gates: segmentation → counts → contamination → panel adequacy → confidence → spatial coherence) scoped Xenium-first and oriented toward *per-cell gating and abstention inside the SpatialScribe pipeline*. It does **not** consolidate two whole families of metric: (a) **reference-based / external-validation** metrics used when a ground truth or trusted reference exists (accuracy, F1, ARI, NMI, kappa, biological fidelity), and (b) **internal cluster-validity + inter-sample-consistency** metrics used when there is no ground truth (silhouette variants, neighborhood purity, medoid/Ward concordance, inter-sample consistency — the family the Carmona lab's [**scTypeEval**](https://github.com/carmonalab/scTypeEval) packages). This document is the **catalog**: every metric worth using to *evaluate* an annotation, organized by what evidence you have, what each measures, whether it needs a reference, and where it lives (or should live) in code. Use this to *choose a battery*; use `cell-annotation-qc.md` for the spatial per-cell funnel and [`annotation_qc_thresholds.yaml`](annotation_qc_thresholds.yaml) for the tunable numbers; use [`annotation-method-selection.md`](annotation-method-selection.md) to choose *which annotator to run*.
+> **Why this document exists, and how it relates to the others.** We already have [`cell-annotation-qc.md`](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/cell-annotation-qc.md), which is excellent — but it is a **spatial pipeline QC funnel** (six ordered gates: segmentation → counts → contamination → panel adequacy → confidence → spatial coherence) scoped Xenium-first and oriented toward *per-cell gating and abstention inside the SpatialScribe pipeline*. It does **not** consolidate two whole families of metric: (a) **reference-based / external-validation** metrics used when a ground truth or trusted reference exists (accuracy, F1, ARI, NMI, kappa, biological fidelity), and (b) **internal cluster-validity + inter-sample-consistency** metrics used when there is no ground truth (silhouette variants, neighborhood purity, medoid/Ward concordance, inter-sample consistency — the family the Carmona lab's [**scTypeEval**](https://github.com/carmonalab/scTypeEval) packages). This document is the **catalog**: every metric worth using to *evaluate* an annotation, organized by what evidence you have, what each measures, whether it needs a reference, and where it lives (or should live) in code. Use this to *choose a battery*; use `cell-annotation-qc.md` for the spatial per-cell funnel and [`annotation_qc_thresholds.yaml`](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/annotation_qc_thresholds.yaml) for the tunable numbers; use [`annotation-method-selection.md`](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/annotation-method-selection.md) to choose *which annotator to run*.
 
 **The one thing to internalize:** in real FGCZ projects there is **almost never a ground truth**. So the **internal / reference-free** metrics (§3) are the default regime, and the **external** metrics (§2) apply only to benchmarks with labels. Do not reach for accuracy/F1 on a delivery — you have no truth to compute them against.
 
@@ -65,7 +52,7 @@ Pick the column that matches what you actually have. This is the whole document 
 | **Just labels + an embedding / expression matrix** (the common case) | Internal (§3a, §3d) | **Silhouette + 2label-silhouette + neighborhood purity** (scTypeEval); **marker-score margin + entropy**; **subsampling label-stability**. |
 | **Marker gene sets** (curated per lineage) | Internal (§3c) | **MECR + CRISP purity + PMP + on-target marker specificity** — reference-free contamination readouts. |
 | **Spatial coordinates** | Internal (§3e) | **Spatial coherence / PAS**, neighborhood enrichment sanity. Down-weight, never delete (rare infiltrating cells are legitimately incoherent). |
-| **A targeted panel** (Xenium/CosMx) | Internal (§3c, §3f) + panel gate | Everything above **plus panel adequacy** (can the panel even resolve the type — [`cell-annotation-qc.md` §7](cell-annotation-qc.md)). |
+| **A targeted panel** (Xenium/CosMx) | Internal (§3c, §3f) + panel gate | Everything above **plus panel adequacy** (can the panel even resolve the type — [`cell-annotation-qc.md` §7](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/cell-annotation-qc.md)). |
 
 > Most SpatialScribe deliveries land in rows 4–7 simultaneously (labels + embedding + markers + coords, no truth). The **default spatial battery** in [§4](#4-batteries) is exactly that combination.
 
@@ -114,11 +101,11 @@ When you ran a reference-based annotator, its own posterior is a *soft* quality 
 - **RCTD** `spot_class` (`singlet`/`doublet_*`/`reject`) + first-vs-second **weight margin**.
 - **Pseudobulk-reference correlation**: Pearson/Spearman of the cell (or cluster) profile vs each reference type; low max-correlation → out-of-distribution / novel.
 
-These also appear in the spatial funnel ([`cell-annotation-qc.md` §8.1](cell-annotation-qc.md)); listed here so the external-regime picture is complete.
+These also appear in the spatial funnel ([`cell-annotation-qc.md` §8.1](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/cell-annotation-qc.md)); listed here so the external-regime picture is complete.
 
 ### 2.5 Biological fidelity (accuracy ≠ fidelity)
 
-The load-bearing finding of the Zhu et al. 2026 spatial benchmark (this paper — [`sources/2026.06.16.732716v1.full.pdf`](sources/2026.06.16.732716v1.full.pdf); also in [`annotation-method-selection.md`](annotation-method-selection.md)): **high classification accuracy does not guarantee preserved biology** — rankings by fidelity frequently *differ* from accuracy rankings, so accuracy alone "may substantially overestimate" real quality. Complement accuracy with:
+The load-bearing finding of the Zhu et al. 2026 spatial benchmark (this paper — [bioRxiv full text](https://www.biorxiv.org/content/10.64898/2026.06.16.732716v1.full); also in [`annotation-method-selection.md`](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/annotation-method-selection.md)): **high classification accuracy does not guarantee preserved biology** — rankings by fidelity frequently *differ* from accuracy rankings, so accuracy alone "may substantially overestimate" real quality. Complement accuracy with:
 
 - **AvgBIO** (Average Biological Conservation, from scIB) — a summary of structure-preservation metrics, each oriented larger-is-better and scaled to [0,1], then averaged. **Exact form used in Zhu 2026:** `AvgBIO = mean(ARI, NMI, ASW_scaled)` with `ASW_scaled = (ASW+1)/2` (ASW = Average Silhouette Width on the labeled embedding). Reduces over-reliance on any single metric.
 - **Marker-gene overlap** — overlap between each method's data-derived per-type DE genes (top 10 / 20 / 30) and the reference cell-type marker genes: do the labels reproduce the *known* markers?
@@ -210,12 +197,12 @@ This is genuinely additive to `cell-annotation-qc.md` (which has no multi-sample
 <a name="3c-purity"></a>
 ### 3c. Marker / contamination purity (reference-free)
 
-Do a cell's transcripts belong to its assigned type, or are they a spillover mixture? These need only **marker gene sets** (no reference atlas). Detailed in [`cell-annotation-qc.md` §6](cell-annotation-qc.md); summarized here because they are core annotation-quality metrics, and several are already implemented in [`compare_rctd_tacco.py`](../../scripts/split/compare_rctd_tacco.py).
+Do a cell's transcripts belong to its assigned type, or are they a spillover mixture? These need only **marker gene sets** (no reference atlas). Detailed in [`cell-annotation-qc.md` §6](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/cell-annotation-qc.md); summarized here because they are core annotation-quality metrics, and several are already implemented in [`compare_rctd_tacco.py`](https://github.com/p-gueguen/spatial-scribe/blob/main/scripts/split/compare_rctd_tacco.py).
 
 | Metric | Definition | Dir | Implemented |
 |---|---|---|---|
-| **MECR** (Mutually Exclusive Co-expression Rate) | over disjoint-lineage marker pairs, `#(both>0)/#(either>0)`, averaged | lower cleaner | `purity.py` (mecr); SPLIT compare |
-| **CRISP purity** | per-cell: impure if it detects markers of ≥2 disjoint lineages | higher cleaner | `purity.py` (`crisp_purity`) |
+| **MECR** (Mutually Exclusive Co-expression Rate) | over lineage marker pairs, `#(both>0)/#(either>0)`, averaged; each pair is judged on the markers the two sets do not share (CD3E in both CD4 T and CD8 T sets is not co-detection), nested sets (T vs CD4 T) are skipped | lower cleaner | `purity.py` (mecr); SPLIT compare |
+| **CRISP purity** | per-cell: impure if it detects markers of ≥2 lineages, on the same per-pair unshared markers | higher cleaner | `purity.py` (`crisp_purity`) |
 | **PMP** (Positive Marker Purity) | per-cell fraction of counts from the **assigned** type's markers | higher cleaner | `purity.py` (`pmp`) |
 | **On-target marker specificity** | on-target fraction of a lineage's marker expression: on/(on+off) mean, bounded [0,1] | higher cleaner | `compare_rctd_tacco.py` (`_specificity`) |
 | **On-target signal retention** | fraction of a lineage's own-marker counts kept after a purification step | higher = less over-purified | `compare_rctd_tacco.py` |
@@ -225,7 +212,7 @@ These are the metrics the RCTD-vs-TACCO-into-SPLIT comparison uses, and they are
 <a name="3d-confidence"></a>
 ### 3d. Per-cell confidence / uncertainty
 
-Per-cell "how sure are we about *this* label?" Detailed in [`cell-annotation-qc.md` §8 + §10](cell-annotation-qc.md); the metrics:
+Per-cell "how sure are we about *this* label?" Detailed in [`cell-annotation-qc.md` §8 + §10](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/cell-annotation-qc.md); the metrics:
 
 - **Marker-score margin** = top1 − top2 marker score. **The margin, not the absolute score, is the confidence.**
 - **Entropy** of the class-score distribution (near log K → the classifier is guessing).
@@ -236,11 +223,12 @@ Per-cell "how sure are we about *this* label?" Detailed in [`cell-annotation-qc.
 <a name="3e-spatial"></a>
 ### 3e. Spatial-context metrics (spatial only)
 
-Does the label make **spatial sense**? Blind to non-spatial metrics. Detailed in [`cell-annotation-qc.md` §9](cell-annotation-qc.md):
+Does the label make **spatial sense**? Blind to non-spatial metrics. Detailed in [`cell-annotation-qc.md` §9](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/cell-annotation-qc.md):
 
 - **Spatial coherence** = mean fraction of a cell's *k* (~15) spatial neighbors sharing its label (`spatial.py` `spatial_coherence`).
 - **PAS** (Proportion of Abnormal Spots) = % cells with <20% same-label neighbors — a dataset-level annotation-noise summary.
 - **Neighborhood enrichment / co-occurrence** (squidpy) vs a permutation null — biologically impossible adjacencies flag systematic errors.
+- **Neighbor contamination** (`spatial.py` `neighbor_contamination`, from SegTraQ's `contamination_strength`) — per cell, the share of counts on markers of the cell types *touching it* that its own type lacks (with a touching cell of that type detecting them), plus a directed source → target matrix. Reference-free; separates spillover from neighbors from a mislabel, which PMP / NMP cannot. It does not separate spillover from genuine co-expression: on a synthetic two-block grid, a B marker every A cell truly expresses scored 0.037 and real border spillover 0.040. The contrast is same-type cells with vs without that neighbor (0.037 vs 0.034 for co-expression, 0.040 vs 0.001 for spillover).
 
 **Caveat (load-bearing):** rare infiltrating cells are legitimately spatially incoherent. Use these to **down-weight**, never to hard-delete.
 
@@ -250,7 +238,7 @@ Does the label make **spatial sense**? Blind to non-spatial metrics. Detailed in
 Between purely internal and fully external: these need a **matched scRNA/snRNA reference profile** but not per-cell ground truth. From Salas et al. 2025:
 
 - **NCP** (Negative Co-expression Purity) — % of gene pairs **not** co-expressed in the reference that stay non-co-expressed in situ. 0–1, higher = better specificity; commercial platforms mean **>0.8**.
-- **NMP** (Negative Marker Purity) — % of reads from "negative markers" (genes a type should NOT express) found in cells assigned to that type. Lower cleaner; the most direct readout of segmentation-driven mis-assignment, and the recommended metric for **comparing segmentations**.
+- **NMP** (Negative Marker Purity) — % of reads from "negative markers" (genes a type should NOT express) found in cells assigned to that type. Lower cleaner; the most direct readout of segmentation-driven mis-assignment, and the recommended metric for **comparing segmentations**. In `purity.py` (v0.6.0, SegTraQ's rule) a type's negatives are genes the reference detects in ≤5% of its cells but ≥25% of another type's: other lineages' markers. The earlier bottom-decile definition picked near-silent genes on large panels: 10% fibroblast spillover into T cells scored 0.004, same as clean, on a synthetic 5,000-gene panel.
 
 > Terminology trap (kept from `cell-annotation-qc.md`): **NCP** (negative *co-expression* purity, reference-anchored) ≠ the 10x **negative *control-probe* rate** (background binding). Different things; keep separate.
 
@@ -260,7 +248,7 @@ Between purely internal and fully external: these need a **matched scRNA/snRNA r
 A powerful family the Zhu 2026 benchmark formalizes: given curated marker/program sets, you can measure whether the **labels track the biology without per-cell ground truth** — so these run on real deliveries, not just benchmarks. They are the §2.5 fidelity metrics in their reference-free form:
 
 - **ssGSEA enrichment** (GSVA) — score each cell against each type's marker/pathway set.
-- **AUC-ROC on enrichment** — per type, how well the method's predicted-positive cells are ranked above the rest by that type's enrichment score (1 = perfect ranking, 0.5 = chance). A clean, threshold-free "do the cells labeled *T cell* actually carry the highest T-cell-program score?" This **generalizes the on-target specificity** in [`compare_rctd_tacco.py`](../../scripts/split/compare_rctd_tacco.py) into a proper ranking metric.
+- **AUC-ROC on enrichment** — per type, how well the method's predicted-positive cells are ranked above the rest by that type's enrichment score (1 = perfect ranking, 0.5 = chance). A clean, threshold-free "do the cells labeled *T cell* actually carry the highest T-cell-program score?" This **generalizes the on-target specificity** in [`compare_rctd_tacco.py`](https://github.com/p-gueguen/spatial-scribe/blob/main/scripts/split/compare_rctd_tacco.py) into a proper ranking metric.
 - **Cohen's d** — standardized target-vs-non-target separation on the enrichment score (effect size, not just AUC).
 - **Marker-gene overlap** — overlap of a label's data-derived top-N DE genes with its curated markers.
 
@@ -269,12 +257,12 @@ Use these when you have marker sets but no truth (the usual FGCZ case), as the *
 <a name="3h-signal-qc"></a>
 ### 3h. Signal-quality QC (annotation-independent; SpatialQM)
 
-Upstream of annotation quality is *signal* quality: does the section carry real, structured biology above background? These are **label-independent** - they score the data, not the labels - and are ported from the **SpatialQM** R package (Center for Spatial OMICs; NOT the identically-named Plummer/Spatial-Touchstone tool - see §9). Implemented in `analysis/signal_qc.py`, **squidpy-compatible** and fast:
+Upstream of annotation quality is *signal* quality: does the section carry real, structured biology above background? These are **label-independent** - they score the data, not the labels - and are ported from the **SpatialQM** R package (Plummer et al., Center for Spatial Omics, St. Jude; released with the Spatial Touchstone study - see §9). Implemented in `analysis/signal_qc.py`, **squidpy-compatible** and fast:
 
 - **Moran's I gene-vs-control** (`getMorans`) - the flagship. Real genes are **spatially autocorrelated** (Moran's I well above 0); negative-control probes are spatially random (I ≈ 0). The **separation** between the gene and control I distributions (and the fraction of genes above the controls' 95th percentile) is a reference-free spatial signal-quality score. Computed via squidpy's `sq.gr.spatial_autocorr` on the `sq.gr.spatial_neighbors` graph - parallel, scales to 1e6 cells.
 - **Signal-to-noise** (`getMeanSignalRatio` / `getMaxRatio`) - per-cell log2(mean gene expr / mean negative-control expr) and log2(max gene / control mean); a cell whose signal doesn't clear the control floor is untypeable.
 - **Sparsity** (`getSparsity`) - zero fraction of the count matrix (dataset + per cell).
-- **Detection entropy** (`getEntropy`) - per-cell normalized Shannon entropy over detected genes; low → one gene dominates (rRNA / probe artifact / extreme specialization) - the continuous version of the "max single-gene fraction" flag in [`cell-annotation-qc.md` §5](cell-annotation-qc.md).
+- **Detection entropy** (`getEntropy`) - per-cell normalized Shannon entropy over detected genes; low → one gene dominates (rRNA / probe artifact / extreme specialization) - the continuous version of the "max single-gene fraction" flag in [`cell-annotation-qc.md` §5](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/cell-annotation-qc.md).
 - **Transcript density per area** (`getTxPerArea`) - counts / cell area (needs `cell_area`).
 
 These gate whether annotation should be trusted *at all* on a section (they sit alongside Layer 0-3 of the spatial funnel); run them before the label-quality metrics above. `signal_qc.run_signal_qc(adata)` returns the headline.
@@ -287,7 +275,7 @@ These gate whether annotation should be trusted *at all* on a section (they sit 
 The authoritative recommendation: don't compute everything; compute the right battery for the scenario. Each battery is ordered (compute the first few always; add the rest if cheap/available).
 
 **A. Spatial delivery, no reference (the typical Xenium/CosMx report):**
-1. **Panel adequacy** (can the panel resolve the type at all — [`panel_check.py`](../../src/spatialscribe/analysis/panel_check.py))
+1. **Panel adequacy** (can the panel resolve the type at all — [`panel_check.py`](https://github.com/p-gueguen/spatial-scribe/blob/main/src/spatialscribe/analysis/panel_check.py))
 2. **MECR + CRISP purity + PMP** (reference-free contamination)
 3. **Marker-score margin + entropy** (per-cell confidence)
 4. **Spatial coherence / PAS** (down-weight only)
@@ -295,7 +283,7 @@ The authoritative recommendation: don't compute everything; compute the right ba
 6. *(if ≥5 replicates)* **Inter-sample consistency (ISCG + ISCL, regime per label)**
 7. *(reporting)* section **annotatability headline**: % PASS / WARN / abstain + top reasons
 
-**B. Spatial with a matched snRNA reference:** battery A **plus** RCTD `spot_class` + weight-margin, **NCP/NMP**, label-transfer posterior margin. (This is the highest-quality regime; reference choice matters more than method — see [`annotation-method-selection.md`](annotation-method-selection.md).)
+**B. Spatial with a matched snRNA reference:** battery A **plus** RCTD `spot_class` + weight-margin, **NCP/NMP**, label-transfer posterior margin. (This is the highest-quality regime; reference choice matters more than method — see [`annotation-method-selection.md`](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/annotation-method-selection.md).)
 
 **C. scRNA-seq, no ground truth:** **silhouette + 2label-silhouette + neighborhood purity** (scTypeEval internal) + **ISCG + ISCL across samples** (≥5 replicates) + **marker-score margin** + **AUC-ROC on marker enrichment** (§3g fidelity). Add Davies–Bouldin / Ward-PropMatch to catch over-clustering.
 
@@ -320,41 +308,42 @@ Regime: **E** = external (needs truth) · **I** = internal (reference-free) · *
 | **Hierarchical accuracy** · subtype-level accuracy | E | L+truth+hierarchy | partial credit along the lineage tree | high | `eval_metrics.py` |
 | **ARI** / AMI / NMI / V-measure | E | L+truth | partition agreement | high | `eval_metrics.py` |
 | **ECS** (Element-Centric Similarity) | E | L+truth | resolution-agnostic, cell-level partition agreement | high | `eval_metrics.py` |
-| **AvgBIO** = mean(ARI,NMI,ASW_scaled) · **ASW** | E | L+truth+embed | biological-structure conservation | high | — |
+| **AvgBIO** = mean(ARI,NMI,ASW_scaled) · **ASW** | E | L+truth+embed | biological-structure conservation | high | `eval_metrics.py` (`avg_bio`) |
 | **Composition / proportion accuracy** | E | L+truth | predicted vs true cell-type proportions (hard-label global) | high | `eval_metrics.py` |
 | **Deconvolution props** (R²/JSD/RMSE, OpenProblems) | E | proportion matrices | soft per-spot proportions vs known mixtures | R²↑/JSD↓ | `eval_metrics.py` |
 | **Robustness to reference volume** | E | L+truth+R | accuracy decay as reference shrinks | stable | — |
 | Scalability (runtime · peak memory) | — | — | practical cost, not quality | lower | bench scripts |
-| SingleR delta · CellTypist prob · RCTD spot_class | E/I | R | native confidence proxy | high | `methods.py` join |
+| SingleR delta · CellTypist prob · RCTD spot_class | E/I | R | native confidence proxy | high | SpatialScribe only (`methods.py` join) |
 | **Silhouette / 2label-silhouette** | I | L+embedding | cohesion vs separation | high | `eval_metrics.py` |
 | **Neighborhood purity** | I | L+embedding | kNN label agreement | high | `eval_metrics.py` |
 | Orbital-medoid · Ward-PropMatch · Avg-similarity | I | L+embedding | cluster–label concordance | high | `eval_metrics.py` |
-| Davies–Bouldin · Calinski–Harabasz | I | L+embedding | separation | DB low / CH high | — |
+| Davies–Bouldin · Calinski–Harabasz | I | L+embedding | separation | DB low / CH high | `eval_metrics.py` (`internal_validity`) |
 | **ISCG** (2-label silhouette \| pseudobulk cosine) | I | L+S (≥5 samples) | cross-replicate compactness (signal degradation) | high; guide 0.74 | `eval_metrics.py` |
 | **ISCL** (silhouette \| reciprocal-classification match) | I | L+S (≥5 samples) | cross-replicate replicability (over-partitioning) | high; guide 0.45 | `eval_metrics.py` |
-| **MECR** | I | M | cross-lineage co-expression | low | `purity.py`, SPLIT compare |
+| **MECR** | I | M | cross-lineage co-expression | low | `purity.py` |
 | **CRISP purity** | I | M | per-cell lineage purity | high | `purity.py` |
 | **PMP** | I | M | own-marker transcript fraction | high | `purity.py` |
-| On-target specificity / retention | I | M | marker specificity after purification | high | `compare_rctd_tacco.py` |
+| On-target specificity / retention | I | M | marker specificity after purification | high | SpatialScribe only (`compare_rctd_tacco.py`) |
 | **AUC-ROC on marker enrichment** · Cohen's d | I | L+M | do labels track the marker-program enrichment | high | `eval_metrics.py` |
-| **Marker-gene overlap** (top-N DE vs markers) | I | L+M | labels reproduce known markers | high | — |
-| Marker-score **margin** · entropy | I | L+M | per-cell ambiguity | margin high / entropy low | `annotate.py` |
-| Conformal set size | I | L+scores | abstention (ambiguous/novel) | =1 | — |
-| Subsampling label-stability | I | counts | detection-robustness | low flip | `annotate.py` |
+| **Marker-gene overlap** (top-N DE vs markers) | I | L+M | labels reproduce known markers | high | `eval_metrics.py` (`marker_gene_overlap`) |
+| Marker-score **margin** · entropy | I | L+M | per-cell ambiguity | margin high / entropy low | `confidence.py` (`per_cell_confidence`) |
+| Conformal set size | I | L+scores | abstention (ambiguous/novel) | =1 | `eval_metrics.py` (`conformal_prediction_sets`) |
+| Subsampling label-stability | I | counts | detection-robustness | low flip | `confidence.py` (`label_stability`) |
 | Spatial coherence / **PAS** | I | L+XY | spatial label agreement | high / PAS low | `spatial.py` |
 | Neighborhood enrichment sanity | I | L+XY | impossible adjacencies | — | `spatial.py` |
+| Neighbor contamination | I | L+XY+M | spillover from adjacent types | low | `spatial.py` |
 | **Moran's I gene-vs-control** | I | XY+control | spatial signal vs background noise | high separation | `signal_qc.py` |
 | Signal-to-noise · sparsity · detection entropy · tx/area | I | counts (±control/area) | label-independent signal quality | mixed | `signal_qc.py` |
-| **NCP** / **NMP** | A | R+M | reference-anchored specificity | NCP high / NMP low | — |
-| Panel adequacy (coverage/confusable) | I | M+panel | can the panel resolve the type | green | `panel_check.py` |
-| ovrlpy VSI / 3D-coherence | I | Z | vertical doublets/overlap | high | `qc.py` join (H5) |
+| **NCP** / **NMP** | A | R+M | reference-anchored specificity | NCP high / NMP low | `purity.py` (`ncp`, `nmp`) |
+| Panel adequacy (coverage/confusable) | I | M+panel | can the panel resolve the type | green | `eval_metrics.py` (`panel_resolvability`) |
+| ovrlpy VSI / 3D-coherence | I | Z | vertical doublets/overlap | high | SpatialScribe only (`qc.py` join) |
 
 ---
 
 <a name="6-implementation"></a>
 ## 6. Implementation status in SpatialScribe
 
-**Contamination + confidence + spatial** (reference-free): `purity.py` (MECR, CRISP, PMP, NMP/NCP guards), `annotate.py` (marker margin, entropy path, subsampling stability, penalized-posterior confidence + abstention), `panel_check.py` (panel adequacy + identifiability AUC), `spatial.py` (spatial coherence, PAS, neighborhood sanity), and `scripts/split/compare_rctd_tacco.py` (on-target specificity, marker purity, on-target retention, MECR panel).
+**Contamination + confidence + spatial** (reference-free): `purity.py` (MECR, CRISP, PMP, NMP/NCP guards), `annotate.py` (marker margin, entropy path, subsampling stability, penalized-posterior confidence + abstention), `panel_check.py` (panel adequacy + identifiability AUC), `spatial.py` (spatial coherence, PAS, neighborhood sanity, neighbor contamination), and `scripts/split/compare_rctd_tacco.py` (on-target specificity, marker purity, on-target retention, MECR panel).
 
 **Metric battery** — `analysis/eval_metrics.py` (**built, TDD**: `tests/test_eval_metrics.py`). Covers exactly the families this doc exposed:
 
@@ -377,7 +366,7 @@ annotation_quality(adata, label_key, marker_sets=None, sample_key=None) -> dict 
 
 **Signal-quality QC** — `analysis/signal_qc.py` (**built, TDD**: `tests/test_signal_qc.py`; §3h) ports the label-independent SpatialQM metrics, squidpy-compatible: `moran_signal` (Moran's I gene-vs-control via `sq.gr.spatial_autocorr`), `signal_to_noise`, `sparsity`, `detection_entropy`, `tx_per_area`, and `run_signal_qc` (headline). Standalone (run before annotation to gate whether a section is trustworthy at all); not auto-wired into the funnel because Moran's I over the full panel is heavier than the per-cell metrics.
 
-> **Two scTypeEval implementations — pick the right one.** `eval_metrics.internal_validity` is an **embedding-space approximation** built for a fast, always-on `qc.run_funnel` headline: it computes the family on the PCA embedding (subsampled) and does **not** implement scTypeEval's dissimilarity spaces (the pseudobulk-level ISCG / ISCL pair, with a Spearman-classifier `recip_classif:Match`, lives in `inter_sample_consistency` since v0.5.0), and its `orbital_medoid` / `avg_similarity` / `ward_propmatch` use classic embedding-space definitions rather than the exact `IntClusVal.R` ones. A **byte-exact port** (dissimilarity spaces + `recip_classif:Match` + exact IntClusVal formulas + per-sample pseudobulk, TDD-verified) lives in [`scripts/norm_benchmark/sctypeeval_metrics.py`](../../scripts/norm_benchmark/sctypeeval_metrics.py) — use it when you need scTypeEval's recommended local(recip-match)/global(pseudobulk-cosine) combo or paper parity; use `eval_metrics.py` for the production funnel. Empirically the two **rank annotations/normalizations identically but differ in absolute scale**, so the approximation is fine for a QC headline. See [`scripts/norm_benchmark/README.md`](../../scripts/norm_benchmark/README.md) — the **normalization × annotation-quality benchmark** on the 100k breast Xenium 5K section, which anchors to this catalog and reports both implementations plus the implemented contamination/confidence/spatial families across 9 normalizations. Headline finding: normalization is **~invariant** for the contamination metrics (§3c, they read raw counts) but has a **strong** effect on internal separability (§3a/b), the abstention rate (§3d), and above all the clustering the annotation is built on.
+> **Two scTypeEval implementations — pick the right one.** `eval_metrics.internal_validity` is an **embedding-space approximation** built for a fast, always-on `qc.run_funnel` headline: it computes the family on the PCA embedding (subsampled) and does **not** implement scTypeEval's dissimilarity spaces (the pseudobulk-level ISCG / ISCL pair, with a Spearman-classifier `recip_classif:Match`, lives in `inter_sample_consistency` since v0.5.0), and its `orbital_medoid` / `avg_similarity` / `ward_propmatch` use classic embedding-space definitions rather than the exact `IntClusVal.R` ones. A **byte-exact port** (dissimilarity spaces + `recip_classif:Match` + exact IntClusVal formulas + per-sample pseudobulk, TDD-verified) lives in `scripts/norm_benchmark/sctypeeval_metrics.py` (SpatialScribe, not public) — use it when you need scTypeEval's recommended local(recip-match)/global(pseudobulk-cosine) combo or paper parity; use `eval_metrics.py` for the production funnel. Empirically the two **rank annotations/normalizations identically but differ in absolute scale**, so the approximation is fine for a QC headline. See `scripts/norm_benchmark/README.md` (SpatialScribe, not public) — the **normalization × annotation-quality benchmark** on the 100k breast Xenium 5K section, which anchors to this catalog and reports both implementations plus the implemented contamination/confidence/spatial families across 9 normalizations. Headline finding: normalization is **~invariant** for the contamination metrics (§3c, they read raw counts) but has a **strong** effect on internal separability (§3a/b), the abstention rate (§3d), and above all the clustering the annotation is built on.
 
 ---
 
@@ -422,9 +411,9 @@ annotation_quality(adata, label_key, marker_sets=None, sample_key=None) -> dict 
 ## 9. References
 
 **This catalog builds on the FGCZ research docs** — see them for the spatial-funnel detail and verified sources:
-- [`cell-annotation-qc.md`](cell-annotation-qc.md) — the six-layer spatial QC funnel; source for Layers 0–6, contamination metrics (MECR/CRISP/PMP/NCP/NMP), confidence/abstention, spatial coherence, and all verified primary sources (Salas *Nat Methods* 2025; Plummer/Spatial-Touchstone *Nat Biotechnol* 2025; Mitchel *Nat Genet* 2025; SPLIT *Nat Methods* 2026).
-- [`annotation-method-selection.md`](annotation-method-selection.md) — which annotator to run; source for the accuracy≠fidelity finding and the 20-method spatial benchmark (Zhu et al., bioRxiv 2026; AvgBIO / program concordance).
-- [`annotation_qc_thresholds.yaml`](annotation_qc_thresholds.yaml) — the tunable pass/warn/fail numbers consumed by the code.
+- [`cell-annotation-qc.md`](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/cell-annotation-qc.md) — the six-layer spatial QC funnel; source for Layers 0–6, contamination metrics (MECR/CRISP/PMP/NCP/NMP), confidence/abstention, spatial coherence, and all verified primary sources (Salas *Nat Methods* 2025; Plummer/Spatial-Touchstone *Nat Biotechnol* 2025; Mitchel *Nat Genet* 2025; SPLIT *Nat Methods* 2026).
+- [`annotation-method-selection.md`](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/annotation-method-selection.md) — which annotator to run; source for the accuracy≠fidelity finding and the 20-method spatial benchmark (Zhu et al., bioRxiv 2026; AvgBIO / program concordance).
+- [`annotation_qc_thresholds.yaml`](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/annotation_qc_thresholds.yaml) — the tunable pass/warn/fail numbers consumed by the code.
 
 **scTypeEval (the metrics folded in here):**
 - Carmona lab, `scTypeEval` — reference-free annotation-quality assessment (silhouette / 2label-silhouette / neighborhood purity / Orbital-medoid / Ward-PropMatch / average-similarity; inter-sample consistency; local/global/integrated framing). GitHub: [github.com/carmonalab/scTypeEval](https://github.com/carmonalab/scTypeEval) `[tool; benchmarked in the preprint below]`. Lab: [github.com/carmonalab](https://github.com/carmonalab).
@@ -438,16 +427,15 @@ annotation_quality(adata, label_key, marker_sets=None, sample_key=None) -> dict 
 - **Deconvolution proportion metrics** — **OpenProblems `task_spatial_decomposition`** ([github.com/openproblems-bio/task_spatial_decomposition](https://github.com/openproblems-bio/task_spatial_decomposition)): `r2` = `r2_score(uniform_average)` over cell types; `jsd` = mean per-cell-type `scipy.spatial.distance.jensenshannon` (axis=0). Ported into `eval_metrics.deconvolution_metrics` (+ RMSE, per-spot JSD).
 
 **Benchmark-derived metrics — Zhu et al. 2026 (the paper read for this update):**
-- Zhu, Hu, … Meltzer & Zhou, "Benchmarking cell type annotation in spatial transcriptomics: resolving cellular hierarchies, biological fidelity, and dynamic cell states," bioRxiv 2026-06-16, DOI [10.64898/2026.06.16.732716](https://www.biorxiv.org/content/10.64898/2026.06.16.732716v1.full) · local [`sources/2026.06.16.732716v1.full.pdf`](sources/2026.06.16.732716v1.full.pdf). Source for the **ECS**, **AvgBIO = mean(ARI,NMI,ASW_scaled)**, **hierarchical/subtype accuracy**, **composition/proportion accuracy**, **reference-volume robustness**, **AUC-ROC-on-enrichment / Cohen's d / marker-gene-overlap** fidelity metrics folded in here, and the accuracy≠fidelity finding.
+- Zhu, Hu, … Meltzer & Zhou, "Benchmarking cell type annotation in spatial transcriptomics: resolving cellular hierarchies, biological fidelity, and dynamic cell states," bioRxiv 2026-06-16, DOI [10.64898/2026.06.16.732716](https://www.biorxiv.org/content/10.64898/2026.06.16.732716v1.full) · local [bioRxiv full text](https://www.biorxiv.org/content/10.64898/2026.06.16.732716v1.full). Source for the **ECS**, **AvgBIO = mean(ARI,NMI,ASW_scaled)**, **hierarchical/subtype accuracy**, **composition/proportion accuracy**, **reference-volume robustness**, **AUC-ROC-on-enrichment / Cohen's d / marker-gene-overlap** fidelity metrics folded in here, and the accuracy≠fidelity finding.
 - **ECS** — Gates & Ahn, "Element-centric clustering comparison," *Sci. Rep.* 2019 (resolution-agnostic, affinity-matrix formulation).
 - **AvgBIO / ASW-based conservation** — Luecken et al., "Benchmarking atlas-level data integration" (scIB), *Nat. Methods* 2022.
 - **ssGSEA** — Barbie et al., *Nature* 2009; **GSVA** — Hänzelmann et al., *BMC Bioinformatics* 2013. **Cohen's d** — Cohen 1988.
 
 **Signal-quality QC (SpatialQM, §3h — the metrics ported into `signal_qc.py`):**
-- **SpatialQM** — Center for Spatial OMICs, [github.com/Center-for-Spatial-OMICs/SpatialQM](https://github.com/Center-for-Spatial-OMICs/SpatialQM). R package; source for Moran's I gene-vs-control (`getMorans`), signal-to-noise (`getMeanSignalRatio` / `getMaxRatio`), sparsity, detection entropy, tx-per-area, and its own `getMECR`. `[tool]`
-- ⚠ **Name collision:** this is **NOT** the *other* "SpatialQM" (Plummer et al., Spatial Touchstone, *Nat Biotechnol* 2025, GEO GSE277080) cited in `cell-annotation-qc.md` §17 for tissue-specific baselines. Two different tools, same acronym — keep them distinct.
+- **SpatialQM** — Plummer et al., "Standardized metrics for assessment and reproducibility of imaging-based spatial transcriptomics datasets" (Spatial Touchstone), *Nat Biotechnol* 2025, [10.1038/s41587-025-02811-9](https://doi.org/10.1038/s41587-025-02811-9); code [github.com/Center-for-Spatial-OMICs/SpatialQM](https://github.com/Center-for-Spatial-OMICs/SpatialQM) (St. Jude Center for Spatial Omics). R package; source for Moran's I gene-vs-control (`getMorans`), signal-to-noise (`getMeanSignalRatio` / `getMaxRatio`), sparsity, detection entropy, tx-per-area, and its own `getMECR`. `[peer-reviewed]`
 - Moran's I — Moran 1950; computed here via squidpy `sq.gr.spatial_autocorr` (Palla et al., *Nat Methods* 2022).
 
-**Spatial / contamination metric sources** (full detail + DOIs in [`cell-annotation-qc.md` §17](cell-annotation-qc.md)): Salas et al. *Nat Methods* 2025 (NCP, NMP, 3D-coherence); Hartman & Satija 2024 (MECR); Center for Spatial OMICs (CRISP); Cable et al. *Nat Biotechnol* 2022 (RCTD); Marconato et al. *Nat Methods* 2026 (SPLIT); STEAM (spatial coherence / PAS).
+**Spatial / contamination metric sources** (full detail + DOIs in [`cell-annotation-qc.md` §17](https://github.com/p-gueguen/spatial-scribe/blob/main/docs/research/cell-annotation-qc.md)): Salas et al. *Nat Methods* 2025 (NCP, NMP, 3D-coherence); Hartman & Satija 2024 (MECR); Center for Spatial OMICs (CRISP); Cable et al. *Nat Biotechnol* 2022 (RCTD); Bilous et al. *Nat Methods* 2026, [10.1038/s41592-026-03089-8](https://doi.org/10.1038/s41592-026-03089-8) (SPLIT); STEAM (spatial coherence / PAS).
 
 > **Provenance note.** The spatial/contamination/confidence metrics and their evidence are carried over (with cross-links, not duplicated) from `cell-annotation-qc.md`, which was built from an adversarial-verification research pass. The **new** material here — the external-validation family (§2), the internal cluster-validity + ISC family (§3a–3b), the marker-program fidelity family (§3g), the decision guide (§1), the batteries (§4), the scTypeEval integration (§7), and the ECS / AvgBIO-form / hierarchical / composition / reference-volume-robustness metrics (§2.5–2.6) — is synthesized from standard metric definitions, the scTypeEval repository, and a **direct reading of the Zhu et al. 2026 benchmark Methods** (`sources/2026.06.16.732716v1.full.pdf`: exact ECS/ASW/AvgBIO/AUC-ROC/Cohen's-d formulas transcribed from its Methods section). Classic-metric citation years are working knowledge and should be link-verified before any external publication.

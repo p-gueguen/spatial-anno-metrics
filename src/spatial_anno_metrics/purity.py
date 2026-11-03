@@ -25,20 +25,28 @@ from itertools import combinations
 # --------------------------------------------------------------------------- #
 # helpers
 # --------------------------------------------------------------------------- #
-def _lineage_detection(adata, marker_sets: dict[str, list[str]]) -> dict:
-    """{lineage: bool array over cells} = 'cell detects >=1 on-panel marker of this lineage'."""
+def _private_detection(adata, marker_sets: dict[str, list[str]]):
+    """``(marker_pos, pairs)``: per cell, does it detect any on-panel marker; and, lazily for each lineage
+    pair ``(a, b)``, ``(da, db)`` = does it detect >=1 marker of ``a`` that is NOT a marker of ``b`` (and vice
+    versa). A gene listed for both lineages is evidence for neither against the other, so it never counts as
+    co-detection; a nested pair (one set has no marker of its own against the other, e.g. ``T`` vs ``CD4 T``)
+    is hierarchical, not exclusive, and is skipped."""
     import numpy as np
 
     panel = set(adata.var_names)
-    detect: dict[str, "np.ndarray"] = {}
-    for ct, mk in marker_sets.items():
-        genes = [g for g in mk if g in panel]
-        if not genes:
-            continue
-        sub = adata[:, genes].X
-        arr = sub.toarray() if hasattr(sub, "toarray") else np.asarray(sub)
-        detect[ct] = (arr > 0).any(axis=1)
-    return detect
+    sets = {ct: {g for g in mk if g in panel} for ct, mk in marker_sets.items()}
+    sets = {ct: s for ct, s in sets.items() if s}
+    genes = sorted(set().union(*sets.values()))
+    col = {g: j for j, g in enumerate(genes)}
+    sub = adata[:, genes].X
+    det = (sub.toarray() if hasattr(sub, "toarray") else np.asarray(sub)) > 0   # cells x marker genes
+
+    def any_of(gs):
+        return det[:, [col[g] for g in gs]].any(axis=1)
+
+    pairs = ((any_of(sets[a] - sets[b]), any_of(sets[b] - sets[a]))
+             for a, b in combinations(sets, 2) if sets[a] - sets[b] and sets[b] - sets[a])
+    return det.any(axis=1), pairs
 
 
 # --------------------------------------------------------------------------- #
@@ -46,33 +54,30 @@ def _lineage_detection(adata, marker_sets: dict[str, list[str]]) -> dict:
 # --------------------------------------------------------------------------- #
 def crisp_purity(adata, marker_sets: dict[str, list[str]]) -> float:
     """CRISP purity (reference-free): a marker-positive cell is IMPURE if it detects markers from
-    ``>= 2`` disjoint lineages. Writes per-cell ``adata.obs['crisp_impure']`` (bool) and returns the
-    dataset purity ``1 - N_impure / N_marker_positive`` (1.0 = perfectly pure)."""
+    ``>= 2`` lineages, judging each pair on the markers the two sets do not share (a shared gene such as
+    CD3E in both CD4 T and CD8 T sets is not co-detection). Writes per-cell ``adata.obs['crisp_impure']``
+    (bool) and returns the dataset purity ``1 - N_impure / N_marker_positive`` (1.0 = perfectly pure)."""
     import numpy as np
 
-    detect = _lineage_detection(adata, marker_sets)
-    if not detect:
-        adata.obs["crisp_impure"] = False
-        return 1.0
-    D = np.column_stack(list(detect.values()))       # cells x lineages (bool)
-    n_lin = D.sum(axis=1)
-    impure = n_lin >= 2
-    marker_pos = n_lin >= 1
+    marker_pos, pairs = _private_detection(adata, marker_sets)
+    impure = np.zeros(adata.n_obs, dtype=bool)
+    for da, db in pairs:
+        impure |= da & db
     adata.obs["crisp_impure"] = impure
     return float(1.0 - impure.sum() / max(1, marker_pos.sum()))
 
 
 def mecr(adata, marker_sets: dict[str, list[str]]) -> float:
-    """MECR (Mutually Exclusive Co-expression Rate, reference-free): mean over disjoint lineage pairs
-    of ``#(both detected) / #(either detected)``. 0 = mutually-exclusive markers never co-occur (clean);
+    """MECR (Mutually Exclusive Co-expression Rate, reference-free): mean over lineage pairs of
+    ``#(both detected) / #(either detected)``, each lineage detected on the markers the pair does not share;
+    nested pairs (``T`` vs ``CD4 T``) are skipped. 0 = mutually-exclusive markers never co-occur (clean);
     higher = more spillover / doublets. Uses the curated ``marker_sets`` pairs (contrast :func:`ncp`,
     which derives its pairs from a reference)."""
     import numpy as np
 
-    detect = _lineage_detection(adata, marker_sets)
+    _, pairs = _private_detection(adata, marker_sets)
     rates = []
-    for a, b in combinations(detect, 2):
-        da, db = detect[a], detect[b]
+    for da, db in pairs:
         either = (da | db).sum()
         if either:
             rates.append((da & db).sum() / either)
@@ -121,12 +126,17 @@ def pmp(adata, marker_sets: dict[str, list[str]], label_key: str = "cell_type") 
 # --------------------------------------------------------------------------- #
 # reference-based (need a matched scRNA/snRNA reference)
 # --------------------------------------------------------------------------- #
-def nmp(adata, reference=None, label_key: str = "cell_type", ref_label_key: str = "cell_type") -> dict:
+def nmp(adata, reference=None, label_key: str = "cell_type", ref_label_key: str = "cell_type",
+        max_neg_frac: float = 0.05, min_other_frac: float = 0.25) -> dict:
     """Negative-marker proportion (reference-based): mean fraction of each cell's counts on genes its
-    assigned type should NOT express (the bottom decile of that type's mean profile in the reference,
-    over genes shared with the section panel). High nmp flags contamination / mislabeling. The
-    reference-based counterpart to :func:`pmp`. Reference-guarded (no-ops -> ``{'status':'skipped'}``
-    without a reference). Writes ``obs['nmp']``; returns ``{status, mean_nmp}``."""
+    assigned type should NOT express. A gene shared with the reference is a negative for type t when the
+    reference detects it in ``<= max_neg_frac`` of t's cells and ``>= min_other_frac`` of some other type's:
+    another lineage's marker that t lacks, i.e. where that lineage's spillover lands (the rarity rule of
+    SegTraQ's ``markers_from_reference``, without its DE step). High nmp flags contamination / mislabeling.
+    The reference-based counterpart to :func:`pmp`. Reference-guarded (no-ops -> ``{'status':'skipped'}``
+    without a reference). Writes ``obs['nmp']``; returns ``{status, mean_nmp, types_without_negatives}`` -
+    cells of the listed types (absent from the reference, or no gene passes the rule) score 0 by
+    construction, not because they are clean."""
     if reference is None:
         return {"status": "skipped", "reason": "no reference"}
     import numpy as np
@@ -139,35 +149,30 @@ def nmp(adata, reference=None, label_key: str = "cell_type", ref_label_key: str 
     ref_labels = reference.obs[ref_label_key].astype(str).to_numpy()
 
     ref_idx = {g: i for i, g in enumerate(reference.var_names)}
-    ref_gi = [ref_idx[g] for g in shared]
-    ref_sub = reference.X[:, ref_gi]
-    ref_arr = ref_sub.toarray() if hasattr(ref_sub, "toarray") else np.asarray(ref_sub)
+    ref_det = reference.X[:, [ref_idx[g] for g in shared]] > 0
+    det = {ct: np.asarray(ref_det[ref_labels == ct].mean(axis=0)).ravel() for ct in np.unique(ref_labels)}
 
     var_idx = {g: i for i, g in enumerate(adata.var_names)}
-    gi = [var_idx[g] for g in shared]
     mat = adata.layers["counts"] if "counts" in adata.layers else adata.X
-    sub = mat[:, gi]
-    arr = sub.toarray() if hasattr(sub, "toarray") else np.asarray(sub)
-    total = arr.sum(axis=1).astype(float)
+    sub = mat[:, [var_idx[g] for g in shared]]
+    total = np.asarray(sub.sum(axis=1)).ravel().astype(float)
 
     out = np.zeros(adata.n_obs, dtype=float)
+    no_neg = []
     for ct in np.unique(labels):
-        cell_mask = labels == ct
-        if not cell_mask.any():
+        others = [d for o, d in det.items() if o != ct]
+        neg = (np.flatnonzero((det[ct] <= max_neg_frac) & (np.max(others, axis=0) >= min_other_frac))
+               if ct in det and others else [])
+        if not len(neg):
+            no_neg.append(str(ct))  # no negative-set evidence -> leave at 0, disclosed
             continue
-        ref_mask = ref_labels == ct
-        if not ref_mask.any():
-            continue  # type absent from reference -> no negative-set evidence, leave at 0
-        profile = ref_arr[ref_mask].mean(axis=0)
-        n_neg = max(1, int(np.ceil(profile.size * 0.1)))  # bottom decile = lowest-expressed genes
-        neg_idx = np.argsort(profile)[:n_neg]
-        neg_counts = arr[np.ix_(cell_mask, neg_idx)].sum(axis=1).astype(float)
+        cell_mask = labels == ct
+        neg_counts = np.asarray(sub[cell_mask][:, neg].sum(axis=1)).ravel().astype(float)
         with np.errstate(divide="ignore", invalid="ignore"):
             out[cell_mask] = np.where(total[cell_mask] > 0, neg_counts / total[cell_mask], 0.0)
 
-    out = np.nan_to_num(out, nan=0.0)
     adata.obs["nmp"] = out
-    return {"status": "ok", "mean_nmp": float(np.mean(out))}
+    return {"status": "ok", "mean_nmp": float(np.mean(out)), "types_without_negatives": no_neg}
 
 
 def ncp(adata, reference=None, ref_label_key: str = "cell_type",

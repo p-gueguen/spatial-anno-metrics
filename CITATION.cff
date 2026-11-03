@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: >-
+  If you use this package, please cite it, and cite the original sources of the metrics you
+  report (listed in the README and in docs/cell-annotation-quality-metrics.md).
+title: "spatial-anno-metrics: cell-type annotation quality metrics for spatial and single-cell data"
+type: software
+authors:
+  - family-names: Gueguen
+    given-names: Paul
+    affiliation: Functional Genomics Center Zurich (ETH Zurich / University of Zurich)
+version: 0.6.0
+license: MIT
+repository-code: "https://github.com/p-gueguen/spatial-anno-metrics"
+keywords:
+  - single-cell
+  - spatial transcriptomics
+  - cell-type annotation
+  - quality control

@@ -21,6 +21,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[spatial,dev]"
       - name: Ruff
-        run: ruff check src tests
+        run: ruff check src tests benchmarks
+      - name: Pytest
+        run: pytest -q
+
+  # Proves the floors in pyproject.toml: every direct dependency at its lowest allowed version,
+  # everything else at its newest. Two legs, because squidpy's dependencies need pandas and
+  # scikit-learn above the core floors.
+  lowest-direct:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        extras: ["dev", "dev,spatial"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install the lowest allowed direct dependencies
+        run: |
+          python -m pip install uv
+          uv pip install --system --resolution lowest-direct ".[${{ matrix.extras }}]"
       - name: Pytest
         run: pytest -q

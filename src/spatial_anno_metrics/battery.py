@@ -1,5 +1,7 @@
-"""The reference-free quality battery in one guarded call: internal validity, marker-program fidelity,
-inter-sample consistency and the AQI headline."""
+"""The reference-free quality battery in one guarded call.
+
+Internal validity, marker-program fidelity, inter-sample consistency and the AQI headline.
+"""
 from __future__ import annotations
 
 from ._validate import skip
@@ -24,9 +26,10 @@ def annotation_quality(adata, label_key: str = "cell_type",
                        median_depth: float | None = None, method_label_cols=None,
                        abstention_labels=None, platform=None, n_panel_genes=None,
                        normalization=None, marker_set_name=None, compute_aqi: bool = True) -> dict:
-    """Run the reference-free quality battery and return a compact headline: internal validity,
-    marker-program fidelity (if ``marker_sets``), inter-sample consistency (if ``sample_key``), and
-    the single **AQI** headline (:func:`annotation_quality_index`) in ``out['aqi']``. Each sub-metric is
+    """Run the reference-free quality battery and return a compact headline.
+
+    Internal validity, marker-program fidelity (if ``marker_sets``), inter-sample consistency (if
+    ``sample_key``), and the single **AQI** headline (:func:`annotation_quality_index`) in ``out['aqi']``. Each sub-metric is
     guarded - a failure returns ``{'status': 'skipped', 'reason': ...}`` rather than raising, so this is
     safe to call from the QC funnel on any labeled section. ``n_neighbors`` is the embedding kNN size of
     :func:`internal_validity`; marker fidelity reads ``layers['counts']`` (or ``X`` when it holds counts).
@@ -36,7 +39,8 @@ def annotation_quality(adata, label_key: str = "cell_type",
     agreement term, and ``marker_sets`` for purity + fidelity. Without ``marker_sets`` the AQI has no
     term to score (its core is purity C and fidelity M; coherence only scales it), so ``out['aqi']['aqi']``
     is ``None``, not a coherence index. ``platform``/``n_panel_genes``/``normalization``/``marker_set_name``
-    are stamped into ``provenance`` (every number must name its normalization + marker set)."""
+    are stamped into ``provenance`` (every number must name its normalization + marker set).
+    """
     out: dict = {"status": "ok"}
     try:
         out["internal_validity"] = internal_validity(

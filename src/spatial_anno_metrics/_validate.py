@@ -1,6 +1,8 @@
-"""Input checks shared by the metrics: labels, the count-matrix rule, the skip shape, and marker-dictionary
-coverage. Every metric routes its labels through :func:`check_labels` and its count matrix through
-:func:`get_counts`, so the rules live in one place."""
+"""Input checks shared by the metrics: labels, the count-matrix rule, the skip shape, marker-dictionary coverage.
+
+Every metric routes its labels through :func:`check_labels` and its count matrix through :func:`get_counts`, so
+the rules live in one place.
+"""
 from __future__ import annotations
 
 import warnings
@@ -12,8 +14,10 @@ __all__ = []
 
 
 def skip(reason: str) -> dict:
-    """The one "could not score this" shape: ``{"status": "skipped", "reason": reason}``. A success carries
-    ``"status": "ok"``. Callers may add context keys (counts, dropped types) next to these two."""
+    """Return the one "could not score this" shape: ``{"status": "skipped", "reason": reason}``.
+
+    A success carries ``"status": "ok"``. Callers may add context keys (counts, dropped types) next to these two.
+    """
     return {"status": "skipped", "reason": reason}
 
 
@@ -53,8 +57,11 @@ def _count_like(M) -> bool:
 
 
 def matrix_name(adata, layer: str | None) -> str:
-    """The name :func:`get_counts` reports for ``layer``, without reading the matrix: ``"layers['<layer>']"``
-    when the layer exists, else ``"X"`` (``get_counts`` raises instead when that ``X`` is not raw counts)."""
+    """Return the name :func:`get_counts` reports for ``layer``, without reading the matrix.
+
+    ``"layers['<layer>']"`` when the layer exists, else ``"X"`` (``get_counts`` raises instead when that ``X`` is
+    not raw counts).
+    """
     return f"layers[{layer!r}]" if layer is not None and layer in adata.layers else "X"
 
 
@@ -86,10 +93,13 @@ def get_counts(adata, layer: str | None = "counts"):
 
 
 def dictionary_coverage(labels, marker_sets: dict) -> dict:
-    """Which labels have no marker set? ``{"no_dict_frac": fraction of cells whose label has no entry (or an
-    empty one) in ``marker_sets``, "labels_without_markers": [sorted labels]}``. A marker metric silently skips
-    such labels, so report this beside it. Pass ``marker_sets`` already restricted to the panel to count a
-    set whose genes are all off-panel as missing too."""
+    """Report which labels have no marker set.
+
+    Returns ``{"no_dict_frac": fraction of cells whose label has no entry (or an empty one) in ``marker_sets``,
+    "labels_without_markers": [sorted labels]}``. A marker metric silently skips such labels, so report this
+    beside it. Pass ``marker_sets`` already restricted to the panel to count a set whose genes are all off-panel
+    as missing too.
+    """
     y = check_labels(labels)
     missing = sorted(str(t) for t in np.unique(y) if not marker_sets.get(t))
     return {"no_dict_frac": float(np.isin(y, missing).mean()), "labels_without_markers": missing}

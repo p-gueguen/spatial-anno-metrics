@@ -5,7 +5,7 @@ __all__ = ["from_spatialdata"]
 
 
 def from_spatialdata(sdata, table_key: str = "table"):
-    """The AnnData table ``table_key`` of a SpatialData object, for the metrics in this package.
+    """Return the AnnData table ``table_key`` of a SpatialData object, for the metrics in this package.
 
     Returns the table itself, not a copy: obs columns and ``uns['sam']`` summaries the metrics write land in
     ``sdata.tables[table_key]``. Spatial metrics need cell coordinates in ``obsm['spatial']``; the

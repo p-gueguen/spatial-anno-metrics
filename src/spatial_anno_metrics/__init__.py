@@ -57,9 +57,12 @@ __all__ = [name for mod in (internal, isc, fidelity, external, panel, battery, a
 
 
 def __getattr__(name):
-    """``sam.eval_metrics`` used to be bound by this file: load the deprecated shim lazily. The import system
-    also lands here for ``from spatial_anno_metrics import eval_metrics``, so the warning is raised here, at the
-    caller's line (raised inside the shim it would point at importlib, which default filters hide)."""
+    """Load the deprecated ``eval_metrics`` shim lazily.
+
+    ``sam.eval_metrics`` used to be bound by this file. The import system also lands here for
+    ``from spatial_anno_metrics import eval_metrics``, so the warning is raised here, at the caller's line
+    (raised inside the shim it would point at importlib, which default filters hide).
+    """
     if name != "eval_metrics":
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib

@@ -395,7 +395,9 @@ def conformal_check(seeds):
 
 
 def panel_check(seeds):
-    """panel_resolvability vs panel content (fraction of private markers kept) x target depth."""
+    """panel_resolvability vs panel content (fraction of private markers kept) x target depth. Tiers are on the
+    chance-corrected F1 since 0.7 (docs/ROADMAP.md 8h): with no private markers at depth 50 (macro-F1 ~0.7)
+    frac_resolvable was 1.0 under the old raw-F1 >= 0.5 cut."""
     rows = []
     ms = sim.marker_sets()
     private = [g for t, gs in ms.items() for g in gs if g not in sim.T_LINEAGE]
@@ -409,7 +411,9 @@ def panel_check(seeds):
                 r = sam.panel_resolvability(ref, "cell_type", panel, target_depth=depth, seed=seed)
                 cd8 = r["per_type"].get("T_CD8", {})
                 rows.append(dict(seed=seed, markers_kept=keep, target_depth=depth, macro_f1=r.get("macro_f1"),
-                                 frac_resolvable=r.get("frac_resolvable"), T_CD8_f1=cd8.get("f1"),
+                                 frac_resolvable=r.get("frac_resolvable"),
+                                 frac_not_resolvable=r.get("frac_not_resolvable"), T_CD8_f1=cd8.get("f1"),
+                                 T_CD8_f1_adjusted=cd8.get("f1_adjusted"), T_CD8_tier=cd8.get("tier"),
                                  T_CD8_confused_with=cd8.get("confused_with")))
     return pd.DataFrame(rows)
 

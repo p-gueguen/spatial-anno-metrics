@@ -1,0 +1,81 @@
+format-version: 1.2
+ontology: cl_tiny
+remark: Test fixture. A hand-made 14-term slice of the Cell Ontology (CL, CC BY 4.0, obophenotype/cell-ontology):
+remark: real CL ids and names, is_a edges simplified. Includes a second is_a parent, an obsolete term and a Typedef.
+
+[Term]
+id: CL:0000000
+name: cell
+
+[Term]
+id: CL:0000988
+name: hematopoietic cell
+is_a: CL:0000000 ! cell
+
+[Term]
+id: CL:0000738
+name: leukocyte
+is_a: CL:0000988 ! hematopoietic cell
+
+[Term]
+id: CL:0000542
+name: lymphocyte
+is_a: CL:0000738 ! leukocyte
+
+[Term]
+id: CL:0000084
+name: T cell
+is_a: CL:0000542 ! lymphocyte
+
+[Term]
+id: CL:0000236
+name: B cell
+is_a: CL:0000542 ! lymphocyte
+
+[Term]
+id: CL:0000763
+name: myeloid cell
+is_a: CL:0000988 ! hematopoietic cell
+
+[Term]
+id: CL:0000145
+name: professional antigen presenting cell
+is_a: CL:0000738 ! leukocyte
+
+[Term]
+id: CL:0000576
+name: monocyte
+is_a: CL:0000763 ! myeloid cell
+
+[Term]
+id: CL:0000235
+name: macrophage
+is_a: CL:0000763 {source="fixture"} ! myeloid cell
+is_a: CL:0000145 ! professional antigen presenting cell
+relationship: develops_from CL:0000576 ! monocyte
+
+[Term]
+id: CL:0000066
+name: epithelial cell
+is_a: CL:0000000 ! cell
+
+[Term]
+id: CL:0000312
+name: keratinocyte
+is_a: CL:0000066 ! epithelial cell
+
+[Term]
+id: CL:0000057
+name: fibroblast
+is_a: CL:0000000 ! cell
+
+[Term]
+id: CL:0000999
+name: obsolete fixture cell
+is_obsolete: true
+is_a: CL:0000066 ! epithelial cell
+
+[Typedef]
+id: develops_from
+name: develops from
+is_a: related_to

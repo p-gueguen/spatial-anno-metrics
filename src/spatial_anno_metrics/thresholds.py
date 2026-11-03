@@ -68,6 +68,11 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
         "logreg_C": _e(0.3, f"{_PKG}: inverse regularisation of the logistic-regression classifier"),
         "logreg_max_iter": _e(300, f"{_PKG}: logistic-regression iterations"),
         "library_size_scale": _e(1e4, "counts-per-10k library-size normalisation before log1p", False),
+        "f1_adjusted_resolvable": _e(0.8, f"{_PKG}: chance-corrected per-type F1, (F1 - prevalence) / "
+                                          "(1 - prevalence), for 'resolvable' (docs/ROADMAP.md 8h); 0.833 raw F1 "
+                                          "with 6 balanced types, 0.9 with 2"),
+        "f1_adjusted_weak": _e(0.5, f"{_PKG}: chance-corrected per-type F1 below which a type is "
+                                    "'not_resolvable'"),
     },
     "conformal": {
         "alpha": _e(0.1, "miscoverage rate: 90 % target coverage, the usual default", False),
@@ -138,6 +143,11 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
                                            "20 nearest neighbours weighted 1/d, row-standardised", False),
         "spatialqm_pseudocount": _e(0.1, "SpatialQM getMeanSignalRatio (commit 36e1a59): pseudocount added to "
                                          "the per-feature means before log10", False),
+    },
+    "ontology": {
+        "min_labels": _e(4, f"{_PKG}: labels with a CL id needed by ontology_consistency (6 label pairs)"),
+        "min_cells": _e(10, f"{_PKG}: cells a label needs for its embedding centroid to be used"),
+        "n_perm": _e(999, f"{_PKG}: label permutations for the Mantel-style p-value (floor 0.001)"),
     },
     # Recorded, not wired: aqi.py keeps these literals. tests/test_thresholds.py checks that its parameter
     # defaults agree; the body literals (w_coh_range, softmin_floor, default_target_depth,

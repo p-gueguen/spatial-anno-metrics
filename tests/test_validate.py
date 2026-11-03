@@ -32,7 +32,7 @@ def test_check_labels_rejects_missing_labels_naming_column_and_count():
     a = _adata(np.ones((5, 2)), pd.Series(["A", None, "B", np.nan, "A"], dtype=object).to_numpy())
     with pytest.raises(ValueError, match=r"obs\['cell_type'\] has 2 missing"):
         check_labels(a, "cell_type")
-    with pytest.raises(ValueError, match="has 1 missing"):
+    with pytest.raises(ValueError, match="the label array has 1 missing"):
         check_labels(pd.Series(["A", None, "B"]))
 
 

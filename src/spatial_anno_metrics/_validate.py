@@ -26,7 +26,7 @@ def check_labels(adata_or_values, key: str | None = None, *, min_labels: int = 1
     the cells as str, so unused categorical levels do not appear; fewer than ``min_labels`` distinct labels
     raises. A metric that needs >= 2 labels checks that itself and returns :func:`skip` instead of raising.
     """
-    raw, where = ((adata_or_values, "labels") if key is None
+    raw, where = ((adata_or_values, "the label array") if key is None
                   else (adata_or_values.obs[key], f"adata.obs[{key!r}]"))
     n_na = int(np.sum(pd.isna(raw)))
     if n_na:

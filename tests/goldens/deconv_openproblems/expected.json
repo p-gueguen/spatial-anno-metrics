@@ -1,0 +1,19 @@
+{
+ "generated": "2026-11-03",
+ "upstream": "openproblems-bio/task_spatial_decomposition@892ab4818b3d28656cd1a05f71b34c4d31af1de2",
+ "call": "src/metrics/{r2,jsd}/script.py, unchanged but for the VIASH par block; true -> solution.obsm['proportions_true'], pred -> method output obsm['proportions_pred']",
+ "results": {
+  "close": {
+   "r2": 0.9757759961507725,
+   "jsd": 0.06708556329896388
+  },
+  "noisy": {
+   "r2": -0.9234989842728909,
+   "jsd": 0.3716543474874577
+  },
+  "absent_type": {
+   "r2": 0.7968233676068135,
+   "jsd": null
+  }
+ }
+}

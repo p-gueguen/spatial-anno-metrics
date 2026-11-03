@@ -9,6 +9,10 @@
   neighbours weighted 1/d, row-standardised. It needs no squidpy and writes nothing to `adata`. On the Xenium
   golden it reproduces all 341 per-feature values to 5.3e-15, with NaN at the same 7 features. The full 167,780-cell
   section takes 3.2 s.
+  - `genes=` chooses what is scored; cells and library sizes still come from the whole group, so a feature's I
+    does not depend on which others are requested (ERBB2 stays 0.3679 = `getMorans` in any subset).
+  - A group with <= 20 cells holding a count gets NaN for all its features, counted in `n_*_excluded`; the other
+    group is still scored. spdep's `knearneigh(k = 20)` stops there, so SpatialQM gives no value either.
 - `moran_signal` result keys `n_genes_excluded`, `n_controls_excluded` (features with undefined I) and
   `per_feature` (pandas Series of I), plus `method`. `method="spatialqm"` also returns `n_cells_genes` and
   `n_cells_controls`.
@@ -28,6 +32,11 @@
     (`"UNASSIGNED"`); SpatialQM returns 1 for the old ids.
   - `fdr` = negative transcripts / all transcripts x genes detected / negatives detected. SpatialQM's
     `getGlobalFDR` is `fdr / 100`. `fdr` is None when no negative feature is detected.
+  - Bytes feature names and cell ids (Xenium writes `feature_name` as parquet `binary`) are decoded as UTF-8.
+    On row group 0 of the breast `transcripts.parquet` (1e6 rows): fdr 0.006015, 4,324 negative transcripts,
+    313 genes detected.
+- `moran_signal`, `transcript_qc` and every `method="spatialqm"` call return their result and write nothing
+  to `uns['sam']` (documented in the module docstring).
 - `decomposition_purity(adata, weights_key, *, key_added="sam_decomposition_purity")`: 1 - the largest
   normalised deconvolution weight per cell, as in Spatial Touchstone. It is ported from SegTraQ
   `sp.rctd_contamination` (LazDaria/SegTraQ `05e90b6`, MIT, attributed). Weights come from `obsm`. Rows with a
@@ -140,7 +149,11 @@ Also for the integrator (files this package may not edit):
     0 / 0.75 / 0.5, NaN rows, DataFrame weights, skips).
   - TPC / FTC / FDR: `signal_qc.py` `tx_per_cell` and `transcript_qc`. Golden tests `test_tx_per_cell` and
     `test_transcript_qc` reproduce TPC 128.261, FTC 0.999798 and FDR 5.92514e-05 (`fdr / 100`) with SpatialQM's
-    name rule. With the feature-type rule: TPC 128.1905, FDR 6.64377e-05.
+    name rule. With the feature-type rule: TPC 128.1905, FDR 6.64377e-05. Bytes names and string `-1` /
+    `"UNASSIGNED"` ids: `test_transcript_qc_reads_bytes_and_string_ids`.
+  - Moran spatialqm edge cases: `test_moran_spatialqm_small_control_group_is_nan_not_a_crash[0|1|2|20]`,
+    `test_moran_spatialqm_feature_subset_matches_full_run`, golden
+    `test_moran_spatialqm_feature_subset_keeps_getmorans_values`.
 - **#7 SpatialQM parity: done (signal QC row).** Every SpatialQM scalar we offer is compared in
   `tests/goldens/signalqc_spatialqm/test_signalqc_spatialqm_metrics.py`. The golden is tied to its inputs by
   sha256, and the regeneration is exact on both Pythons.

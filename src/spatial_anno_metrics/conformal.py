@@ -279,8 +279,11 @@ def conformal_novelty(X_query, X_ref, *, method: str = "pca", fdr: float = _thr(
     are PRDS, so Benjamini-Hochberg at level ``fdr`` controls the false discovery rate among the cells flagged
     novel - **provided non-novel query cells are exchangeable with the reference cells**. A depth or platform
     shift between reference and section breaks that, and known cells are then flagged too (as they empty
-    conformal sets): feed features in which the shift is small (e.g. a reference thinned to the section's
-    depth, or a shift-robust embedding) and read a high novel share with that in mind.
+    conformal sets): feed features in which the shift is small and read a high novel share with that in mind.
+    On synthetic sections with one type left out of the reference (benchmarks/synthetic, check_conformal.csv),
+    log-normalised features of a 400-count reference flagged 85-100 % of known 150-count cells; binomially
+    thinning each reference cell to a depth drawn from the section's per-cell depths brought that to 0-2 %
+    (novel type: AUC 0.99, 85-99 % flagged, false-discovery proportion 0.05-0.10 at ``fdr`` 0.1).
 
     Parameters
     ----------

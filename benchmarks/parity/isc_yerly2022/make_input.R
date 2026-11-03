@@ -2,7 +2,8 @@
 #
 # Input : Yerly_2022_35986012.rds, Zenodo 10.5281/zenodo.18921437 (CC BY 4.0),
 #         md5 9d0768bc9f0b9f6240ae499028970455
-# Output: <out_dir>/counts.mtx (genes x cells, the 2000 HVGs only), genes.txt, obs.csv, hvg_rank.txt
+# Output: <out_dir>/counts.mtx (genes x cells, the 2000 HVGs only), genes.txt, hvg_rank.txt,
+#         obs.csv (cell_id, patient_bcc, annotation, annotation_oversplit)
 #         -> make_golden.py turns these into tests/goldens/isc_yerly2022/{counts.npz,obs.csv}
 #
 # Columns and exclusion follow the authors' benchmark config (carmonalab/ISC_benchmark_reproducibility
@@ -65,14 +66,28 @@ var <- scran::modelGeneVar(norm, block = md$patient_bcc[kept], equiweight = TRUE
 hvg <- scran::getTopHVGs(var, n = 2000)
 stopifnot(length(hvg) == 2000)
 
+# Over-split variant (the paper's over-partitioning task, SplitCelltype at rate 0.5): in every sample a random
+# half of the Fibroblast and of the Tcell cells is relabelled "<label>.Nspl2", the other half keeps the label.
+# Both labels have 50 cells in every sample, so each half keeps 25 >= min_cells and the same cells pass the
+# filter (same HVGs). Drawn after everything above, so the other outputs are unchanged. Seed 23 = the paper's
+# first split replicate (22 + 1).
+set.seed(23)
+md$annotation_oversplit <- md$annotation
+for (l in c("Fibroblast", "Tcell")) for (s in sort(unique(md$patient_bcc))) {
+  ids <- which(md$annotation == l & md$patient_bcc == s)
+  md$annotation_oversplit[ids[sample.int(length(ids), length(ids) %/% 2)]] <- paste0(l, ".Nspl2")
+}
+
 genes <- rownames(counts)[rownames(counts) %in% hvg]  # original gene order
 Matrix::writeMM(counts[genes, ], file.path(out_dir, "counts.mtx"))
 writeLines(genes, file.path(out_dir, "genes.txt"))
 writeLines(hvg, file.path(out_dir, "hvg_rank.txt"))
-write.csv(data.frame(cell_id = rownames(md), patient_bcc = md$patient_bcc, annotation = md$annotation),
+write.csv(data.frame(cell_id = rownames(md), patient_bcc = md$patient_bcc, annotation = md$annotation,
+                     annotation_oversplit = md$annotation_oversplit),
           file.path(out_dir, "obs.csv"), row.names = FALSE, quote = FALSE)
 
 cat("cells:", ncol(counts), " kept by scTypeEval filter:", sum(kept), " genes:", length(genes), "\n")
 print(table(md$annotation, md$patient_bcc))
+print(table(md$annotation_oversplit, md$patient_bcc)[c("Fibroblast", "Fibroblast.Nspl2", "Tcell", "Tcell.Nspl2"), ])
 cat("scran", as.character(packageVersion("scran")), " SeuratObject", as.character(packageVersion("SeuratObject")),
     " Matrix", as.character(packageVersion("Matrix")), " ", R.version.string, "\n")

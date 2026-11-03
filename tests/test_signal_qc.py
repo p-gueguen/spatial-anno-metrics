@@ -309,3 +309,51 @@ def test_transcript_qc_by_hand():
     none = sq.transcript_qc(tx[~tx.feature_name.str.startswith("NEG")], ["NEG1"])
     assert none["fdr"] is None and none["n_negative_tx"] == 0   # undefined, not a made-up 0
     assert sq.transcript_qc(tx.iloc[:0], ["NEG1"])["status"] == "skipped"
+
+
+@pytest.mark.parametrize("n_ctrl_cells", [0, 1, 2, 20])
+def test_moran_spatialqm_small_control_group_is_nan_not_a_crash(n_ctrl_cells):
+    """spdep's knearneigh(k = 20) needs more than 20 points, so a group with <= 20 cells holding a count has no
+    defined I: its features are NaN and counted as excluded, and the gene result survives (0 / 1 cell crashed or
+    skipped everything; 2 cells gave the degenerate I = -1)."""
+    from spatial_anno_metrics import signal_qc as sq
+
+    a = _spatial_adata()
+    X = a.X.toarray()
+    X[n_ctrl_cells:, 6:] = 0
+    X[:n_ctrl_cells, 6:] = 1 + (np.arange(n_ctrl_cells)[:, None] + np.arange(4)) % 3   # varying counts
+    a.X = sp.csr_matrix(X)
+    a.var["feature_type"] = ["Gene Expression"] * 6 + ["Negative Control Probe"] * 4
+    out = sq.moran_signal(a, method="spatialqm")
+    assert out["status"] == "ok" and np.isfinite(out["median_gene_moran"])
+    assert out["n_controls"] == out["n_controls_excluded"] == 4 and out["median_control_moran"] is None
+    assert out["per_feature"].iloc[6:].isna().all() and out["n_cells_controls"] == n_ctrl_cells
+
+
+def test_moran_spatialqm_feature_subset_matches_full_run():
+    """``genes=`` picks what is scored, not the cells or library sizes the group is normalised on."""
+    from spatial_anno_metrics import signal_qc as sq
+
+    full = sq.moran_signal(_spatial_adata(), method="spatialqm")
+    sub = ["g0", "g3", "NegControl1"]
+    part = sq.moran_signal(_spatial_adata(), method="spatialqm", genes=sub)
+    assert list(part["per_feature"].index) == sub
+    assert np.allclose(part["per_feature"], full["per_feature"][sub], rtol=0, atol=1e-12)
+    assert (part["n_cells_genes"], part["n_cells_controls"]) == (full["n_cells_genes"], full["n_cells_controls"])
+
+
+def test_transcript_qc_reads_bytes_and_string_ids():
+    """Xenium transcripts.parquet stores feature_name as parquet binary: pandas gives bytes."""
+    import pandas as pd
+
+    from spatial_anno_metrics import signal_qc as sq
+
+    names = ["A", "A", "B", "NEG1", "NEG2", "A", "C", "A"]
+    ids = ["1", "1", "2", "-1", "3", "3", "4", "UNASSIGNED"]
+    want = sq.transcript_qc(pd.DataFrame({"feature_name": names, "cell_id": [1, 1, 2, -1, 3, 3, 4, -1]}),
+                            ["NEG1", "NEG2"])
+    for tx in (pd.DataFrame({"feature_name": names, "cell_id": ids}),                       # str '-1' too
+               pd.DataFrame({"feature_name": [n.encode() for n in names], "cell_id": [i.encode() for i in ids]})):
+        out = sq.transcript_qc(tx, ["NEG1", "NEG2"])
+        assert out["n_unassigned"] == 2 and out["n_negative_tx"] == 2
+        assert out["fdr"] == pytest.approx(want["fdr"]) and out["fdr"] == pytest.approx(2 / 8 * 3 / 2)

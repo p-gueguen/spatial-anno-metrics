@@ -153,3 +153,13 @@ def test_transcript_qc():
     assert ft["fdr"] / 100 == pytest.approx(6.64377e-05, rel=1e-5)
     xoa13 = tx.assign(cell_id=tx["cell_id"].astype(str).replace("-1", "UNASSIGNED"))   # Xenium >= 1.3 ids
     assert sq.transcript_qc(xoa13, neg)["frac_tx_in_cells"] == out["frac_tx_in_cells"]
+
+
+def test_moran_spatialqm_feature_subset_keeps_getmorans_values():
+    """A gene subset used to renormalise on the subset alone: ERBB2 0.3679 (= getMorans) became 0.1870."""
+    from spatial_anno_metrics import signal_qc as sq
+
+    sub = ["ERBB2", "KRT7", "EPCAM", "LUM", "PTPRC"]
+    ref = pd.Series(E["getMorans"]["I"], index=E["getMorans"]["feature"], dtype=float)[sub]
+    out = sq.moran_signal(_crop(), method="spatialqm", genes=sub)["per_feature"]
+    assert np.abs(out[sub] - ref).max() < 1e-12

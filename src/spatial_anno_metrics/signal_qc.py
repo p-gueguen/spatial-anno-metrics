@@ -34,7 +34,8 @@ control probes are named ``antisense_<GENE>``, and SpatialQM's name regexes coun
 
 Every count-based metric reads the matrix chosen by ``layer=`` (default ``layers['counts']``, or ``X`` when it
 holds raw counts; see ``_validate.get_counts``) and names it under ``"matrix"``. Per-cell values go to
-``obs[key_added]`` (default ``sam_<name>``) and the scalar summary to ``uns['sam'][<function name>]``.
+``obs[key_added]`` (default ``sam_<name>``) and the scalar summary to ``uns['sam'][<function name>]``;
+``moran_signal``, ``transcript_qc`` and every ``method="spatialqm"`` call only return their result.
 
 Depends on: numpy, scipy, pandas; squidpy (``moran_signal(method="squidpy")`` only).
 """
@@ -95,7 +96,6 @@ def _knn_idw(xy, k):
     from scipy.spatial import cKDTree
 
     n = len(xy)
-    k = min(k, n - 1)
     d, j = cKDTree(xy).query(xy, k + 1)
     if (d[:, 1:] == 0).any():
         raise ValueError("duplicated cell coordinates: inverse-distance weights are undefined")
@@ -121,19 +121,23 @@ def _moran_columns(V, W) -> np.ndarray:
     return out
 
 
-def _moran_spatialqm(C, xy):
-    """Score one SpatialQM group; return (I per column, n cells kept).
+def _moran_spatialqm(C, xy, score):
+    """Score one SpatialQM group; return (I of the ``score`` columns, n cells kept).
 
-    Keep cells with a count in the group, ``scater::logNormCounts`` (library-size factors centred at 1,
-    log2(x / sf + 1)), Moran's I on the 20-NN 1/d graph.
+    Keep cells with a count anywhere in the group, ``scater::logNormCounts`` over the whole group (library-size
+    factors centred at 1, log2(x / sf + 1)), Moran's I on the 20-NN 1/d graph. With <= 20 kept cells spdep's
+    ``knearneigh(k = 20)`` stops (SpatialQM gives no value): every column is NaN.
     """
     C = C.astype(np.float64)                                    # float32 library sizes cost 1e-9 in I
     lib = np.asarray(C.sum(1)).ravel()
     keep = lib > 0
+    n = int(keep.sum())
+    if n <= _SQM_K:
+        return np.full(int(score.sum()), np.nan), n
     C = C[keep].tocsr()
     sf = lib[keep] / lib[keep].mean()
     C.data = np.log2(C.data / np.repeat(sf, np.diff(C.indptr)) + 1.0)
-    return _moran_columns(C, _knn_idw(xy[keep], _SQM_K)), int(keep.sum())
+    return _moran_columns(C[:, score], _knn_idw(xy[keep], _SQM_K)), n
 
 
 def moran_signal(adata, n_neighs: int = _thr("signal_qc", "moran_n_neighs"), genes: list[str] | None = None,
@@ -153,7 +157,8 @@ def moran_signal(adata, n_neighs: int = _thr("signal_qc", "moran_n_neighs"), gen
         Spatial kNN size of the graph ``method="squidpy"`` builds (binary weights). Ignored by
         ``method="spatialqm"``, which uses SpatialQM's 20 neighbours weighted 1/d.
     genes : list of str, optional
-        Features to score (default: all).
+        Features to score (default: all). With ``method="spatialqm"`` the cells and library sizes still come
+        from the whole group, so a feature's I does not depend on which others are requested.
     n_perms : int, optional
         Permutations for squidpy's p-values (``method="squidpy"`` only).
     seed : int
@@ -166,7 +171,8 @@ def moran_signal(adata, n_neighs: int = _thr("signal_qc", "moran_n_neighs"), gen
         ``"spatialqm"``: SpatialQM ``getMorans`` - per group (genes; negative-control probes), the cells with a
         count in that group, ``scater::logNormCounts``, 20 nearest neighbours weighted 1/d and row-standardised.
         Needs no squidpy and writes nothing to ``adata``. Its control median sits near the null
-        E[I] = -1/(n - 1) of the few cells with a probe count.
+        E[I] = -1/(n - 1) of the few cells with a probe count. A group with <= 20 such cells (spdep's
+        ``knearneigh(k = 20)`` stops there) gets NaN for all its features, counted as excluded.
     layer : str or None
         Count matrix (see ``_validate.get_counts``).
 
@@ -200,9 +206,9 @@ def moran_signal(adata, n_neighs: int = _thr("signal_qc", "moran_n_neighs"), gen
         X, xy = _csr(mat), np.asarray(adata.obsm["spatial"], dtype=float)[:, :2]
         per = pd.Series(np.nan, index=names)
         try:
-            for key, cols in (("n_cells_genes", gene & use), ("n_cells_controls", ctrl & use)):
-                if cols.any():
-                    per[cols], extra[key] = _moran_spatialqm(X[:, cols], xy)
+            for key, grp in (("n_cells_genes", gene), ("n_cells_controls", ctrl)):
+                if (grp & use).any():
+                    per[grp & use], extra[key] = _moran_spatialqm(X[:, grp], xy, use[grp])
         except ValueError as e:
             return skip(str(e))
     per = per[use]
@@ -470,6 +476,13 @@ def tx_per_cell(adata, *, layer: str | None = "counts", key_added: str = "sam_tx
 # --------------------------------------------------------------------------- #
 # Transcript-level QC (SpatialQM getCellTxFraction / getGlobalFDR)
 # --------------------------------------------------------------------------- #
+def _decoded(col):
+    """Decode a bytes column (Xenium stores ``feature_name`` as parquet binary) to str."""
+    if col.dtype == object and len(col) and isinstance(col.iloc[0], bytes):
+        return col.str.decode("utf-8")
+    return col
+
+
 def transcript_qc(transcripts, negative_features, *, feature_key: str = "feature_name",
                   cell_key: str = "cell_id") -> dict:
     """Fraction of transcripts in cells and the negative-codeword false discovery rate, per transcript.
@@ -479,7 +492,8 @@ def transcript_qc(transcripts, negative_features, *, feature_key: str = "feature
     Parameters
     ----------
     transcripts : pandas.DataFrame
-        One row per transcript (e.g. Xenium ``transcripts.parquet``), with ``feature_key`` and ``cell_key``.
+        One row per transcript (e.g. Xenium ``transcripts.parquet``), with ``feature_key`` and ``cell_key``;
+        bytes values (parquet ``binary``, as Xenium writes ``feature_name``) are decoded as UTF-8.
     negative_features : iterable of str
         Names of the negative features. Pick them by feature type, not by name, e.g.
         ``adata.var_names[adata.var["feature_type"] != "Gene Expression"]`` (negative-control probes, negative-
@@ -503,12 +517,11 @@ def transcript_qc(transcripts, negative_features, *, feature_key: str = "feature
     n = len(transcripts)
     if n == 0:
         return skip("no transcripts")
-    cid = transcripts[cell_key]
+    cid, feat = _decoded(transcripts[cell_key]), _decoded(transcripts[feature_key])
     if pd.api.types.is_numeric_dtype(cid):
         unassigned = int((cid == -1).sum())
     else:
         unassigned = int(cid.astype(str).isin(["UNASSIGNED", "-1"]).sum())
-    feat = transcripts[feature_key]
     neg = feat.isin(set(map(str, negative_features))).to_numpy()
     n_neg = int(neg.sum())
     n_neg_det, n_gene_det = int(feat[neg].nunique()), int(feat[~neg].nunique())

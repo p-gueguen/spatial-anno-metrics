@@ -93,9 +93,9 @@ def _pur(a, ref):
             "pmp": sam.pmp(a, ms, "label").get("mean_pmp")}
 
 
-@adapter("nmp", {"nmp": (-1, [L, PUR, REF])})
+@adapter("nmp", {"nmp": (1, [L, PUR, REF])})
 def _nmp(a, ref):
-    return {"nmp": sam.nmp(a, ref, "label", "cell_type").get("mean_nmp")}
+    return {"nmp": sam.nmp(a, ref, "label", "cell_type").get("nmp")}
 
 
 @adapter("ncp", {"ncp": (1, [PUR, REF])})

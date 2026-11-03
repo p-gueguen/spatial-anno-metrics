@@ -25,12 +25,13 @@ See ``docs/cell-annotation-quality-metrics.md`` for the catalog + the sources ea
 from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _version
 
-from . import (aqi, battery, confidence, conformal, decomposition, external, fidelity, internal, io, isc,
-               ontology, panel, purity, signal_qc, spatial, thresholds)
+from . import (aqi, battery, confidence, conformal, consensus, decomposition, external, fidelity, internal, io,
+               isc, ontology, panel, purity, signal_qc, spatial, thresholds)
 from .aqi import *  # noqa: F403
 from .battery import *  # noqa: F403
 from .confidence import *  # noqa: F403
 from .conformal import *  # noqa: F403
+from .consensus import *  # noqa: F403
 from .decomposition import *  # noqa: F403
 from .external import *  # noqa: F403
 from .fidelity import *  # noqa: F403
@@ -50,8 +51,8 @@ except _PackageNotFoundError:  # running from a source tree that is not installe
     __version__ = "unknown"
 
 # The public API is each module's __all__, in catalog order. eval_metrics (deprecated shim) is not imported here.
-__all__ = [name for mod in (internal, isc, fidelity, external, panel, battery, aqi, conformal, purity, spatial,
-                            confidence, signal_qc, ontology, decomposition, io, thresholds)
+__all__ = [name for mod in (internal, isc, fidelity, external, panel, battery, aqi, conformal, consensus, purity,
+                            spatial, confidence, signal_qc, ontology, decomposition, io, thresholds)
            for name in mod.__all__]
 
 

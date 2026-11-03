@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -159,6 +160,13 @@ _NAN_LABEL_CALLS = {
     "spatial_coherence": lambda sam, a: sam.spatial_coherence(a, "cell_type"),
     "neighborhood_sanity": lambda sam, a: sam.neighborhood_sanity(a, "cell_type"),
     "neighbor_contamination": lambda sam, a: sam.neighbor_contamination(a, _MARKERS, "cell_type"),
+    "isolated_label_scores": lambda sam, a: sam.isolated_label_scores(a, "cell_type"),
+    "clisi": lambda sam, a: sam.clisi(a, "cell_type"),
+    "coexpression_similarity": lambda sam, a: sam.coexpression_similarity(a, a.copy(), label_key="cell_type",
+                                                                          ref_label_key="truth"),
+    "consensus_entropy": lambda sam, a: sam.consensus_entropy(a, ["cell_type", "cell_type"]),
+    "ontology_consistency": lambda sam, a: sam.ontology_consistency(
+        a, "cell_type", Path(__file__).parent / "data" / "cl_tiny.obo", {"A": "CL:0000084", "B": "CL:0000236"}),
 }
 
 

@@ -31,14 +31,15 @@ def test_spatial_coherence_coherent_vs_shuffled():
     from spatial_anno_metrics import spatial as sp
 
     a = _blocks()
-    coh = sp.spatial_coherence(a, label_key="cell_type", k=8)
+    coh = sp.spatial_coherence(a, label_key="cell_type", n_neighs=8)
     assert "spatial_coherence" in a.obs
     assert coh["mean_coherence"] > 0.8 and coh["pas"] < 0.15      # clean blocks: neighbors share label
+    assert coh["status"] == "ok" and coh["n_neighs"] == 8
 
     b = a.copy()
     b.obs["cell_type"] = pd.Categorical(np.random.default_rng(1).permutation(b.obs["cell_type"].to_numpy()))
     del b.obsp["spatial_connectivities"]                          # rebuild graph for the shuffled copy
-    shuf = sp.spatial_coherence(b, label_key="cell_type", k=8)
+    shuf = sp.spatial_coherence(b, label_key="cell_type", n_neighs=8)
     assert shuf["mean_coherence"] < coh["mean_coherence"]
     assert shuf["pas"] > coh["pas"]
 
@@ -47,7 +48,7 @@ def test_neighborhood_sanity_clean_layout_not_flagged():
     from spatial_anno_metrics import spatial as sp
 
     out = sp.neighborhood_sanity(_blocks(), label_key="cell_type", n_neighs=8)
-    assert set(out["categories"]) == {"A", "B"}
+    assert out["status"] == "ok" and set(out["categories"]) == {"A", "B"}
     # a clean 2-block layout: each type's strongest partner is itself -> nothing suspicious
     assert out["suspicious"] == []
     assert len(out["self_enrichment"]) == 2
@@ -93,6 +94,7 @@ def test_neighbor_contamination_per_cell():
     want = [0.1, 0.0, np.nan, np.nan, np.nan, 0.0, 0.2, 0.0, 0.0, np.nan]
     np.testing.assert_allclose(a.obs["neighbor_contamination"].to_numpy(), want)
     assert out["mean_contamination"] == pytest.approx(0.05) and out["n_evaluable"] == 6
+    assert out["status"] == "ok" and out["matrix"] == "X"
 
 
 def test_neighbor_contamination_without_neighbor_expression_check():
@@ -122,8 +124,17 @@ def test_neighbor_contamination_source_target_matrix():
     from spatial_anno_metrics import spatial as sp
 
     out = sp.neighbor_contamination(_spill_tissue(), SPILL_MARKERS)
-    m, n = out["matrix"], out["n_matrix"]                # rows = source type, columns = target type
+    m, n = out["source_target"], out["n_source_target"]  # rows = source type, columns = target type
     assert m.loc["Fib", "T"] == pytest.approx(0.15) and n.loc["Fib", "T"] == 2    # c0 0.1, c6 0.2
     assert m.loc["SMC", "T"] == pytest.approx(0.2) and n.loc["SMC", "T"] == 1
     assert m.loc["T", "Fib"] == pytest.approx(0.0) and n.loc["T", "Fib"] == 3     # c1, c5, c7
     assert np.isnan(m.loc["Fib", "SMC"]) and n.loc["Fib", "SMC"] == 0             # never adjacent
+
+
+def test_spatial_label_metrics_skip_a_single_label():
+    from spatial_anno_metrics import spatial as sp
+
+    a = _blocks(n_side=6)
+    a.obs["cell_type"] = "A"
+    for out in (sp.spatial_coherence(a, label_key="cell_type"), sp.neighborhood_sanity(a, label_key="cell_type")):
+        assert out["status"] == "skipped" and "found 1" in out["reason"]

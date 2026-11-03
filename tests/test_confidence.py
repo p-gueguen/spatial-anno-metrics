@@ -37,6 +37,7 @@ def test_per_cell_confidence_margin_and_entropy():
 
     clean = cf.per_cell_confidence(_section(), MARKERS)
     amb = cf.per_cell_confidence(_section(ambiguous=True, seed=1), MARKERS)
+    assert clean["status"] == "ok" and clean["matrix"] == "layers['counts']"
     assert clean["mean_margin"] > amb["mean_margin"]        # clean cells: one lineage dominates
     assert clean["mean_entropy"] < amb["mean_entropy"]      # ambiguous cells: flatter softmax
 
@@ -63,3 +64,36 @@ def test_label_stability_low_flip_for_separated_cells():
     assert "label_stability" in a.obs
     assert 0.0 <= out["mean_flip_rate"] <= 1.0
     assert out["mean_flip_rate"] < 0.1                     # well-separated markers -> stable under 20% dropout
+    assert out["status"] == "ok" and out["matrix"] == "layers['counts']"
+
+
+def test_per_cell_confidence_skips_with_fewer_than_two_marker_sets():
+    """One scorable set has no runner-up: no margin to report (was a fabricated margin 0 / entropy 1)."""
+    from spatial_anno_metrics import confidence as cf
+
+    a = _section()
+    out = cf.per_cell_confidence(a, {"T": MARKERS["T"], "Ghost": ["not_on_panel"]})
+    assert out["status"] == "skipped" and "found 1" in out["reason"]
+    assert "marker_margin" not in a.obs
+
+
+def test_label_stability_does_not_truncate_float_values():
+    """Thinning rounds a non-integer matrix (with a warning) instead of flooring it: 0.6 -> 1, not 0."""
+    import warnings
+
+    from spatial_anno_metrics import confidence as cf
+
+    a = _section(n=20)
+    del a.layers["counts"]
+    a.X = np.full(a.X.shape, 0.6, dtype="float32")
+    seen = []
+
+    def total(x):
+        seen.append(float(np.asarray(x.X).sum()))
+        return np.array(["T"] * x.n_obs)
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        cf.label_stability(a, total, drop_frac=1e-9, reps=1, layer=None)
+    assert seen[1] == a.n_obs * a.n_vars                    # every 0.6 kept as 1 count (astype(int) gave 0)
+    assert sum(issubclass(x.category, UserWarning) for x in w) == 1

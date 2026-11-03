@@ -21,14 +21,19 @@ and the label-quality battery in ``battery.py``.
 
 squidpy-compatible: ``moran_signal`` builds / reuses ``adata.obsp['spatial_connectivities']``
 (``sq.gr.spatial_neighbors``) and delegates to ``sq.gr.spatial_autocorr``. Everything else is
-vectorized sparse ops that scale to 1e5-1e6 cells. Control probes are read from ``var['control']``
-(set by ``io.load``); metrics degrade gracefully when controls / coords / areas are absent.
+vectorized sparse ops that scale to 1e5-1e6 cells. Control probes are read from ``var['control']``;
+metrics degrade gracefully (a skip) when controls / coords / areas are absent. Every metric reads the count
+matrix chosen by ``layer=`` (default ``layers['counts']``, or ``X`` when it holds raw counts; see
+``_validate.get_counts``) and names it under ``"matrix"``.
 
 Depends on: numpy, scipy; squidpy (``moran_signal`` only). Heavy imports live inside the functions.
 """
 from __future__ import annotations
 
 import numpy as np
+
+from ._utils import _squidpy
+from ._validate import get_counts, skip
 
 __all__ = ["moran_signal", "signal_to_noise", "sparsity", "detection_entropy", "tx_per_area", "run_signal_qc"]
 
@@ -48,7 +53,7 @@ def _csr(X):
 # Moran's I gene-vs-control (SpatialQM getMorans) - squidpy-native
 # --------------------------------------------------------------------------- #
 def moran_signal(adata, n_neighs: int = 6, genes: list[str] | None = None,
-                 n_perms: int | None = None, seed: int = 0) -> dict:
+                 n_perms: int | None = None, seed: int = 0, *, layer: str | None = "counts") -> dict:
     """Moran's I spatial autocorrelation split into panel genes vs negative-control probes.
 
     Real genes carry spatial structure (I well above 0); control probes do not (I~0), so the
@@ -56,13 +61,16 @@ def moran_signal(adata, n_neighs: int = 6, genes: list[str] | None = None,
     Builds ``obsp['spatial_connectivities']`` via ``sq.gr.spatial_neighbors`` if absent, then calls
     the fast, parallel ``sq.gr.spatial_autocorr``. Returns medians, the separation, and the fraction
     of genes whose I exceeds the controls' 95th percentile (needs coords in ``obsm['spatial']``).
+    Returns ``{status, median_gene_moran, median_control_moran, n_genes, n_controls, [separation,
+    frac_genes_above_control_p95], matrix}``.
     """
-    import squidpy as sq
-
+    sq = _squidpy()
+    _, matrix = get_counts(adata, layer)
     if "spatial_connectivities" not in adata.obsp:
         sq.gr.spatial_neighbors(adata, coord_type="generic", n_neighs=n_neighs)
     use_genes = list(genes) if genes is not None else list(map(str, adata.var_names))
-    sq.gr.spatial_autocorr(adata, mode="moran", genes=use_genes, n_perms=n_perms, seed=seed)
+    sq.gr.spatial_autocorr(adata, mode="moran", genes=use_genes, n_perms=n_perms, seed=seed,
+                           layer=None if matrix == "X" else layer)
     mi = adata.uns["moranI"]["I"]
 
     ctrl = _control_mask(adata)
@@ -72,20 +80,21 @@ def moran_signal(adata, n_neighs: int = 6, genes: list[str] | None = None,
     cI = mi[[g for g in mi.index if g in ctrl_set]].to_numpy(dtype=float)
 
     out: dict = {
-        "median_gene_moran": float(np.median(gI)) if gI.size else float("nan"),
+        "status": "ok", "median_gene_moran": float(np.median(gI)) if gI.size else float("nan"),
         "median_control_moran": float(np.median(cI)) if cI.size else None,
         "n_genes": int(gI.size), "n_controls": int(cI.size),
     }
     if cI.size:
         out["separation"] = out["median_gene_moran"] - float(np.median(cI))
         out["frac_genes_above_control_p95"] = float((gI > np.quantile(cI, 0.95)).mean())
+    out["matrix"] = matrix
     return out
 
 
 # --------------------------------------------------------------------------- #
 # Signal-to-noise vs controls (SpatialQM getMeanSignalRatio / getMaxRatio)
 # --------------------------------------------------------------------------- #
-def signal_to_noise(adata) -> dict:
+def signal_to_noise(adata, *, layer: str | None = "counts") -> dict:
     """Per-cell log2 ratio of gene expression to the negative-control mean.
 
     ``mean_signal_ratio`` = log2(mean gene expr / mean control expr); ``max_signal_ratio`` =
@@ -95,8 +104,9 @@ def signal_to_noise(adata) -> dict:
     """
     ctrl = _control_mask(adata)
     if ctrl.sum() == 0:
-        return {"status": "skipped: no control probes in the matrix"}
-    X = _csr(adata.X).astype(float)
+        return skip("no control probes in the matrix (var['control'])")
+    mat, matrix = get_counts(adata, layer)
+    X = _csr(mat).astype(float)
     Xg, Xc = X[:, ~ctrl], X[:, ctrl]
     eps = 1e-9
     gmean = np.asarray(Xg.mean(1)).ravel()
@@ -107,36 +117,39 @@ def signal_to_noise(adata) -> dict:
     adata.obs["mean_signal_ratio"] = msr
     adata.obs["max_signal_ratio"] = maxr
     return {
-        "median_mean_signal_ratio": float(np.median(msr)),
+        "status": "ok", "median_mean_signal_ratio": float(np.median(msr)),
         "median_max_signal_ratio": float(np.median(maxr)),
-        "frac_cells_signal_below_control": float((msr <= 0).mean()),
+        "frac_cells_signal_below_control": float((msr <= 0).mean()), "matrix": matrix,
     }
 
 
 # --------------------------------------------------------------------------- #
 # Sparsity (SpatialQM getSparsity)
 # --------------------------------------------------------------------------- #
-def sparsity(adata) -> dict:
+def sparsity(adata, *, layer: str | None = "counts") -> dict:
     """Zero fraction of the count matrix (dataset) + per-cell sparsity (written to ``obs``)."""
-    X = _csr(adata.X)
+    mat, matrix = get_counts(adata, layer)
+    X = _csr(mat)
     n, g = X.shape
     zero_frac = 1.0 - X.nnz / (n * g)
     per_cell = 1.0 - np.asarray((X > 0).sum(1)).ravel() / g
     adata.obs["sparsity"] = per_cell
-    return {"zero_fraction": float(zero_frac), "median_cell_sparsity": float(np.median(per_cell))}
+    return {"status": "ok", "zero_fraction": float(zero_frac), "median_cell_sparsity": float(np.median(per_cell)),
+            "matrix": matrix}
 
 
 # --------------------------------------------------------------------------- #
 # Detection entropy (SpatialQM getEntropy)
 # --------------------------------------------------------------------------- #
-def detection_entropy(adata) -> dict:
+def detection_entropy(adata, *, layer: str | None = "counts") -> dict:
     """Per-cell normalized Shannon entropy over the cell's detected genes (0..1).
 
     Vectorized: ``H = ln(total) - (1/total) * sum(x*ln x)`` over nonzero counts, normalized by
     ``ln(n_detected)``. Low (→0) means one gene dominates the cell (rRNA / probe artifact / extreme
     specialization); high (→1) means counts are spread across many genes. Writes ``obs['detection_entropy']``.
     """
-    X = _csr(adata.X).astype(float)
+    mat, matrix = get_counts(adata, layer)
+    X = _csr(mat).astype(float)
     total = np.asarray(X.sum(1)).ravel()
     M = X.copy()
     M.data = X.data * np.log(X.data)
@@ -148,44 +161,50 @@ def detection_entropy(adata) -> dict:
     norm = np.where(norm > 0, norm, 1.0)
     ent_norm = np.clip(ent / norm, 0.0, 1.0)
     adata.obs["detection_entropy"] = ent_norm
-    return {"median_detection_entropy": float(np.median(ent_norm)),
-            "frac_cells_single_gene_dominated": float((ent_norm < 0.1).mean())}
+    return {"status": "ok", "median_detection_entropy": float(np.median(ent_norm)),
+            "frac_cells_single_gene_dominated": float((ent_norm < 0.1).mean()), "matrix": matrix}
 
 
 # --------------------------------------------------------------------------- #
 # Transcript density per area (SpatialQM getTxPerArea)
 # --------------------------------------------------------------------------- #
-def tx_per_area(adata) -> dict:
-    """Per-cell transcript density = total counts / cell area (needs ``obs['cell_area']``)."""
+def tx_per_area(adata, *, layer: str | None = "counts") -> dict:
+    """Per-cell transcript density = total counts / cell area (needs ``obs['cell_area']``). Total counts come
+    from ``obs['total_counts']`` when present (``matrix = "obs['total_counts']"``), else from the matrix."""
     if "cell_area" not in adata.obs.columns:
-        return {"status": "skipped: no cell_area column"}
+        return skip("no obs['cell_area']")
     if "total_counts" in adata.obs.columns:
-        counts = np.asarray(adata.obs["total_counts"], dtype=float)
+        counts, matrix = np.asarray(adata.obs["total_counts"], dtype=float), "obs['total_counts']"
     else:
-        counts = np.asarray(_csr(adata.X).sum(1)).ravel().astype(float)
+        mat, matrix = get_counts(adata, layer)
+        counts = np.asarray(_csr(mat).sum(1)).ravel().astype(float)
     area = np.asarray(adata.obs["cell_area"], dtype=float)
     dens = np.divide(counts, area, out=np.full_like(counts, np.nan), where=area > 0)
     adata.obs["tx_per_area"] = dens
-    return {"median_tx_per_area": float(np.nanmedian(dens))}
+    return {"status": "ok", "median_tx_per_area": float(np.nanmedian(dens)), "matrix": matrix}
 
 
 # --------------------------------------------------------------------------- #
 # Orchestrator
 # --------------------------------------------------------------------------- #
-def run_signal_qc(adata, do_moran: bool = True) -> dict:
+def run_signal_qc(adata, do_moran: bool = True, *, layer: str | None = "counts") -> dict:
     """Run the annotation-independent signal-QC battery and return one headline dict. Each metric
-    is guarded (returns ``{'status': 'skipped: ...'}`` rather than raising) so this is safe on any
-    section. ``do_moran=False`` skips the (heavier) Moran's I pass."""
-    out: dict = {}
+    is guarded (returns ``{'status': 'skipped', 'reason': ...}`` rather than raising) so this is safe on any
+    section. ``do_moran=False`` skips the (heavier) Moran's I pass; ``layer`` is passed to every metric."""
+    out: dict = {"status": "ok"}
     for name, fn in (("sparsity", sparsity), ("detection_entropy", detection_entropy),
                      ("signal_to_noise", signal_to_noise), ("tx_per_area", tx_per_area)):
         try:
-            out[name] = fn(adata)
+            out[name] = fn(adata, layer=layer)
         except Exception as e:  # pragma: no cover - defensive
-            out[name] = {"status": f"skipped: {e}"}
-    if do_moran and "spatial" in adata.obsm:
+            out[name] = skip(f"{type(e).__name__}: {e}")
+    if not do_moran:
+        out["moran"] = skip("do_moran=False")
+    elif "spatial" not in adata.obsm:
+        out["moran"] = skip("no obsm['spatial']")
+    else:
         try:
-            out["moran"] = moran_signal(adata)
+            out["moran"] = moran_signal(adata, layer=layer)
         except Exception as e:  # pragma: no cover
-            out["moran"] = {"status": f"skipped: {e}"}
+            out["moran"] = skip(f"{type(e).__name__}: {e}")
     return out

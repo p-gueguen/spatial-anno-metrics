@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from ._validate import check_labels, skip
+
 __all__ = ["conformal_prediction_sets"]
 
 
@@ -36,13 +38,16 @@ def conformal_prediction_sets(proba_query, classes, proba_cal, y_cal, alpha: flo
         ontology idea: an ambiguous SUBTYPE set becomes a confident LINEAGE call).
     y_query : optional TRUE query labels -> also returns empirical coverage + per-type coverage.
 
-    Returns ``{sets, set_size, summary, [collapsed_sets, pct_ambiguous_one_parent],
-    [coverage, per_type_coverage]}``. Depends on numpy only.
+    Returns ``{status, sets, set_size, summary, [collapsed_sets, pct_ambiguous_one_parent],
+    [coverage, per_type_coverage]}``; an empty calibration set -> a skip (no threshold can be set).
+    Depends on numpy only.
     """
+    if len(y_cal) == 0:
+        return skip("empty calibration set: conformal sets need calibration probabilities and true labels")
     proba_query = np.asarray(proba_query, dtype=float)
     proba_cal = np.asarray(proba_cal, dtype=float)
     classes = np.asarray([str(c) for c in classes])
-    y_cal = np.asarray(y_cal).astype(str)
+    y_cal = check_labels(y_cal)
     cls_idx = {c: j for j, c in enumerate(classes)}
 
     true_col = np.array([cls_idx[c] for c in y_cal])
@@ -51,7 +56,7 @@ def conformal_prediction_sets(proba_query, classes, proba_cal, y_cal, alpha: flo
     def _qhat(scores):
         n = len(scores)
         if n == 0:
-            return 1.0
+            return float("nan")                                       # no calibration: no threshold
         level = min(1.0, np.ceil((n + 1) * (1 - alpha)) / n)
         return float(np.quantile(scores, level, method="higher"))
 
@@ -67,7 +72,7 @@ def conformal_prediction_sets(proba_query, classes, proba_cal, y_cal, alpha: flo
     sets = [[classes[j] for j in np.where(include[i])[0]] for i in range(include.shape[0])]
     size = include.sum(axis=1)
     out = {
-        "sets": sets, "set_size": size,
+        "status": "ok", "sets": sets, "set_size": size,
         "summary": {
             "mean_set_size": float(size.mean()) if size.size else float("nan"),
             "pct_singleton": float((size == 1).mean()) if size.size else float("nan"),
@@ -83,7 +88,7 @@ def conformal_prediction_sets(proba_query, classes, proba_cal, y_cal, alpha: flo
         out["pct_ambiguous_one_parent"] = float(
             sum(1 for i in range(len(sets)) if amb[i] and len(collapsed[i]) == 1) / max(1, amb.sum()))
     if y_query is not None:
-        y_query = np.asarray(y_query).astype(str)
+        y_query = check_labels(y_query)
         covered = np.array([y_query[i] in sets[i] for i in range(len(sets))])
         out["coverage"] = float(covered.mean())
         out["per_type_coverage"] = {

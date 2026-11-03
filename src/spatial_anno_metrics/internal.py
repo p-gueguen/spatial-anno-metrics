@@ -6,6 +6,7 @@ from __future__ import annotations
 import numpy as np
 
 from ._utils import _embedding, _scale01
+from ._validate import check_labels, skip
 
 __all__ = ["internal_validity"]
 
@@ -14,27 +15,28 @@ __all__ = ["internal_validity"]
 # Internal cluster-validity (scTypeEval family) - reference-free
 # --------------------------------------------------------------------------- #
 def internal_validity(adata, label_key: str = "cell_type", embedding: str | None = "X_pca",
-                      k: int = 30, subsample: int = 2000, seed: int = 0) -> dict:
+                      n_neighbors: int = 30, subsample: int = 2000, seed: int = 0) -> dict:
     """Reference-free cluster-validity of a labeling on an embedding (scTypeEval family).
 
-    Returns ``{silhouette, silhouette_2label, neighborhood_purity, orbital_medoid,
-    ward_propmatch, avg_similarity, integrated, n_used}``. ``integrated`` is the geometric mean
-    of all six (each scaled to [0,1]) - a single "is this labeling internally coherent?" number.
-    O(N^2) parts (silhouettes) run on a ``subsample`` of cells for scalability; the rest use all.
+    Returns ``{status, silhouette, silhouette_2label, neighborhood_purity, orbital_medoid, ward_propmatch,
+    avg_similarity, davies_bouldin, calinski_harabasz, integrated, n_used}``. ``integrated`` is the geometric
+    mean of the first six (each scaled to [0,1]) - a single "is this labeling internally coherent?" number.
+    ``n_neighbors`` is the embedding kNN size for neighborhood purity. O(N^2) parts (silhouettes) run on a
+    ``subsample`` of cells for scalability; the rest use all. Fewer than 2 labels -> a skip.
     """
     from sklearn.cluster import AgglomerativeClustering
     from sklearn.metrics import pairwise_distances, silhouette_score
     from sklearn.neighbors import NearestNeighbors
 
-    E = _embedding(adata, embedding, seed=seed)
-    y = adata.obs[label_key].astype(str).to_numpy()
+    y = check_labels(adata, label_key)
     types = np.unique(y)
     n = len(y)
     if len(types) < 2:
-        return {"status": "skipped: <2 cell types"}
+        return skip(f"need >= 2 labels in adata.obs[{label_key!r}], found {len(types)}")
+    E = _embedding(adata, embedding, seed=seed)
 
     # neighborhood purity - fraction of k neighbors (excluding self) sharing the label; all cells.
-    kk = int(min(k, n - 1))
+    kk = int(min(n_neighbors, n - 1))
     nn = NearestNeighbors(n_neighbors=kk + 1).fit(E)
     idx = nn.kneighbors(E, return_distance=False)[:, 1:]           # drop self
     purity = float(np.mean([(y[nbrs] == y[i]).mean() for i, nbrs in enumerate(idx)]))
@@ -96,7 +98,7 @@ def internal_validity(adata, label_key: str = "cell_type", embedding: str | None
     parts = [_scale01(sil), _scale01(sil_2label), purity, orbital, ward_prop, _scale01(avg_sim)]
     integrated = float(np.exp(np.mean(np.log(np.clip(parts, 1e-9, 1.0)))))
     return {
-        "silhouette": sil, "silhouette_2label": sil_2label, "neighborhood_purity": purity,
+        "status": "ok", "silhouette": sil, "silhouette_2label": sil_2label, "neighborhood_purity": purity,
         "orbital_medoid": orbital, "ward_propmatch": ward_prop, "avg_similarity": avg_sim,
         "davies_bouldin": db, "calinski_harabasz": ch,
         "integrated": integrated, "n_used": int(len(sel)),

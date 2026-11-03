@@ -38,6 +38,7 @@ def test_marker_program_fidelity_high_auc_for_correct_labels():
     assert good["mean_auc"] > bad["mean_auc"]
     assert good["per_type"]["T cell"]["auc"] > 0.9
     assert good["per_type"]["T cell"]["cohens_d"] > 0.5           # large, positive separation
+    assert good["status"] == "ok" and good["matrix"] == "X"          # no counts layer, X holds counts
 
 
 def test_marker_gene_overlap_high_when_labels_match_markers():
@@ -62,3 +63,21 @@ def test_marker_gene_overlap_high_when_labels_match_markers():
     b = a.copy()
     b.obs["cell_type"] = pd.Categorical(rng.permutation(b.obs["cell_type"].to_numpy()))
     assert em.marker_gene_overlap(b, "cell_type", ms, n_top=10)["mean_overlap"] < good["mean_overlap"]
+
+
+def test_fidelity_reads_counts_and_skips_a_single_label():
+    from spatial_anno_metrics import fidelity as em
+
+    markers = {"T cell": ["CD3D", "CD3E", "TRAC"], "Mel": ["MLANA", "SOX10", "DCT"]}
+    a = _marker_adata()
+    a.layers["counts"] = a.X.copy()
+    a.X = np.log1p(a.X)                                             # the common scanpy layout
+    assert em.marker_program_fidelity(a, "cell_type", markers)["matrix"] == "layers['counts']"
+    assert em.marker_gene_overlap(a, "cell_type", markers)["matrix"] == "layers['counts']"
+    del a.layers["counts"]
+    with pytest.raises(ValueError, match="layer="):
+        em.marker_program_fidelity(a, "cell_type", markers)        # log X is not silently read as counts
+    a.obs["cell_type"] = "Mel"
+    for fn in (em.marker_program_fidelity, em.marker_gene_overlap):
+        out = fn(a, "cell_type", markers, layer=None)
+        assert out["status"] == "skipped" and "found 1" in out["reason"]

@@ -31,6 +31,7 @@ def test_conformal_coverage_guarantee_and_singletons():
     P = _peaked_proba(y, classes, peak=0.9)
     cal, te = slice(0, 800), slice(800, 1200)
     r = em.conformal_prediction_sets(P[te], classes, P[cal], y[cal], alpha=0.1, y_query=y[te])
+    assert r["status"] == "ok"
     assert r["coverage"] >= 0.85                      # ~>= 1-alpha (finite-sample slack)
     assert r["summary"]["pct_singleton"] > 0.8        # confident classifier -> mostly singletons
     assert r["summary"]["mean_set_size"] < len(classes)   # not everything is in every set
@@ -76,3 +77,13 @@ def test_conformal_hierarchy_collapse():
     assert len(r["sets"][0]) >= 2                              # the first cell is ambiguous
     assert r["collapsed_sets"][0] == ["T"]                     # ...but resolves to ONE lineage
     assert r["pct_ambiguous_one_parent"] == 1.0
+
+
+def test_conformal_empty_calibration_is_skipped_not_all_inclusive():
+    """No calibration cell -> no threshold: a skip, not qhat = 1 (which put every class in every set)."""
+    from spatial_anno_metrics import conformal as em
+
+    classes = np.array(["A", "B"])
+    P = np.array([[0.9, 0.1], [0.2, 0.8]])
+    out = em.conformal_prediction_sets(P, classes, np.empty((0, 2)), np.array([], dtype=str))
+    assert out["status"] == "skipped" and "calibration" in out["reason"]

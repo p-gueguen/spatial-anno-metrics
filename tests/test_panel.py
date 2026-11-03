@@ -48,4 +48,4 @@ def test_panel_resolvability_insufficient_overlap():
 
     a = _panel_ref()
     res = em.panel_resolvability(a, "cell_type", {"zzz1", "zzz2"}, target_depth=40)
-    assert res["status"] == "insufficient_overlap"
+    assert res["status"] == "skipped" and "0 genes shared" in res["reason"] and res["n_shared_genes"] == 0

@@ -6,6 +6,7 @@ from __future__ import annotations
 import numpy as np
 
 from ._utils import _dense
+from ._validate import check_labels, get_counts, skip
 
 __all__ = ["inter_sample_consistency", "isc_regime"]
 
@@ -13,20 +14,22 @@ __all__ = ["inter_sample_consistency", "isc_regime"]
 # --------------------------------------------------------------------------- #
 # Inter-sample consistency (ISC) - reference-free, needs biological replicates
 # --------------------------------------------------------------------------- #
-def _pseudobulk_profiles(adata, label_key, sample_key, *, min_cells, min_samples, counts_layer=None):
+def _pseudobulk_profiles(adata, label_key, sample_key, *, min_cells, min_samples, layer=None):
     """One profile per (sample, type) with >= ``min_cells`` cells; a type is kept only when it has
-    >= ``min_samples`` such profiles (the rest are returned in ``dropped``). With ``counts_layer`` the
-    paper's recipe is used (sum raw counts, then log1p of counts-per-10k); otherwise ``X`` is averaged."""
-    X = _dense(adata.layers[counts_layer] if counts_layer else adata.X).astype(float)
-    y = adata.obs[label_key].astype(str).to_numpy()
-    s = adata.obs[sample_key].astype(str).to_numpy()
+    >= ``min_samples`` such profiles (the rest are returned in ``dropped``). With a count ``layer`` (read by
+    :func:`get_counts`) the paper's recipe is used (sum raw counts, then log1p of counts-per-10k); with
+    ``layer=None`` ``X`` is averaged as it is. Also returns the name of the matrix read."""
+    y = check_labels(adata, label_key)
+    s = check_labels(adata, sample_key)
+    mat, matrix = get_counts(adata, layer) if layer else (adata.X, "X")
+    X = _dense(mat).astype(float)
     profiles, labels, samples, dropped = [], [], [], {}
     for t in np.unique(y):
         rows = []
         for samp in np.unique(s):
             m = (y == t) & (s == samp)
             if m.sum() >= min_cells:
-                rows.append((X[m].sum(0) if counts_layer else X[m].mean(0), samp))
+                rows.append((X[m].sum(0) if layer else X[m].mean(0), samp))
         if len(rows) < min_samples:
             dropped[t] = len(rows)
             continue
@@ -35,9 +38,9 @@ def _pseudobulk_profiles(adata, label_key, sample_key, *, min_cells, min_samples
             labels.append(t)
             samples.append(samp)
     P = np.vstack(profiles) if profiles else np.empty((0, X.shape[1]))
-    if counts_layer and P.size:
+    if layer and P.size:
         P = np.log1p(P / np.maximum(P.sum(1, keepdims=True), 1.0) * 1e4)
-    return P, np.asarray(labels), np.asarray(samples), dropped
+    return P, np.asarray(labels), np.asarray(samples), dropped, matrix
 
 
 def _two_label_silhouette(D, labels):
@@ -86,7 +89,8 @@ ISC_THRESHOLDS = {"iscg": 0.74, "iscl": 0.45}
 
 
 def isc_regime(iscg, iscl, thr_g: float = ISC_THRESHOLDS["iscg"], thr_l: float = ISC_THRESHOLDS["iscl"]) -> str:
-    """Map a label's (ISCG, ISCL) to the Garnica 2026 refinement quadrant.
+    """Map a label's (ISCG, ISCL) to the Garnica 2026 refinement quadrant. A helper, not a metric: it
+    returns the quadrant name as a ``str`` (not a result dict).
 
     ``consistent`` (keep) · ``remove`` (both low: multiplets, low-quality labels) · ``merge`` (high ISCG,
     low ISCL: compact but not replicable = over-partitioned) · ``split`` (low ISCG, high ISCL: matchable
@@ -103,15 +107,17 @@ def isc_regime(iscg, iscl, thr_g: float = ISC_THRESHOLDS["iscg"], thr_l: float =
 
 
 def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str = "cosine", *,
-                             min_cells: int = 10, min_samples: int = 5, counts_layer: str | None = None,
+                             min_cells: int = 10, min_samples: int = 5, layer: str | None = None,
                              thresholds: dict | None = None) -> dict:
     """Is each cell type reproducible across biological samples? (scTypeEval inter-sample consistency;
     Garnica, Andreatta & Carmona 2026, bioRxiv 10.64898/2026.06.10.731285.)
 
     One pseudobulk per (sample, type) with >= ``min_cells`` cells; a type needs >= ``min_samples`` of
     them or it is listed under ``dropped_types`` instead of being scored (the paper's defaults, 10 / 5;
-    3 % of atlas labels fell below them). Pass ``counts_layer`` to follow the paper's recipe (sum
-    counts, then log-normalise); otherwise ``X`` is averaged as-is, so hand it log-normalised HVGs.
+    3 % of atlas labels fell below them). Pass ``layer`` naming the raw-count layer to follow the paper's
+    recipe (sum counts, then log-normalise; a missing layer falls back to ``X`` only when ``X`` holds counts);
+    with ``layer=None`` (default) ``X`` is averaged as-is, so hand it log-normalised HVGs. ``matrix`` names
+    the matrix read. Fewer than 2 scorable types -> a skip that keeps ``n_profiles`` / ``dropped_types``.
 
     Returns the paper's two complementary axes plus the legacy headline:
       * ``iscg`` - GLOBAL: 2-label silhouette on pseudobulk cosine distance (compactness against all
@@ -126,12 +132,12 @@ def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str
     from scipy.spatial.distance import cdist
     from sklearn.metrics import silhouette_samples
 
-    P, plabels, psamples, dropped = _pseudobulk_profiles(
-        adata, label_key, sample_key, min_cells=min_cells, min_samples=min_samples, counts_layer=counts_layer)
+    P, plabels, psamples, dropped, matrix = _pseudobulk_profiles(
+        adata, label_key, sample_key, min_cells=min_cells, min_samples=min_samples, layer=layer)
     thr = {**ISC_THRESHOLDS, **(thresholds or {})}
     types = np.unique(plabels)
     if len(types) < 2 or len(plabels) <= len(types):
-        return {"status": f"skipped: need >=2 types with >={min_samples} samples of >={min_cells} cells",
+        return {**skip(f"need >= 2 types with >= {min_samples} samples of >= {min_cells} cells"),
                 "consistency": None, "iscg": None, "iscl": None, "integrated": None,
                 "n_profiles": int(len(plabels)), "dropped_types": dropped}
 
@@ -146,10 +152,10 @@ def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str
     per_g, per_l = _per_type(glob), _per_type(loc)
     per_int = {t: per_g[t] * per_l[t] for t in types}
     return {
-        "consistency": float(sil.mean()), "per_type": _per_type(sil),
+        "status": "ok", "consistency": float(sil.mean()), "per_type": _per_type(sil),
         "iscg": float(glob.mean()), "iscl": float(loc.mean()),
         "integrated": float(np.mean(list(per_int.values()))),
         "per_type_iscg": per_g, "per_type_iscl": per_l, "per_type_integrated": per_int,
         "regime": {t: isc_regime(per_g[t], per_l[t], thr["iscg"], thr["iscl"]) for t in types},
-        "thresholds": thr, "n_profiles": int(len(plabels)), "dropped_types": dropped,
+        "thresholds": thr, "n_profiles": int(len(plabels)), "dropped_types": dropped, "matrix": matrix,
     }

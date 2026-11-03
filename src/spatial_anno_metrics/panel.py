@@ -4,6 +4,7 @@ from __future__ import annotations
 import numpy as np
 
 from ._utils import _dense
+from ._validate import check_labels, skip
 from .external import external_scores
 
 __all__ = ["panel_resolvability"]
@@ -33,6 +34,7 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
 
     Returns ``{status, n_shared_genes, n_types, macro_f1, balanced_accuracy, ecs, frac_resolvable,
     frac_not_resolvable, per_type: {ct: {f1, recall, precision, confused_with, confused_frac, tier}}}``.
+    Fewer than 25 shared genes or 2 types with >= 10 cells -> a skip (with ``n_shared_genes``, ``per_type``).
     """
     import scipy.sparse as sp
     from sklearn.linear_model import LogisticRegression
@@ -43,7 +45,8 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
     panel = {str(g) for g in panel_genes}
     shared = [g for g in reference.var_names if str(g) in panel]
     if len(shared) < 25:
-        return {"status": "insufficient_overlap", "n_shared_genes": len(shared), "per_type": {}}
+        return {**skip(f"{len(shared)} genes shared with the panel, need >= 25"),
+                "n_shared_genes": len(shared), "per_type": {}}
     sub = reference[:, shared].copy()
     xs = sub.X[:200].toarray() if sp.issparse(sub.X) else np.asarray(sub.X[:200])
     raw = bool(np.allclose(xs, np.round(xs)) and xs.max() > 1)
@@ -51,19 +54,20 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
         sub.X = sub.layers["counts"]
         raw = True
     rng = np.random.default_rng(seed)
-    y = sub.obs[label_key].astype(str).to_numpy()
+    y = check_labels(sub, label_key)
     idx: list = []
     for ct in np.unique(y):
         pos = np.where(y == ct)[0]
         idx.extend(pos if len(pos) <= max_cells_per_type
                    else rng.choice(pos, max_cells_per_type, replace=False))
     sub = sub[np.array(sorted(idx))].copy()
-    y = sub.obs[label_key].astype(str).to_numpy()
+    y = check_labels(sub, label_key)
     keep = {ct for ct, n in zip(*np.unique(y, return_counts=True)) if n >= 10}
     m = np.isin(y, list(keep))
     sub, y = sub[m].copy(), y[m]
     if len(np.unique(y)) < 2:
-        return {"status": "too_few_types", "n_shared_genes": len(shared), "per_type": {}}
+        return {**skip("fewer than 2 reference types with >= 10 cells"),
+                "n_shared_genes": len(shared), "per_type": {}}
     if raw:                                                        # thin to the panel's real depth
         A = (sub.X.toarray() if sp.issparse(sub.X) else np.asarray(sub.X)).astype(np.int64)
         tot = A.sum(1, keepdims=True)
@@ -78,7 +82,7 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
                               cv=StratifiedKFold(cv, shuffle=True, random_state=seed),
                               method="predict_proba")
     pred = classes[np.argmax(proba, 1)]
-    ext = external_scores(pred, y)
+    ext = external_scores(y_true=y, y_pred=pred)
     prec, rec, f1, _ = precision_recall_fscore_support(y, pred, labels=classes, zero_division=0)
     per = {}
     for i, ct in enumerate(classes):

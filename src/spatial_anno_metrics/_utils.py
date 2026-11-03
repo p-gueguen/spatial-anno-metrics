@@ -1,5 +1,5 @@
-"""Private helpers shared by the metric modules: dense conversion, [-1, 1] -> [0, 1] scaling, and the
-cell embedding (``obsm`` or a quick PCA)."""
+"""Private helpers shared by the metric modules: dense conversion, [-1, 1] -> [0, 1] scaling, the cell
+embedding (``obsm`` or a quick PCA), and the guarded squidpy import."""
 from __future__ import annotations
 
 import numpy as np
@@ -28,3 +28,13 @@ def _embedding(adata, embedding: str | None, seed: int = 0) -> np.ndarray:
     X = _dense(adata.X).astype(float)
     n_comp = int(min(50, X.shape[1], max(2, X.shape[0] - 1)))
     return PCA(n_components=n_comp, random_state=seed).fit_transform(X)
+
+
+def _squidpy():
+    """Import squidpy. It can fail with errors other than ImportError (e.g. a dask NotImplementedError), which
+    would escape ``except ImportError`` handlers: re-raise any failure as ImportError."""
+    try:
+        import squidpy
+    except Exception as e:  # noqa: BLE001 - deliberately broad, see docstring
+        raise ImportError(f"squidpy failed to import: {e}") from e
+    return squidpy

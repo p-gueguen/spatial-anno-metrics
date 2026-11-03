@@ -49,6 +49,7 @@ def test_inter_sample_consistency_two_axes_and_regime():
     assert good["iscl"] > 0.9 and set(good["regime"].values()) == {"consistent"}
     assert good["dropped_types"] == {} and good["n_profiles"] == 15
     assert good["thresholds"] == {"iscg": 0.74, "iscl": 0.45}
+    assert good["status"] == "ok" and good["matrix"] == "X"          # layer=None: X averaged as it is
 
 
 def test_inter_sample_consistency_over_partitioning_drops_local_not_global():
@@ -82,6 +83,21 @@ def test_inter_sample_consistency_drops_underpowered_types_and_discloses():
     assert out["dropped_types"] == {"T2": 2} and "T2" not in out["per_type_iscl"]
     relaxed = em.inter_sample_consistency(a, "cell_type", "sample", min_samples=2)
     assert relaxed["dropped_types"] == {} and "T2" in relaxed["per_type_iscl"]
+    none = em.inter_sample_consistency(a, "cell_type", "sample", min_samples=6)    # only 5 samples
+    assert none["status"] == "skipped" and ">= 6 samples" in none["reason"]
+    assert none["iscg"] is None and none["consistency"] is None and len(none["dropped_types"]) == 3
+
+
+def test_inter_sample_consistency_counts_layer_recipe():
+    """layer= names a raw-count layer (was counts_layer=): pseudobulks are summed counts, log1p CP10k."""
+    from spatial_anno_metrics import isc as em
+
+    a = _isc_adata(consistent=True)
+    a.layers["counts"] = np.round(np.clip(a.X, 0, None) * 10)
+    out = em.inter_sample_consistency(a, "cell_type", "sample", layer="counts")
+    assert out["status"] == "ok" and out["matrix"] == "layers['counts']" and out["iscl"] > 0.9
+    with pytest.raises(TypeError):
+        em.inter_sample_consistency(a, "cell_type", "sample", counts_layer="counts")
 
 
 def test_isc_regime_quadrants():
@@ -92,3 +108,4 @@ def test_isc_regime_quadrants():
     assert em.isc_regime(0.1, 0.9) == "split"
     assert em.isc_regime(0.1, 0.1) == "remove"
     assert em.isc_regime(None, 0.5) == "not_computable"
+    assert isinstance(em.isc_regime(0.9, 0.9), str)                  # a helper: returns a str, not a dict

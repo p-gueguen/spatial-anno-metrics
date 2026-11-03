@@ -18,8 +18,9 @@ GENES = ["CD3D", "CD3E", "TRAC", "MLANA", "SOX10", "DCT"] + [f"BG{i}" for i in r
 _GI = {g: i for i, g in enumerate(GENES)}
 
 
-def _section(contaminated_frac=0.0, n=200, seed=0):
-    """Half T cells, half Mal cells. `contaminated_frac` of cells co-express BOTH lineages' markers."""
+def _section(contaminated_frac=0.0, n=200, seed=0, off_target=0):
+    """Half T cells, half Mal cells. `contaminated_frac` of cells co-express BOTH lineages' markers;
+    the first `off_target` T cells carry ONE count of the Mal marker MLANA (ambient-level off-target)."""
     rng = np.random.default_rng(seed)
     X = rng.poisson(0.2, size=(n, len(GENES))).astype("float32")
     # zero the MARKER columns so lineage detection is controlled by the +8 spikes below (background BG
@@ -31,6 +32,7 @@ def _section(contaminated_frac=0.0, n=200, seed=0):
         X[:half, _GI[g]] += 8
     for g in MARKERS["Mal"]:
         X[half:, _GI[g]] += 8
+    X[:off_target, _GI["MLANA"]] += 1
     n_contam = int(contaminated_frac * n)
     if n_contam:                                   # give the first n_contam cells the OTHER lineage too
         for i in range(n_contam):
@@ -52,8 +54,9 @@ def test_crisp_purity_clean_vs_contaminated():
 
     clean = _section(0.0)
     dirty = _section(0.4, seed=1)
-    pc = p.crisp_purity(clean, MARKERS)
-    pd_ = p.crisp_purity(dirty, MARKERS)
+    rc = p.crisp_purity(clean, MARKERS)
+    pc, pd_ = rc["crisp_purity"], p.crisp_purity(dirty, MARKERS)["crisp_purity"]
+    assert rc["status"] == "ok" and rc["matrix"] == "X"   # no counts layer: X holds the counts
     assert pc == pytest.approx(1.0)                       # exclusive markers never co-occur
     assert pd_ < pc                                       # contamination lowers purity
     assert "crisp_impure" in clean.obs and clean.obs["crisp_impure"].sum() == 0
@@ -63,14 +66,29 @@ def test_crisp_purity_clean_vs_contaminated():
 def test_mecr_clean_zero_contaminated_positive():
     from spatial_anno_metrics import purity as p
 
-    assert p.mecr(_section(0.0), MARKERS) == pytest.approx(0.0)
-    assert p.mecr(_section(0.4, seed=1), MARKERS) > 0.0
+    assert p.mecr(_section(0.0), MARKERS)["mecr"] == pytest.approx(0.0)
+    assert p.mecr(_section(0.4, seed=1), MARKERS)["mecr"] > 0.0
 
 
-def test_mecr_no_pairs_returns_zero():
+def test_mecr_and_crisp_skip_instead_of_a_clean_score():
+    """No lineage pair / no marker-positive cell: nothing was measured, so no 0.0 / 1.0 'perfectly clean'."""
     from spatial_anno_metrics import purity as p
 
-    assert p.mecr(_section(0.0), {"T": ["CD3D"]}) == 0.0  # only one lineage -> no disjoint pairs
+    out = p.mecr(_section(0.0), {"T": ["CD3D"]})          # only one lineage -> no disjoint pairs
+    assert out["status"] == "skipped" and "pair" in out["reason"]
+    off_panel = {"T": ["nope1"], "Mal": ["nope2"]}
+    assert p.crisp_purity(_section(0.0), off_panel)["status"] == "skipped"
+    assert p.mecr(_section(0.0), off_panel)["status"] == "skipped"
+
+
+def test_one_off_target_count_counts_as_detection():
+    """The '>= 1 count' rule: a single ambient MLANA count makes a T cell co-detect both lineages."""
+    from spatial_anno_metrics import purity as p
+
+    a = _section(0.0, off_target=10)
+    out = p.crisp_purity(a, MARKERS)
+    assert out["n_impure"] == 10 and out["crisp_purity"] == pytest.approx(1 - 10 / 200)
+    assert p.mecr(a, MARKERS)["mecr"] == pytest.approx(10 / 200)   # the one pair: 10 both / 200 either
 
 
 SHARED = {"CD4 T": ["CD3E", "CD4"], "CD8 T": ["CD3E", "CD8A"], "B": ["MS4A1"]}
@@ -93,8 +111,8 @@ def test_shared_marker_is_not_co_detection():
     from spatial_anno_metrics import purity as p
 
     a = _t_subsets()                                     # zero contamination; CD3E is in both T sets
-    assert p.mecr(a, SHARED) == pytest.approx(0.0)
-    assert p.crisp_purity(a, SHARED) == pytest.approx(1.0)
+    assert p.mecr(a, SHARED)["mecr"] == pytest.approx(0.0)
+    assert p.crisp_purity(a, SHARED)["crisp_purity"] == pytest.approx(1.0)
 
 
 def test_private_marker_co_detection_still_counted():
@@ -102,8 +120,8 @@ def test_private_marker_co_detection_still_counted():
 
     a = _t_subsets(n_cd8_contam=20)
     # CD4 T vs CD8 T on CD4 vs CD8A: 20 both / 200 either = 0.1; both T-vs-B pairs 0 -> mean 0.1 / 3
-    assert p.mecr(a, SHARED) == pytest.approx(0.1 / 3)
-    assert p.crisp_purity(a, SHARED) == pytest.approx(0.9)   # 20 impure of 200 marker-positive
+    assert p.mecr(a, SHARED)["mecr"] == pytest.approx(0.1 / 3)
+    assert p.crisp_purity(a, SHARED)["crisp_purity"] == pytest.approx(0.9)   # 20 impure of 200 marker-positive
 
 
 def test_mecr_skips_nested_marker_sets():
@@ -111,15 +129,16 @@ def test_mecr_skips_nested_marker_sets():
 
     nested = {"T": ["CD3E"], "CD4 T": ["CD3E", "CD4"], "CD8 T": ["CD3E", "CD8A"]}
     # T has no marker of its own against either subset -> both pairs skipped, not averaged in as 0
-    assert p.mecr(_t_subsets(n_cd8_contam=20), nested) == pytest.approx(0.1)
+    assert p.mecr(_t_subsets(n_cd8_contam=20), nested)["mecr"] == pytest.approx(0.1)
 
 
 def test_pmp_writes_bounded_column_and_ranks_pure_above_contaminated():
     from spatial_anno_metrics import purity as p
 
     a = _section(0.3, seed=2)
-    p.pmp(a, MARKERS, label_key="cell_type")
+    out = p.pmp(a, MARKERS, label_key="cell_type")
     v = a.obs["pmp"].to_numpy()
+    assert out["status"] == "ok" and out["mean_pmp"] == pytest.approx(np.nanmean(v))
     assert "pmp" in a.obs
     finite = v[np.isfinite(v)]
     assert finite.size and finite.min() >= 0.0 and finite.max() <= 1.0
@@ -189,6 +208,35 @@ def test_nmp_reports_types_it_cannot_score():
     ref = ref[ref.obs["cell_type"] == "T"].copy()
     out = p.nmp(_section(0.0, seed=6), reference=ref)
     assert out["types_without_negatives"] == ["Mal", "T"]
+
+
+def test_purity_refuses_log_X_without_a_counts_layer():
+    """No silent fallback: a missing counts layer is replaced by X only when X holds counts."""
+    import warnings
+
+    from spatial_anno_metrics import purity as p
+
+    a = _section(0.3, seed=2)
+    a.layers["counts"] = a.X.copy()
+    a.X = np.log1p(a.X)
+    assert p.pmp(a, MARKERS)["matrix"] == "layers['counts']"
+    del a.layers["counts"]
+    for fn in (p.crisp_purity, p.mecr, p.pmp):
+        with pytest.raises(ValueError, match="layer="):
+            fn(a, MARKERS)
+    with warnings.catch_warnings(record=True) as w:               # layer=None: read X as it is, but say so
+        warnings.simplefilter("always")
+        assert p.pmp(a, MARKERS, layer=None)["matrix"] == "X"
+    assert sum(issubclass(x.category, UserWarning) for x in w) == 1
+
+
+def test_ncp_drops_the_unused_reference_label_key():
+    import inspect
+
+    from spatial_anno_metrics import purity as p
+
+    params = list(inspect.signature(p.ncp).parameters)
+    assert "ref_label_key" not in params and params[2] == "coexpr_threshold"
 
 
 def test_ncp_returns_fraction_in_unit_interval():

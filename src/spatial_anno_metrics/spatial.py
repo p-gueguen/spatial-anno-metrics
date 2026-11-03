@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import numpy as np
 
+from ._utils import _squidpy
+from ._validate import check_labels, get_counts, skip
+
 __all__ = ["spatial_coherence", "neighborhood_sanity", "neighbor_contamination"]
 
 
@@ -27,23 +30,25 @@ def _ensure_spatial_graph(adata, n_neighs: int) -> None:
     """Build ``obsp['spatial_connectivities']`` via squidpy kNN if absent (needs ``obsm['spatial']``)."""
     if "spatial_connectivities" in adata.obsp:
         return
-    import squidpy as sq
-    sq.gr.spatial_neighbors(adata, coord_type="generic", n_neighs=n_neighs)
+    _squidpy().gr.spatial_neighbors(adata, coord_type="generic", n_neighs=n_neighs)
 
 
-def spatial_coherence(adata, label_key: str = "cell_type", k: int = 15,
+def spatial_coherence(adata, label_key: str = "cell_type", n_neighs: int = 15,
                       pas_threshold: float = 0.2) -> dict:
     """Per-cell fraction of same-label spatial neighbors (writes ``obs['spatial_coherence']``), plus the
     dataset **PAS** (Proportion of Abnormal Spots = fraction of cells with < ``pas_threshold`` same-label
-    neighbors). Reuses ``obsp['spatial_connectivities']`` (built via squidpy kNN if absent). Reference-free
-    (labels + coords). Returns ``{pas, mean_coherence, k, pas_threshold}``. DOWN-WEIGHT ONLY - rare
-    infiltrating cells are legitimately incoherent, so this never drops cells."""
+    neighbors). Reuses ``obsp['spatial_connectivities']`` (built via squidpy kNN with ``n_neighs`` if
+    absent). Reference-free (labels + coords). Returns ``{status, pas, mean_coherence, n_neighs,
+    pas_threshold}``; fewer than 2 labels -> a skip. DOWN-WEIGHT ONLY - rare infiltrating cells are
+    legitimately incoherent, so this never drops cells."""
     from scipy.sparse import csr_matrix
 
-    _ensure_spatial_graph(adata, n_neighs=k)
+    labels = check_labels(adata, label_key)
+    if len(np.unique(labels)) < 2:
+        return skip(f"need >= 2 labels in adata.obs[{label_key!r}], found {len(np.unique(labels))}")
+    _ensure_spatial_graph(adata, n_neighs=n_neighs)
     A = adata.obsp["spatial_connectivities"].tocsr()
 
-    labels = adata.obs[label_key].astype(str).to_numpy()
     cats = {c: i for i, c in enumerate(np.unique(labels))}
     lab_idx = np.array([cats[lb] for lb in labels])
     onehot = csr_matrix((np.ones(adata.n_obs), (np.arange(adata.n_obs), lab_idx)),
@@ -55,17 +60,22 @@ def spatial_coherence(adata, label_key: str = "cell_type", k: int = 15,
     adata.obs["spatial_coherence"] = frac
 
     pas = float(np.mean(np.nan_to_num(frac, nan=1.0) < pas_threshold))
-    return {"pas": pas, "mean_coherence": float(np.nanmean(frac)), "k": k, "pas_threshold": pas_threshold}
+    return {"status": "ok", "pas": pas, "mean_coherence": float(np.nanmean(frac)), "n_neighs": n_neighs,
+            "pas_threshold": pas_threshold}
 
 
 def neighborhood_sanity(adata, label_key: str = "cell_type", n_neighs: int = 6, seed: int = 0) -> dict:
     """A healthy annotation self-associates spatially. Runs squidpy's neighborhood-enrichment
     (permutation z-score) and flags any type whose STRONGEST partner is a different type - a mild
     systematic-mislabeling smell (e.g. two labels that are really one, or a swap). Reference-free
-    (labels + coords). Returns ``{categories, self_enrichment (diagonal), suspicious[...]}``."""
+    (labels + coords). Returns ``{status, categories, self_enrichment (diagonal), suspicious[...]}``; fewer
+    than 2 labels -> a skip."""
     import pandas as pd
-    import squidpy as sq
 
+    sq = _squidpy()
+    labels = check_labels(adata, label_key)
+    if len(np.unique(labels)) < 2:
+        return skip(f"need >= 2 labels in adata.obs[{label_key!r}], found {len(np.unique(labels))}")
     _ensure_spatial_graph(adata, n_neighs=n_neighs)
     if not isinstance(adata.obs[label_key].dtype, pd.CategoricalDtype):
         adata.obs[label_key] = adata.obs[label_key].astype("category")
@@ -82,24 +92,28 @@ def neighborhood_sanity(adata, label_key: str = "cell_type", n_neighs: int = 6, 
             if j != i:
                 suspicious.append({"type": str(c), "stronger_with": str(cats[j]),
                                    "self_z": float(z[i][i]), "cross_z": float(z[i][j])})
-    return {"categories": [str(c) for c in cats],
+    return {"status": "ok", "categories": [str(c) for c in cats],
             "self_enrichment": [float(x) for x in diag], "suspicious": suspicious}
 
 
 def neighbor_contamination(adata, marker_sets: dict[str, list[str]], label_key: str = "cell_type",
-                           n_neighs: int = 6, require_neighbor_expression: bool = True) -> dict:
+                           n_neighs: int = 6, require_neighbor_expression: bool = True, *,
+                           layer: str | None = "counts") -> dict:
     """Spillover from ADJACENT cells (reference-free: labels + coords + curated ``marker_sets``). For a
     cell of type t, a gene is a local contaminant when it is a marker of a type s touching the cell and not
     a marker of t; with ``require_neighbor_expression`` a touching s cell must also detect it. Writes
     ``obs['neighbor_contamination']`` = the cell's counts on its local contaminants / its total counts (NaN
     when no other marker-set type touches it, or its own type has no marker set). The spatial counterpart
     to :func:`~spatial_anno_metrics.purity.pmp` / ``nmp``, which cannot tell a neighbor's spillover from a
-    mislabel. Returns ``{mean_contamination, n_evaluable, matrix, n_matrix}``: ``matrix`` is the source
-    (rows) x target (columns) mean per-cell contamination over the ``n_matrix`` evaluable target cells.
+    mislabel. Returns ``{status, mean_contamination, n_evaluable, source_target, n_source_target, matrix}``:
+    ``source_target`` is the source (rows) x target (columns) mean per-cell contamination over the
+    ``n_source_target`` evaluable target cells; ``matrix`` names the count matrix read (see ``get_counts``).
     Re-implements SegTraQ's ``contamination_strength`` (github.com/LazDaria/SegTraQ), vectorized over
     cells; reuses ``obsp['spatial_connectivities']`` (squidpy kNN if absent)."""
     import pandas as pd
 
+    labels = check_labels(adata, label_key)
+    mat, matrix = get_counts(adata, layer)
     _ensure_spatial_graph(adata, n_neighs=n_neighs)
     A = adata.obsp["spatial_connectivities"].tocsc()
 
@@ -107,11 +121,9 @@ def neighbor_contamination(adata, marker_sets: dict[str, list[str]], label_key: 
     sets = {ct: {g for g in mk if g in panel} for ct, mk in marker_sets.items()}
     genes = sorted(set().union(*sets.values()))
     col = {g: j for j, g in enumerate(genes)}
-    mat = adata.layers["counts"] if "counts" in adata.layers else adata.X
     sub = mat[:, [panel[g] for g in genes]]
     Xm = sub.toarray() if hasattr(sub, "toarray") else np.asarray(sub)        # cells x marker genes
     total = np.asarray(mat.sum(axis=1)).ravel().astype(float)
-    labels = adata.obs[label_key].astype(str).to_numpy()
     types = [str(t) for t in np.unique(labels) if sets.get(t)]
 
     local = np.zeros(Xm.shape, dtype=bool)             # cell x gene: a local contaminant of that cell
@@ -139,5 +151,5 @@ def neighbor_contamination(adata, marker_sets: dict[str, list[str]], label_key: 
     frac = np.full(adata.n_obs, np.nan)
     frac[evaluable] = (Xm * local).sum(axis=1)[evaluable] / total[evaluable]
     adata.obs["neighbor_contamination"] = frac
-    return {"mean_contamination": float(np.nanmean(frac)) if evaluable.any() else float("nan"),
-            "n_evaluable": int(evaluable.sum()), "matrix": M, "n_matrix": N}
+    return {"status": "ok", "mean_contamination": float(np.nanmean(frac)) if evaluable.any() else float("nan"),
+            "n_evaluable": int(evaluable.sum()), "source_target": M, "n_source_target": N, "matrix": matrix}

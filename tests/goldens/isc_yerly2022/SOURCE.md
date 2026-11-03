@@ -248,7 +248,7 @@ runs over the other 7 of 9):
   the pre-0.7.0 headline.
 - `test_rcm_markers_vs_singler`: `rcm_genes="markers"` differs from SingleR on 0 / 1,128 and 28 / 1,891 pairs.
 
-Each of four one-line mutations of `eval_metrics.py` fails at least one test: library-size scale 1e6, 2-label `b`
+Each of four one-line mutations of `eval_metrics.py` (now `isc.py`) fails at least one test: library-size scale 1e6, 2-label `b`
 x 0.999, one-sided RCM hits counted as matches, RCM rows reversed.
 
 ## Regenerate

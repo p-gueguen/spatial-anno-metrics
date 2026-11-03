@@ -38,7 +38,7 @@
   label keeps at most `subsample // n_labels` cells.
 - `clisi(adata, label_key, *, embedding="X_pca", n_neighbors=90, perplexity=None)`: scib cLISI,
   `(n_labels - median LISI) / (n_labels - 1)`, port of scib-metrics 0.5.6 `clisi_knn` (JAX -> numpy, BSD-3);
-  matches it to 1e-5 on a fixture. 1.64e5 cells: 26 s, 1.4 GB peak RSS s.
+  matches it to 1e-5 on a fixture. 1.64e5 cells: 26 s, 1.4 GB peak RSS.
 - `internal_validity(..., embedding_label_trained=False)`: True adds a `warning` to the result - internal
   metrics on an embedding trained with the labels are circular (Metric Mirages, 10.1101/2024.04.02.587824).
 - `THRESHOLDS["internal"]["clisi_n_neighbors"]` (90, scib-metrics) and `["isolated_f1_cuts_per_label"]` (2).

@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 import scipy.sparse as sp
 
-from spatial_anno_metrics import eval_metrics, inter_sample_consistency
+from spatial_anno_metrics import inter_sample_consistency, isc as eval_metrics
 
 HERE = Path(__file__).parent
 EXP = json.loads((HERE / "expected.json").read_text())
@@ -36,8 +36,8 @@ def adata():
 
 def reference_rcm(adata, col):
     """scTypeEval's RCM distances in our profile order (0.5 read as 1, as get_consistency does), and ours."""
-    P, lab, smp, _ = eval_metrics._pseudobulk_profiles(adata, col, "patient_bcc", min_cells=10, min_samples=5,
-                                                       counts_layer="counts")
+    P, lab, smp, _, _ = eval_metrics._pseudobulk_profiles(adata, col, "patient_bcc", min_cells=10, min_samples=5,
+                                                       layer="counts")
     ids = [f"{s}_{re.sub(r'[ _+-]', '.', t)}" for t, s in zip(lab, smp)]  # scTypeEval's profile names
     D = EXP["columns"][col]["dissimilarity"]["recip_classif:Match"]
     order = [D["labels"].index(i) for i in ids]
@@ -63,7 +63,7 @@ def test_inputs_parse():
 
 @pytest.mark.parametrize("col", COLUMNS)
 def test_iscg_and_legacy_silhouette_match_sctypeeval(adata, col):
-    res = inter_sample_consistency(adata, col, "patient_bcc", counts_layer="counts")
+    res = inter_sample_consistency(adata, col, "patient_bcc", layer="counts")
     ref = EXP["columns"][col]["per_type"]
     assert set(res["dropped_types"]) == {t for t, v in ref.items() if v[ISCG0] is None} == {"Bcell", "PlasmaCell"}
     assert set(res["per_type_iscg"]) == {t for t, v in ref.items() if v[ISCG0] is not None}
@@ -76,7 +76,7 @@ def test_iscg_and_legacy_silhouette_match_sctypeeval(adata, col):
 def test_iscl_matches_sctypeeval_on_its_rcm_distances(adata, col, monkeypatch):
     ref, _, _ = reference_rcm(adata, col)
     monkeypatch.setattr(eval_metrics, "_rcm_dissimilarity", lambda P, samples: ref)
-    res = inter_sample_consistency(adata, col, "patient_bcc", counts_layer="counts")
+    res = inter_sample_consistency(adata, col, "patient_bcc", layer="counts")
     for t, v in res["per_type_iscl"].items():
         assert v == pytest.approx(EXP["columns"][col]["per_type"][t][ISCL], abs=1e-12)
 

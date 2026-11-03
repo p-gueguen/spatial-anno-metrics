@@ -1,36 +1,53 @@
-| edge case | internal_validity | inter_sample_consistency | marker_program_fidelity | marker_gene_overlap | purity | nmp | ncp | neighbor_contamination | spatial_coherence | neighborhood_sanity | per_cell_confidence | label_stability | signal_qc | external |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| one_label | NaN silhouette,neighborhood_purity,orbital_medoid,ward_propmatch,avg_similarity,davies_bouldin,calinski_harabasz,integrated | NaN iscg,iscl,integrated | NaN mean_auc,mean_cohens_d | NaN mean_overlap | ok | ok | ok | NaN neighbor_contamination | ok | 💥 ValueError | ok | ok | ok | ok |
-| singleton_type | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok |
-| two_types | ok | ok | NaN mean_auc,mean_cohens_d | NaN mean_overlap | NaN pmp | ok | ok | NaN neighbor_contamination | ok | ok | ok | ok | ok | ok |
-| empty_marker_set | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok |
-| markers_off_panel | ok | ok | NaN mean_auc,mean_cohens_d | NaN mean_overlap | NaN pmp | ok | ok | NaN neighbor_contamination | ok | ok | ok | ok | ok | ok |
-| zero_count_cells | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok |
-| unused_category | ok | ok | ok | ok | ok | ok | ok | ok | ok | ≠ n_suspicious | ok | ok | ok | ok |
-| integer_labels | ok | ok | ok | ok | ok | ≠ nmp | ok | ok | ok | ok | ok | ok | ok | ok |
-| nan_labels | 💥 TypeError | 💥 TypeError | ok | ok | 💥 TypeError | 💥 TypeError | ok | 💥 TypeError | 💥 TypeError | 💥 ValueError | ok | ok | ok | 💥 ValueError |
-| no_control_probes | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | NaN moran_gap,frac_above_ctrl,snr | ok |
-| tiny_30_cells | ok | NaN iscg,iscl,integrated | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | NaN moran_gap | ok |
-| duplicate_coords | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok |
-| all_zero_marker_gene | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | NaN moran_gap | ok |
-| dense_matrix | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok |
-| unicode_labels | ok | ok | ok | ok | ok | ≠ nmp | ok | ok | ok | ok | ok | ok | ok | ok |
-| extra_marker_type | ok | ok | ok | ok | ≠ crisp_purity,mecr,pmp | ok | ok | ok | ok | ok | ≠ mean_margin,mean_entropy | ok | ok | ok |
-| no_spatial_coords | ok | ok | ok | ok | ok | ok | ok | 💥 KeyError | 💥 KeyError | 💥 KeyError | ok | ok | 💥 KeyError | ok |
-| lognorm_X_no_counts | ok | ≠ iscg,integrated | ≠ mean_auc,mean_cohens_d | ok | ≠ pmp | ≠ nmp | ok | ≠ neighbor_contamination | ok | ok | ≠ mean_margin,mean_entropy | ok | ≠ moran_gap,frac_above_ctrl,snr,detection_entropy,tx_per_area | ok |
+| edge case | internal_validity | isolated_label_scores | clisi | ontology_consistency | inter_sample_consistency | marker_program_fidelity | marker_gene_overlap | purity | nmp | coexpression_similarity | ncp | neighbor_contamination | spatial_coherence | neighborhood_sanity | per_cell_confidence | label_stability | signal_qc | external | calibration_novelty |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| one_label | NaN silhouette,neighborhood_purity,orbital_medoid,ward_propmatch,avg_similarity,davies_bouldin,calinski_harabasz,integrated | NaN asw,f1 | NaN clisi | NaN rho | NaN iscg,iscl,integrated | NaN mean_auc,mean_cohens_d | NaN mean_overlap | ok | NaN nmp | ok | ok | NaN neighbor_contamination | NaN mean_coherence,pas,chaos | NaN n_suspicious | ok | ok | ok | ok | ok |
+| singleton_type | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok |
+| two_types | ok | ok | ok | NaN rho | ok | NaN mean_auc,mean_cohens_d | NaN mean_overlap | NaN pmp | NaN nmp | NaN by_type | ok | NaN neighbor_contamination | ok | ok | ok | ok | ok | ok | ok |
+| empty_marker_set | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok |
+| markers_off_panel | ok | ok | ok | ok | ok | NaN mean_auc,mean_cohens_d | NaN mean_overlap | NaN crisp_purity,mecr,pmp | ok | ok | ok | NaN neighbor_contamination | ok | ok | NaN mean_margin,mean_entropy | ok | ok | ok | ok |
+| zero_count_cells | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok |
+| unused_category | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok |
+| integer_labels | ok | ok | ok | ok | ok | ok | ok | ok | NaN nmp | NaN by_type | ok | ok | ok | ok | ok | ok | ok | ok | NaN ece |
+| nan_labels | 💥 ValueError | 💥 ValueError | 💥 ValueError | 💥 ValueError | 💥 ValueError | 💥 ValueError | 💥 ValueError | 💥 ValueError | 💥 ValueError | 💥 ValueError | ok | 💥 ValueError | 💥 ValueError | 💥 ValueError | ok | ok | ok | 💥 ValueError | ok |
+| no_control_probes | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | NaN moran_gap,frac_above_ctrl,snr | ok | ok |
+| tiny_30_cells | ok | ok | ok | NaN rho | NaN iscg,iscl,integrated | ok | ok | ok | NaN nmp | NaN by_type | ok | ok | ok | ok | ok | ok | ok | ok | ok |
+| duplicate_coords | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok |
+| all_zero_marker_gene | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok |
+| dense_matrix | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok |
+| unicode_labels | ok | ok | ok | ok | ok | ok | ok | ok | NaN nmp | NaN by_type | ok | ok | ok | ok | ok | ok | ok | ok | NaN ece |
+| extra_marker_type | ok | ok | ok | ok | ok | ok | ok | ≠ crisp_purity,mecr,pmp | ok | ok | ok | ok | ok | ok | ≠ mean_margin,mean_entropy | ok | ok | ok | ok |
+| no_spatial_coords | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | ok | 💥 KeyError | 💥 KeyError | 💥 KeyError | ok | ok | 💥 KeyError | NaN spari | ok |
+| lognorm_X_no_counts | ok | ok | ok | ok | 💥 ValueError | 💥 ValueError | 💥 ValueError | 💥 ValueError | 💥 ValueError | 💥 ValueError | 💥 ValueError | 💥 ValueError | ok | ok | 💥 ValueError | 💥 ValueError | 💥 ValueError | ok | 💥 ValueError |
 
 Errors:
 
-- **one_label** / `neighborhood_sanity`: ValueError: Expected at least `2` clusters, found `1`.
-- **nan_labels** / `internal_validity`: TypeError: '<' not supported between instances of 'str' and 'float'
-- **nan_labels** / `inter_sample_consistency`: TypeError: '<' not supported between instances of 'str' and 'float'
-- **nan_labels** / `purity`: TypeError: '<' not supported between instances of 'str' and 'float'
-- **nan_labels** / `nmp`: TypeError: '<' not supported between instances of 'str' and 'float'
-- **nan_labels** / `neighbor_contamination`: TypeError: '<' not supported between instances of 'str' and 'float'
-- **nan_labels** / `spatial_coherence`: TypeError: '<' not supported between instances of 'str' and 'float'
-- **nan_labels** / `neighborhood_sanity`: ValueError: Found `NaN` values in `adata.obs['label']`; every cell needs a cluster.
-- **nan_labels** / `external`: ValueError: Input contains NaN
+- **nan_labels** / `internal_validity`: ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be
+- **nan_labels** / `isolated_label_scores`: ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be
+- **nan_labels** / `clisi`: ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be
+- **nan_labels** / `ontology_consistency`: ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be
+- **nan_labels** / `inter_sample_consistency`: ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be
+- **nan_labels** / `marker_program_fidelity`: ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be
+- **nan_labels** / `marker_gene_overlap`: ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be
+- **nan_labels** / `purity`: ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be
+- **nan_labels** / `nmp`: ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be
+- **nan_labels** / `coexpression_similarity`: ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be
+- **nan_labels** / `neighbor_contamination`: ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be
+- **nan_labels** / `spatial_coherence`: ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be
+- **nan_labels** / `neighborhood_sanity`: ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be
+- **nan_labels** / `external`: ValueError: the label array has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') befor
 - **no_spatial_coords** / `neighbor_contamination`: KeyError: 'Spatial basis `spatial` not found in `adata.obsm`.'
 - **no_spatial_coords** / `spatial_coherence`: KeyError: 'Spatial basis `spatial` not found in `adata.obsm`.'
 - **no_spatial_coords** / `neighborhood_sanity`: KeyError: 'Spatial basis `spatial` not found in `adata.obsm`.'
 - **no_spatial_coords** / `signal_qc`: KeyError: 'Spatial basis `spatial` not found in `adata.obsm`.'
+- **lognorm_X_no_counts** / `inter_sample_consistency`: ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin
+- **lognorm_X_no_counts** / `marker_program_fidelity`: ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin
+- **lognorm_X_no_counts** / `marker_gene_overlap`: ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin
+- **lognorm_X_no_counts** / `purity`: ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin
+- **lognorm_X_no_counts** / `nmp`: ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin
+- **lognorm_X_no_counts** / `coexpression_similarity`: ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin
+- **lognorm_X_no_counts** / `ncp`: ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin
+- **lognorm_X_no_counts** / `neighbor_contamination`: ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin
+- **lognorm_X_no_counts** / `per_cell_confidence`: ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin
+- **lognorm_X_no_counts** / `label_stability`: ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin
+- **lognorm_X_no_counts** / `signal_qc`: ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin
+- **lognorm_X_no_counts** / `calibration_novelty`: ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin

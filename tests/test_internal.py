@@ -165,7 +165,7 @@ def _rare_section(blobs, far: bool):
     return b
 
 
-def test_isolated_label_scores_see_a_buried_rare_label_that_silhouette_misses(blobs):
+def test_isolated_label_scores_see_a_buried_rare_label_that_clisi_misses(blobs):
     from spatial_anno_metrics import internal as em
 
     good = em.isolated_label_scores(_rare_section(blobs, True), batch_key="batch")
@@ -174,8 +174,11 @@ def test_isolated_label_scores_see_a_buried_rare_label_that_silhouette_misses(bl
     assert good["asw"] > 0.8 and good["f1"] > 0.95
     assert bad["asw"] < 0.55 and bad["f1"] < 0.5
     assert set(bad["per_label"]) == {"R"} and {"asw", "f1", "n"} <= set(bad["per_label"]["R"])
-    # the cell-weighted silhouette barely notices 8 buried cells out of 188
-    assert em.internal_validity(_rare_section(blobs, False), embedding="X_pca")["silhouette"] > 0.5
+    # cLISI's median over cells cannot see 8 buried cells out of 188; the overall silhouette (rescaled to [0, 1])
+    # drops, but stays well above the rare label's own score
+    buried = _rare_section(blobs, False)
+    assert em.clisi(buried)["clisi"] > 0.99
+    assert bad["asw"] < (em.internal_validity(buried, embedding="X_pca")["silhouette"] + 1) / 2 - 0.2
 
 
 def test_isolated_label_scores_without_batch_score_every_label(blobs):

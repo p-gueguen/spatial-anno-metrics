@@ -55,7 +55,7 @@ def main(argv=None):
     lines += [f"| {k} | {tt[k]} | {tw[k]} |" for k in CLAIM]
     if a.toy3:
         t3 = tally(pd.read_csv(a.toy3))
-        lines[0] = lines[0][:-1] + " toy (3 seeds) |"
+        lines[0] += " toy (3 seeds) |"
         lines[1] += "---|"
         lines[2:] = [f"{ln} {t3[k]} |" for ln, k in zip(lines[2:], CLAIM)]
     lines += ["", f"{len(ch)} of {len(m)} (scenario, metric) cells change verdict "

@@ -1,0 +1,45 @@
+{
+ "marker_sets": {
+  "T_CD4": [
+   "IL7R",
+   "CD3E",
+   "CTLA4",
+   "KLRB1"
+  ],
+  "T_CD8": [
+   "IL7R",
+   "CD3E",
+   "KLRD1",
+   "CD8A"
+  ],
+  "B": [
+   "MS4A1",
+   "CD19",
+   "BANK1",
+   "CD79A"
+  ],
+  "Myeloid": [
+   "LYZ",
+   "FCER1A",
+   "HAVCR2",
+   "CD163"
+  ],
+  "Fibro": [
+   "GJB2",
+   "PDGFRB",
+   "CRISPLD2",
+   "LRRC15"
+  ],
+  "Epi": [
+   "ELF3",
+   "TACSTD2",
+   "MLPH",
+   "KRT8"
+  ]
+ },
+ "t_lineage": [
+  "IL7R",
+  "CD3E"
+ ],
+ "method": "Top type-specific genes from the SIMULATED counts of every cached seed: mean depth-normalised count per\n    type; specificity = log2((m_t + eps) / (max_{u != t} m_u + eps)); a gene must be detected in >= 20 % of the\n    type's cells. T_CD4 / T_CD8: the 2 genes most specific to T (both T types pooled) + their 2 most specific."
+}

@@ -1,0 +1,27 @@
+,real crop,scDesign3 (R simu_new),"scDesign3 (world.py, seed 0)","toy world (sim.py, seed 0)"
+cells,8714,8714,8714,2400
+genes,304,304,304,82
+lib_median,129,127,128,149
+lib_iqr_over_median,1.093,1.102,1.086,0.4161
+lib_cv,0.7397,0.7644,0.76,0.3178
+zero_fraction,0.7976,0.794,0.7942,0.4946
+meanvar_slope_log10,1.233,1.269,1.266,1.457
+median_var_over_mean,1.893,1.942,1.91,1.335
+marker_own_over_max_other_median,6.476,6.876,6.273,620.3
+marker_own_over_max_other_min,0.7775,0.7775,0.7468,0.9187
+marker_score_auc_mean,0.9406,0.9124,0.9113,1
+marker_score_auc_min,0.8982,0.8617,0.8643,1
+moran_median,0.1024,0.05847,0.05553,0.06503
+gene_mean_r_log,,0.9991,0.9989,
+gene_var_r_log,,0.9889,0.9894,
+gene_var_ratio_median,,1.039,1.021,
+gene_zero_r,,0.9992,0.9993,
+gene_zero_mad,,0.005464,0.005369,
+lib_ks,,0.01664,0.01457,
+genecorr_Epi_r,,0.7412,0.7116,
+genecorr_Epi_real_mean_abs,,0.06868,0.06868,
+genecorr_Epi_mean_abs,,0.04631,0.04443,
+genecorr_Fibro_r,,0.8783,0.8819,
+genecorr_Fibro_real_mean_abs,,0.06326,0.06326,
+genecorr_Fibro_mean_abs,,0.05017,0.05059,
+moran_r,,0.9742,0.9752,

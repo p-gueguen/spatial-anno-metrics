@@ -1,0 +1,19 @@
+world,case,labels,consistent,merge,remove,split,iscg,iscl
+scDesign3 bands,batch sd 1.0,all,3,0,2,13,0.297,0.843
+scDesign3 bands,clean,all,6,0,2,10,0.621,0.895
+scDesign3 bands,label_noise 20%,all,0,0,7,11,0.401,0.589
+scDesign3 bands,merge 1 (Fibro+Epi),merged,3,0,0,0,0.794,1.0
+scDesign3 bands,merge 3 (incl. T_CD4+T_CD8),merged,3,0,0,6,0.649,0.985
+scDesign3 bands,over_split 1 (Epi halves),split halves,2,3,0,0,0.938,0.283
+scDesign3 dirichlet,batch sd 1.0,all,2,0,2,12,0.327,0.787
+scDesign3 dirichlet,clean,all,6,0,2,8,0.696,0.819
+scDesign3 dirichlet,label_noise 20%,all,6,0,6,6,0.476,0.62
+scDesign3 dirichlet,merge 1 (Fibro+Epi),merged,3,0,0,0,0.934,1.0
+scDesign3 dirichlet,merge 3 (incl. T_CD4+T_CD8),merged,4,0,0,5,0.731,1.0
+scDesign3 dirichlet,over_split 1 (Epi halves),split halves,0,6,0,0,0.918,0.248
+toy,batch sd 1.0,all,0,0,0,18,0.618,1.0
+toy,clean,all,18,0,0,0,0.936,1.0
+toy,label_noise 20%,all,5,0,0,13,0.69,0.978
+toy,merge 1 (Fibro+Epi),merged,3,0,0,0,0.984,1.0
+toy,merge 3 (incl. T_CD4+T_CD8),merged,9,0,0,0,0.977,1.0
+toy,over_split 1 (Epi halves),split halves,0,6,0,0,0.893,-0.084

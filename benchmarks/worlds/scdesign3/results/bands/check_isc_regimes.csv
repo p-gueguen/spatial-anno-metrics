@@ -1,0 +1,99 @@
+case,seed,type,regime,iscg,iscl
+clean,0,B,split,0.4714179676920239,1.0
+clean,0,Epi,consistent,0.9701265788431671,1.0
+clean,0,Fibro,consistent,0.8148368536847465,1.0
+clean,0,Myeloid,split,0.5524329742271328,1.0
+clean,0,T_CD4,remove,0.4506005282802126,0.39999999999999997
+clean,0,T_CD8,split,0.499820816389325,0.9333333333333332
+clean,1,B,split,0.5083157931197004,1.0
+clean,1,Epi,consistent,0.970109135430348,1.0
+clean,1,Fibro,consistent,0.805905658983242,1.0
+clean,1,Myeloid,split,0.5433941075683962,1.0
+clean,1,T_CD4,split,0.43340314071252944,0.6000000000000001
+clean,1,T_CD8,split,0.4641338728743285,1.0
+clean,2,B,split,0.48249078178580396,1.0
+clean,2,Epi,consistent,0.9720357537990326,1.0
+clean,2,Fibro,consistent,0.7850691779691529,1.0
+clean,2,Myeloid,split,0.5443269901314773,1.0
+clean,2,T_CD4,remove,0.4469634105513902,0.3866666666666667
+clean,2,T_CD8,split,0.4703427896446622,0.7933333333333333
+label_noise 20%,0,B,split,0.23399725330426988,0.6
+label_noise 20%,0,Epi,split,0.5968411382053092,0.4577777777777778
+label_noise 20%,0,Fibro,split,0.7144064558047041,1.0
+label_noise 20%,0,Myeloid,split,0.387906845522165,0.7866666666666667
+label_noise 20%,0,T_CD4,remove,0.1758491383876368,0.3333333333333333
+label_noise 20%,0,T_CD8,remove,0.23140748648528953,0.4466666666666667
+label_noise 20%,1,B,split,0.3361297619041203,0.6666666666666666
+label_noise 20%,1,Epi,split,0.6779147668806748,0.6666666666666666
+label_noise 20%,1,Fibro,split,0.6752336832753539,1.0
+label_noise 20%,1,Myeloid,split,0.35374896151541196,0.6666666666666666
+label_noise 20%,1,T_CD4,remove,0.22106539008698475,0.39999999999999997
+label_noise 20%,1,T_CD8,remove,0.24767467717882094,0.3333333333333333
+label_noise 20%,2,B,remove,0.24965231786314415,0.24
+label_noise 20%,2,Epi,split,0.6354218699393414,0.5866666666666667
+label_noise 20%,2,Fibro,split,0.6589269474312588,1.0
+label_noise 20%,2,Myeloid,split,0.42336475214218994,0.8666666666666667
+label_noise 20%,2,T_CD4,remove,0.18056401415484893,0.2388888888888889
+label_noise 20%,2,T_CD8,remove,0.22201210758321452,0.3055555555555556
+over_split 1 (Epi halves),0,B,split,0.47160508370307846,1.0
+over_split 1 (Epi halves),0,Epi_b,consistent,0.9478536897360996,1.0
+over_split 1 (Epi halves),0,Fibro,consistent,0.8441610845577845,1.0
+over_split 1 (Epi halves),0,Myeloid,split,0.5547534860126359,1.0
+over_split 1 (Epi halves),0,T_CD4,remove,0.45031634376363056,0.39999999999999997
+over_split 1 (Epi halves),0,T_CD8,split,0.4996360254485441,0.9333333333333332
+over_split 1 (Epi halves),1,B,split,0.5482505292531816,1.0
+over_split 1 (Epi halves),1,Epi_a,consistent,0.9424134373591955,0.4833333333333334
+over_split 1 (Epi halves),1,Epi_b,merge,0.9315388242104641,-0.10749999999999997
+over_split 1 (Epi halves),1,Fibro,consistent,0.8810222987209341,1.0
+over_split 1 (Epi halves),1,Myeloid,split,0.5951708833198803,1.0
+over_split 1 (Epi halves),1,T_CD4,split,0.501164940586646,0.6000000000000001
+over_split 1 (Epi halves),1,T_CD8,split,0.5363297388391715,1.0
+over_split 1 (Epi halves),2,B,split,0.517803401905113,1.0
+over_split 1 (Epi halves),2,Epi_a,merge,0.9424308147510493,0.21416666666666667
+over_split 1 (Epi halves),2,Epi_b,merge,0.9262302827777479,-0.1733333333333333
+over_split 1 (Epi halves),2,Fibro,consistent,0.877039668294307,1.0
+over_split 1 (Epi halves),2,Myeloid,split,0.5986014643026148,1.0
+over_split 1 (Epi halves),2,T_CD4,remove,0.512040582973596,0.3866666666666667
+over_split 1 (Epi halves),2,T_CD8,split,0.5478301675974516,0.7933333333333333
+merge 1 (Fibro+Epi),0,B,split,0.4641492373894672,1.0
+merge 1 (Fibro+Epi),0,Fibro+Epi,consistent,0.8058283261522479,1.0
+merge 1 (Fibro+Epi),0,Myeloid,split,0.5443937855860045,1.0
+merge 1 (Fibro+Epi),0,T_CD4,remove,0.4029866249906593,0.39999999999999997
+merge 1 (Fibro+Epi),0,T_CD8,split,0.45074498749148245,0.9333333333333332
+merge 1 (Fibro+Epi),1,B,split,0.5023854749122044,1.0
+merge 1 (Fibro+Epi),1,Fibro+Epi,consistent,0.784674163100124,1.0
+merge 1 (Fibro+Epi),1,Myeloid,split,0.5414556867672565,1.0
+merge 1 (Fibro+Epi),1,T_CD4,split,0.39277508480887074,0.6000000000000001
+merge 1 (Fibro+Epi),1,T_CD8,split,0.41791771103425446,1.0
+merge 1 (Fibro+Epi),2,B,split,0.4807725706419235,1.0
+merge 1 (Fibro+Epi),2,Fibro+Epi,consistent,0.7924390368407076,1.0
+merge 1 (Fibro+Epi),2,Myeloid,split,0.5406657483584507,1.0
+merge 1 (Fibro+Epi),2,T_CD4,remove,0.40319717517184595,0.3866666666666667
+merge 1 (Fibro+Epi),2,T_CD8,split,0.41758117000243455,0.7933333333333333
+merge 3 (incl. T_CD4+T_CD8),0,B+Myeloid,split,0.5792444670305057,1.0
+merge 3 (incl. T_CD4+T_CD8),0,Fibro+Epi,consistent,0.7662354186145396,0.9333333333333332
+merge 3 (incl. T_CD4+T_CD8),0,T_CD4+T_CD8,split,0.6505513763484183,1.0
+merge 3 (incl. T_CD4+T_CD8),1,B+Myeloid,split,0.5702416271343855,1.0
+merge 3 (incl. T_CD4+T_CD8),1,Fibro+Epi,consistent,0.7414547956575643,0.9333333333333332
+merge 3 (incl. T_CD4+T_CD8),1,T_CD4+T_CD8,split,0.611803826546461,1.0
+merge 3 (incl. T_CD4+T_CD8),2,B+Myeloid,split,0.5415962851160819,1.0
+merge 3 (incl. T_CD4+T_CD8),2,Fibro+Epi,consistent,0.7509235347512342,1.0
+merge 3 (incl. T_CD4+T_CD8),2,T_CD4+T_CD8,split,0.6296192247739888,1.0
+batch sd 1.0,0,B,split,0.18466599473961018,1.0
+batch sd 1.0,0,Epi,consistent,0.7642973249532921,1.0
+batch sd 1.0,0,Fibro,split,0.24998519236652714,1.0
+batch sd 1.0,0,Myeloid,split,0.17483032140262245,1.0
+batch sd 1.0,0,T_CD4,remove,0.17686011975497787,0.1733333333333333
+batch sd 1.0,0,T_CD8,split,0.20573317045726655,0.9266666666666666
+batch sd 1.0,1,B,split,0.22025100137192868,0.8666666666666666
+batch sd 1.0,1,Epi,consistent,0.7538103327924224,1.0
+batch sd 1.0,1,Fibro,split,0.24542761482043715,1.0
+batch sd 1.0,1,Myeloid,split,0.19509772476556766,0.9333333333333332
+batch sd 1.0,1,T_CD4,split,0.20638096568887446,0.7333333333333334
+batch sd 1.0,1,T_CD8,split,0.17877162467596222,0.6666666666666666
+batch sd 1.0,2,B,split,0.20805714342215487,0.7999999999999999
+batch sd 1.0,2,Epi,consistent,0.7647580872367223,1.0
+batch sd 1.0,2,Fibro,split,0.24822922971147374,1.0
+batch sd 1.0,2,Myeloid,split,0.1952148328508032,0.9333333333333332
+batch sd 1.0,2,T_CD4,remove,0.17677849600924023,0.3333333333333333
+batch sd 1.0,2,T_CD8,split,0.19837210433634064,0.7999999999999999

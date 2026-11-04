@@ -1,0 +1,7 @@
+verdict,"toy, 5 seeds (committed)","toy, 3 seeds","scDesign3 bands, 3 seeds"
+detects,134,134,121
+BLIND,61,58,49
+FALSE-ALARM,22,21,11
+WRONG-WAY,3,3,10
+erratic,35,38,53
+stable,280,276,274

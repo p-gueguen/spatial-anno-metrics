@@ -141,7 +141,7 @@ reproduces all 570 shared cells exactly.
    never wrong here, but cannot see merges** (`check_isc_regimes.csv`, both calls side by side).
    - Over-split: the halves get `merge` in 10/10 under both (each other's reciprocal partner, partner rate
      0.23-0.43).
-   - Merge: merged labels read `consistent` in 20/20 under both, and ISCG *rises* (0.938 → 0.978). Pooled
+   - Merge: merged labels read `consistent` in 20/20 under both, and ISCG *rises* (0.937 → 0.978). Pooled
      types are compact and replicable, so ISC cannot ask for a `split` (the same holds on real data,
      `benchmarks/isc_regimes_real.py`).
    - 20 % random label noise: the quadrant reads `split` for 21 of 30 type-seeds, the regime `consistent`
@@ -220,8 +220,8 @@ Values are means over 5 seeds, baseline → maximum strength; "threshold" is the
 **Real responses below the move rule (the metric moves the right way, too little):**
 - `iv.davies_bouldin` on `sibling_confusion` (1.06 → 1.56), `patch_error` (1.06 → 1.36) and `merge`
   (1.06 → 1.81): monotone, but the threshold is 0.80 because 40 % label noise stretches its range to 3.24.
-- `isc.iscg` / `isc.integrated` on `sibling_confusion` (0.938 → 0.923), `patch_error` (0.938 → 0.934) and
-  ISCG on `over_split` (0.938 → 0.917), threshold 0.030-0.034; ISCG on `type_swap` returns to 0.938 (name
+- `isc.iscg` / `isc.integrated` on `sibling_confusion` (0.937 → 0.923), `patch_error` (0.937 → 0.934) and
+  ISCG on `over_split` (0.937 → 0.917), threshold 0.030-0.034; ISCG on `type_swap` returns to 0.937 (name
   swap).
 - `fid.mean_auc` (0.995 → 0.986) and `fid.mean_cohens_d` (6.14 → 5.79, threshold 0.47) on
   `sibling_confusion`: the mislabelled T_CD8 cells still carry the two T lineage markers in T_CD4's set.
@@ -232,7 +232,7 @@ Values are means over 5 seeds, baseline → maximum strength; "threshold" is the
   embedding with lineage structure. Under label noise it rises (0.25 → 0.47 at 40 %, 〰️).
 
 **Real but undesired responses:**
-- ⛔ ISCG and `isc.integrated` rise under `merge` (0.938 → 0.978) and ⛔ spatial coherence rises
+- ⛔ ISCG and `isc.integrated` rise under `merge` (0.937 → 0.978) and ⛔ spatial coherence rises
   (0.920 → 0.967): a merged label is more consistent and more coherent (findings 2-3).
 - ⚠️ `crisp_purity`, `mecr`, `pmp` under `coexpression` (finding 4).
 - ⚠️ coherence, PAS and CHAOS under `infiltration` (finding 2).

@@ -16,7 +16,7 @@ batch,clisi,-,worse,0.9679,0.904,0.01893,0.5,-,flat,1,0.9999,0.01382,,flat,True,
 batch,conf.mean_entropy,-,better,0.5615,0.3959,0.03064,,-,flat,0.01397,0.0496,0.04782,,flat,True,False
 batch,ext.avg_bio,-,flat,0.8643,0.8494,0.0248,,-,worse,0.9012,0.8718,0.02536,1.5,worse,True,False
 batch,fid.mean_auc,-,worse,0.8997,0.8339,0.01375,0.25,-,flat,0.9954,0.9858,0.01234,,flat,True,False
-batch,iso.f1,-,worse,0.7698,0.5113,0.1089,1.5,-,erratic,1,0.8634,0.02108,,worse,True,True
+batch,iso.f1,-,worse,0.7698,0.5113,0.1089,1.5,-,erratic,1,0.8634,0.02108,,erratic,True,False
 batch,iv.neighborhood_purity,-,worse,0.792,0.6927,0.03192,0.25,-,flat,1,0.995,0.03044,,flat,True,False
 batch,mecr,-,better,0.3717,0.2674,0.03042,,-,flat,0.04507,0.02784,0.02369,,flat,True,False
 batch,mgo.mean_overlap,-,worse,0.8194,0.6806,0.07217,1,-,flat,1,1,0.01667,,flat,True,False

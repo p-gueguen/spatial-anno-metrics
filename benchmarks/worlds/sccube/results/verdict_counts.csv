@@ -1,0 +1,7 @@
+source,detects,BLIND,FALSE-ALARM,WRONG-WAY,erratic,stable,drifts-up,n_claim_cells
+toy (5 seeds),134,61,22,3,35,280,0,535
+toy (3 seeds),134,58,21,3,38,276,5,535
+sccube:stripes,125,48,27,5,55,270,5,535
+sccube:domains,129,47,28,5,52,270,4,535
+sccube:fine,130,42,28,6,55,267,7,535
+sccube:mixed,129,41,29,9,54,266,7,535

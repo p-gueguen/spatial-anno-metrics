@@ -1,0 +1,293 @@
+scenario,level,seed,adapter,error,traceback
+edge,nan_labels,0,internal_validity,ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 69, in _iv
+    r = sam.internal_validity(a, ""label"", embedding=""X_pca"")
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/internal.py"", line 83, in internal_validity
+    y = check_labels(adata, label_key)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,nan_labels,0,isolated_label_scores,ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 76, in _iso
+    r = sam.isolated_label_scores(a, ""label"", embedding=""X_pca"")
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/internal.py"", line 209, in isolated_label_scores
+    y = check_labels(adata, label_key)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,nan_labels,0,clisi,ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 82, in _clisi
+    return {""clisi"": sam.clisi(a, ""label"", embedding=""X_pca"").get(""clisi"", np.nan)}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/internal.py"", line 325, in clisi
+    y = check_labels(adata, label_key)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,nan_labels,0,ontology_consistency,ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 113, in _onto
+    r = sam.ontology_consistency(a, ""label"", _obo_path(), to_cl, embedding=""X_pca"", n_perm=199)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/ontology.py"", line 213, in ontology_consistency
+    y = check_labels(adata, label_key)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,nan_labels,0,inter_sample_consistency,ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 121, in _isc
+    r = sam.inter_sample_consistency(a, ""label"", ""sample"", layer=""counts"")
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/isc.py"", line 250, in inter_sample_consistency
+    P, plabels, psamples, dropped, matrix = _pseudobulk_profiles(
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/isc.py"", line 28, in _pseudobulk_profiles
+    y = check_labels(adata, label_key)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,nan_labels,0,marker_program_fidelity,ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 127, in _fid
+    r = sam.marker_program_fidelity(a, ""label"", a.uns[""marker_sets""])
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/fidelity.py"", line 60, in marker_program_fidelity
+    labels = check_labels(adata, label_key)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,nan_labels,0,marker_gene_overlap,ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 133, in _mgo
+    return {""mgo.mean_overlap"": sam.marker_gene_overlap(a, ""label"", a.uns[""marker_sets""], n_top=10).get(""mean_overlap"")}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/fidelity.py"", line 134, in marker_gene_overlap
+    labels = check_labels(adata, label_key)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,nan_labels,0,purity,ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 140, in _pur
+    r = sam.pmp(a, ms, ""label"")
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/purity.py"", line 318, in pmp
+    values = _pmp_values(adata, marker_sets, label_key, layer)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/purity.py"", line 259, in _pmp_values
+    labels = check_labels(adata, label_key)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,nan_labels,0,nmp,ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 147, in _nmp
+    return {""nmp"": sam.nmp(a, ref, ""label"", ""cell_type"").get(""nmp"")}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/purity.py"", line 478, in nmp
+    labels = check_labels(adata, label_key)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,nan_labels,0,coexpression_similarity,ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 153, in _coex
+    ""coex.by_type"": sam.coexpression_similarity(a, ref, label_key=""label"").get(""coexpression_similarity"",
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/purity.py"", line 748, in coexpression_similarity
+    labels = check_labels(adata, label_key)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,nan_labels,0,neighbor_contamination,ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 166, in _nc
+    r = sam.neighbor_contamination(a, a.uns[""marker_sets""], ""label"")
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/spatial.py"", line 332, in neighbor_contamination
+    labels = check_labels(adata, label_key)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,nan_labels,0,spatial_coherence,ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 174, in _sc
+    r = sam.spatial_coherence(a, ""label"")
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/spatial.py"", line 138, in spatial_coherence
+    labels = check_labels(adata, label_key)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,nan_labels,0,neighborhood_sanity,ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') be,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 181, in _ns
+    r = sam.neighborhood_sanity(a, ""label"")
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/spatial.py"", line 196, in neighborhood_sanity
+    labels = check_labels(adata, label_key)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: adata.obs['label'] has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,nan_labels,0,external,ValueError: the label array has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') befor,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 228, in _ext
+    e = sam.external_scores(y_true=t, y_pred=p)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/external.py"", line 81, in external_scores
+    pred = check_labels(y_pred)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 37, in check_labels
+    raise ValueError(f""{where} has {n_na} missing (NaN/None) labels of {len(raw)}: drop those cells or ""
+ValueError: the label array has 30 missing (NaN/None) labels of 600: drop those cells or give them a label (e.g. 'Unassigned') before scoring
+"
+edge,lognorm_X_no_counts,0,inter_sample_consistency,ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 121, in _isc
+    r = sam.inter_sample_consistency(a, ""label"", ""sample"", layer=""counts"")
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/isc.py"", line 250, in inter_sample_consistency
+    P, plabels, psamples, dropped, matrix = _pseudobulk_profiles(
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/isc.py"", line 30, in _pseudobulk_profiles
+    mat, matrix = get_counts(adata, layer) if layer else (adata.X, ""X"")
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 95, in get_counts
+    raise ValueError(f""layer {layer!r} is not in adata.layers ({named}) and X ""
+ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= naming the raw-count layer, or layer=None to read X as it is
+"
+edge,lognorm_X_no_counts,0,marker_program_fidelity,ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 127, in _fid
+    r = sam.marker_program_fidelity(a, ""label"", a.uns[""marker_sets""])
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/fidelity.py"", line 68, in marker_program_fidelity
+    mat, matrix = get_counts(adata, layer)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 95, in get_counts
+    raise ValueError(f""layer {layer!r} is not in adata.layers ({named}) and X ""
+ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= naming the raw-count layer, or layer=None to read X as it is
+"
+edge,lognorm_X_no_counts,0,marker_gene_overlap,ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 133, in _mgo
+    return {""mgo.mean_overlap"": sam.marker_gene_overlap(a, ""label"", a.uns[""marker_sets""], n_top=10).get(""mean_overlap"")}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/fidelity.py"", line 139, in marker_gene_overlap
+    mat, matrix = get_counts(adata, layer)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 95, in get_counts
+    raise ValueError(f""layer {layer!r} is not in adata.layers ({named}) and X ""
+ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= naming the raw-count layer, or layer=None to read X as it is
+"
+edge,lognorm_X_no_counts,0,purity,ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 140, in _pur
+    r = sam.pmp(a, ms, ""label"")
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/purity.py"", line 318, in pmp
+    values = _pmp_values(adata, marker_sets, label_key, layer)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/purity.py"", line 261, in _pmp_values
+    mat, _ = get_counts(adata, layer)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 95, in get_counts
+    raise ValueError(f""layer {layer!r} is not in adata.layers ({named}) and X ""
+ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= naming the raw-count layer, or layer=None to read X as it is
+"
+edge,lognorm_X_no_counts,0,nmp,ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 147, in _nmp
+    return {""nmp"": sam.nmp(a, ref, ""label"", ""cell_type"").get(""nmp"")}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/purity.py"", line 484, in nmp
+    mat, matrix = get_counts(adata, layer)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 95, in get_counts
+    raise ValueError(f""layer {layer!r} is not in adata.layers ({named}) and X ""
+ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= naming the raw-count layer, or layer=None to read X as it is
+"
+edge,lognorm_X_no_counts,0,coexpression_similarity,ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 152, in _coex
+    return {""coex.global"": sam.coexpression_similarity(a, ref).get(""coexpression_similarity"", np.nan),
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/purity.py"", line 755, in coexpression_similarity
+    mat, matrix = get_counts(adata, layer)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 95, in get_counts
+    raise ValueError(f""layer {layer!r} is not in adata.layers ({named}) and X ""
+ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= naming the raw-count layer, or layer=None to read X as it is
+"
+edge,lognorm_X_no_counts,0,ncp,ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 159, in _ncp
+    return {""ncp"": sam.ncp(a, ref).get(""ncp"", np.nan),
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/purity.py"", line 655, in ncp
+    mat, matrix = get_counts(adata, layer)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 95, in get_counts
+    raise ValueError(f""layer {layer!r} is not in adata.layers ({named}) and X ""
+ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= naming the raw-count layer, or layer=None to read X as it is
+"
+edge,lognorm_X_no_counts,0,neighbor_contamination,ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 166, in _nc
+    r = sam.neighbor_contamination(a, a.uns[""marker_sets""], ""label"")
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/spatial.py"", line 333, in neighbor_contamination
+    mat, matrix = get_counts(adata, layer)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 95, in get_counts
+    raise ValueError(f""layer {layer!r} is not in adata.layers ({named}) and X ""
+ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= naming the raw-count layer, or layer=None to read X as it is
+"
+edge,lognorm_X_no_counts,0,per_cell_confidence,ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 187, in _conf
+    r = sam.per_cell_confidence(a, a.uns[""marker_sets""])
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/confidence.py"", line 56, in per_cell_confidence
+    mat, matrix = get_counts(adata, layer)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 95, in get_counts
+    raise ValueError(f""layer {layer!r} is not in adata.layers ({named}) and X ""
+ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= naming the raw-count layer, or layer=None to read X as it is
+"
+edge,lognorm_X_no_counts,0,label_stability,ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 206, in _stab
+    return {""stab.flip_rate"": sam.label_stability(a, marker_argmax, reps=3)[""mean_flip_rate""]}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/confidence.py"", line 144, in label_stability
+    counts, matrix = get_counts(adata, layer)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 95, in get_counts
+    raise ValueError(f""layer {layer!r} is not in adata.layers ({named}) and X ""
+ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= naming the raw-count layer, or layer=None to read X as it is
+"
+edge,lognorm_X_no_counts,0,signal_qc,ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 214, in _sig
+    m = sam.moran_signal(a)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/signal_qc.py"", line 191, in moran_signal
+    mat, matrix = get_counts(adata, layer)
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 95, in get_counts
+    raise ValueError(f""layer {layer!r} is not in adata.layers ({named}) and X ""
+ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= naming the raw-count layer, or layer=None to read X as it is
+"
+edge,lognorm_X_no_counts,0,calibration_novelty,ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= namin,"Traceback (most recent call last):
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 268, in run_adapters
+    vals[name] = {k: (np.nan if v is None else float(v)) for k, v in fn(a, ref).items()}
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/benchmarks/synthetic/sweep.py"", line 246, in _cal
+    Xq = get_counts(a[:, genes], ""counts"")[0]
+  File ""/home/pgueguen/git/spatial-anno-metrics/.claude/worktrees/complete-tasks/src/spatial_anno_metrics/_validate.py"", line 95, in get_counts
+    raise ValueError(f""layer {layer!r} is not in adata.layers ({named}) and X ""
+ValueError: layer 'counts' is not in adata.layers (none) and X is not raw counts (negative or non-integer values): pass layer= naming the raw-count layer, or layer=None to read X as it is
+"

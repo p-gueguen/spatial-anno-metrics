@@ -104,6 +104,18 @@ def test_ece_hand_computed():
     assert r["accuracy"] == pytest.approx(0.75)
 
 
+def test_calibration_error_bin_edges_are_left_open_right_closed():
+    """Bins are (lo, hi] (searchsorted side='left'): a 0.5 confidence sits in bin 0 of n_bins=2, not bin 1."""
+    from spatial_anno_metrics import conformal as em
+
+    # Cell 0: conf=0.5 (on the interior edge), hit=1; Cell 1: conf=0.9, hit=0.
+    # Under (0, 0.5] and (0.5, 1.0]: bin 0 gap |1 - 0.5| = 0.5, bin 1 gap |0 - 0.9| = 0.9 -> ECE = 0.70.
+    # Under [0, 0.5) and [0.5, 1.0] (side='right'): both land in bin 1 -> |0.5 - 0.7| = 0.20.
+    P = np.array([[0.5, 0.5], [0.9, 0.1]])
+    r = em.calibration_error(P, ["A", "B"], np.array(["A", "B"]), n_bins=2)
+    assert r["ece"] == pytest.approx(0.70)
+
+
 def test_classwise_ece_matches_sklearn_calibration_curve():
     """Class-wise ECE = mean over classes of the count-weighted |freq - mean p| per bin; sklearn's
     calibration_curve gives the per-bin values independently (positive control for the binning)."""
@@ -254,4 +266,29 @@ def test_conformal_novelty_input_checks():
         em.conformal_novelty(rng.normal(size=(5, 4)), rng.normal(size=(50, 3)))
     with pytest.raises(ValueError, match="method"):
         em.conformal_novelty(rng.normal(size=(5, 3)), rng.normal(size=(50, 3)), method="lof")
+    bad = rng.normal(size=(5, 3))
+    bad[2, 1] = np.nan
+    with pytest.raises(ValueError, match="NaN or infinite"):
+        em.conformal_novelty(bad, rng.normal(size=(50, 3)))
     assert em.conformal_novelty(rng.normal(size=(5, 3)), rng.normal(size=(2, 3)))["status"] == "skipped"
+
+
+@pytest.mark.parametrize("method", ["pca", "iforest"])
+def test_conformal_novelty_sparse_inputs_do_not_densify(monkeypatch, method):
+    """Sparse CSR query and reference run without calling _dense, and PCA residuals match dense to 1e-10."""
+    import scipy.sparse as sp
+
+    from spatial_anno_metrics import conformal as em
+
+    rng = np.random.default_rng(7)
+    ref = rng.poisson(0.5, size=(120, 40)).astype(float)
+    q = rng.poisson(0.5, size=(30, 40)).astype(float)
+    q[-5:] += 6.0
+    dense_res = em.conformal_novelty(q, ref, method=method, n_components=5, seed=0)
+
+    monkeypatch.setattr(em, "_dense", lambda *a, **k: (_ for _ in ()).throw(AssertionError("densified")))
+    sparse_res = em.conformal_novelty(sp.csr_matrix(q), sp.csr_matrix(ref), method=method, n_components=5, seed=0)
+    assert sparse_res["status"] == "ok"
+    if method == "pca":
+        np.testing.assert_allclose(sparse_res["score"], dense_res["score"], rtol=1e-7, atol=1e-9)
+        np.testing.assert_allclose(sparse_res["pvalues"], dense_res["pvalues"], rtol=0, atol=1e-12)

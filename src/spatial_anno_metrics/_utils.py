@@ -53,6 +53,12 @@ def _squidpy():
     The import can fail with errors other than ImportError (e.g. a dask NotImplementedError), which would
     escape ``except ImportError`` handlers.
     """
+    import contextlib
+    import warnings
+
+    with contextlib.suppress(Exception), warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        import dask.dataframe  # noqa: F401 - prevent spatialdata<0.4 + dask>=2025.1 query-planning error
     try:
         import squidpy
     except Exception as e:  # noqa: BLE001 - deliberately broad, see docstring

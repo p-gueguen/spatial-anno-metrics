@@ -385,13 +385,34 @@ def test_deconvolution_matches_openproblems_golden():
     props, exp = _golden("deconv_openproblems", "proportions.json"), _golden("deconv_openproblems")["results"]
     for name, p in props.items():
         ours = em.deconvolution_metrics(true_prop=p["true"], pred_prop=p["pred"])
+        ours_pr = em.deconvolution_metrics(true_prop=p["true"], pred_prop=p["pred"], aupr_method="precrec")
         assert ours["r2"] == pytest.approx(exp[name]["r2"], rel=1e-12, abs=1e-12), name
         if exp[name]["jsd"] is not None:
             assert ours["jsd"] == pytest.approx(exp[name]["jsd"], rel=1e-12, abs=1e-12), name
+        if exp[name]["aupr"] is None:
+            assert np.isnan(ours["aupr"]) and np.isnan(ours["aupr_precrec"]) and np.isnan(ours_pr["aupr"])
+        else:
+            assert ours["aupr"] == pytest.approx(exp[name]["aupr"], rel=1e-12, abs=1e-12), name
+            assert ours["aupr_precrec"] == pytest.approx(exp[name]["aupr_precrec"], rel=1e-12, abs=1e-12), name
+            assert ours_pr["aupr"] == pytest.approx(exp[name]["aupr_precrec"], rel=1e-12, abs=1e-12), name
+        assert ours["ssim"] == pytest.approx(exp[name]["ssim"], rel=1e-12, abs=1e-12), name
+        for k, want_ssim in enumerate(exp[name]["ssim_per_type"]):
+            if want_ssim is None:
+                assert np.isnan(ours["ssim_per_type"][k])
+            else:
+                assert ours["ssim_per_type"][k] == pytest.approx(want_ssim, rel=1e-12, abs=1e-12), (name, k)
     # absent_type: OpenProblems' mean is NaN (0/0 on the all-zero true column); ours is the mean of the
     # defined cell types - a documented difference, not a match.
     t, q = np.asarray(props["absent_type"]["true"]), np.asarray(props["absent_type"]["pred"])
     assert exp["absent_type"]["jsd"] is None and not t[:, 4].any()
     defined = np.mean([jensenshannon(t[:, k], q[:, k]) for k in range(4)])
     assert em.deconvolution_metrics(true_prop=t, pred_prop=q)["jsd"] == pytest.approx(defined, rel=1e-12)
+    # Davis & Goadrich (2006) non-linear PR interpolation on tied scores (dTP = 2, dFP = 2):
+    # intermediate point (TP=1, FP=1) has rec=0.5, prec=0.5; end (TP=2, FP=2) has rec=1.0, prec=0.5 -> AUC = 0.5
+    true_tied = np.array([[1.0, 1.0], [0.0, 0.0]])
+    pred_tied = np.array([[0.5, 0.5], [0.5, 0.5]])
+    tied = em.deconvolution_metrics(true_prop=true_tied, pred_prop=pred_tied, aupr_method="precrec")
+    assert tied["aupr"] == pytest.approx(0.5, rel=1e-12) and tied["aupr_precrec"] == pytest.approx(0.5, rel=1e-12)
+    with pytest.raises(ValueError, match="aupr_method"):
+        em.deconvolution_metrics(true_prop=true_tied, pred_prop=pred_tied, aupr_method="bad")
 

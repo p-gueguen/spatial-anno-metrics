@@ -59,6 +59,8 @@ def _spatial_graph(adata, n_neighs: int, graph: str | None = None):
     want = "delaunay" if graph == "delaunay" else f"knn(n_neighs={n_neighs})"
     if have and meta.get(_GRAPH_TAG) == want:
         return csr_matrix(adata.obsp["spatial_connectivities"]), want
+    if "spatial" not in adata.obsm:
+        return None, "no obsm['spatial'] or reusable obsp['spatial_connectivities']"
     kw = {"delaunay": True} if graph == "delaunay" else {"n_neighs": n_neighs}
     target = (ad.AnnData(obs=pd.DataFrame(index=adata.obs_names), obsm={"spatial": adata.obsm["spatial"]})
               if have else adata)
@@ -137,6 +139,8 @@ def spatial_coherence(adata, label_key: str = "cell_type", n_neighs: int = _thr(
     if len(np.unique(labels)) < 2:
         return skip(f"need >= 2 labels in adata.obs[{label_key!r}], found {len(np.unique(labels))}")
     A, how = _spatial_graph(adata, n_neighs, graph)
+    if A is None:
+        return skip(how)
 
     cats = {c: i for i, c in enumerate(np.unique(labels))}
     lab_idx = np.array([cats[lb] for lb in labels])
@@ -194,6 +198,8 @@ def neighborhood_sanity(adata, label_key: str = "cell_type", n_neighs: int = _th
         return skip(f"need >= 2 labels in adata.obs[{label_key!r}], found {len(np.unique(labels))}")
     sq = _squidpy()
     A, how = _spatial_graph(adata, n_neighs, graph)
+    if A is None:
+        return skip(how)
     col = adata.obs[label_key]
     col = (col.cat.remove_unused_categories() if isinstance(col.dtype, pd.CategoricalDtype)
            else col.astype("category"))
@@ -224,10 +230,10 @@ def _perm_p(v1: np.ndarray, v0: np.ndarray, n_perm: int, rng) -> float:
     if n_perm <= 0 or not len(v1) or not len(v0):
         return float("nan")
     pool = np.concatenate([v1, v0])
-    n1, n0, tot = len(v1), len(v0), pool.sum()
+    n1, n0, n_all, tot = len(v1), len(v0), len(pool), float(pool.sum())
     obs = v1.mean() - v0.mean()
-    # ponytail: a Python loop over permutations (O(n_perm x cells of the type) per pair); vectorise if slow
-    s1 = np.array([rng.permutation(pool)[:n1].sum() for _ in range(n_perm)])
+    idx = rng.permuted(np.broadcast_to(np.arange(n_all), (n_perm, n_all)), axis=1)[:, :n1]
+    s1 = pool[idx].sum(axis=1)
     null = s1 / n1 - (tot - s1) / n0
     return float((1 + np.sum(null >= obs - 1e-12)) / (1 + n_perm))
 
@@ -304,16 +310,24 @@ def neighbor_contamination(adata, marker_sets: dict, label_key: str = "cell_type
     -------
     dict
         ``{status, mean_contamination, n_evaluable, source_target, n_source_target, baseline, n_baseline,
-        excess, p_value, no_dict_frac, labels_without_markers, graph, n_perm, matrix}``. The frames are source
-        (rows) x target (columns): ``source_target`` the mean per-cell contamination over the
-        ``n_source_target`` evaluable target cells (NaN, not 0, where no target cell touches the source, as
-        in SegTraQ), ``baseline`` over the ``n_baseline`` target cells touching no source cell.
+        excess, p_value, split_slope, split_corr, distance_corr, distance_curve, no_dict_frac,
+        labels_without_markers, graph, n_perm, matrix}``. The frames are source (rows) x target (columns):
+        ``source_target`` the mean per-cell contamination over the ``n_source_target`` evaluable target cells
+        (NaN, not 0, where no target cell touches the source, as in SegTraQ), ``baseline`` over the
+        ``n_baseline`` target cells touching no source cell. ``split_slope`` and ``split_corr`` (after Bilous
+        et al. *Nat Methods* 2026, SPLIT) regress/correlate each target cell's ``(s, t)`` contaminant marker
+        share against ``s``'s share of the cell's spatial neighbours (> 0 under spillover, ~0 under uniform
+        co-expression). When ``obsm['spatial']`` is present, ``distance_corr`` (Spearman r) and
+        ``distance_curve`` (4 quantile distance bins) track contaminant marker share vs Euclidean distance to
+        the nearest ``s`` cell (CellSPA readout: < 0 and decaying with distance under spillover).
         ``no_dict_frac`` / ``labels_without_markers`` disclose the cells whose label has no on-panel marker
         set: they are never scored. Fewer than 2 labels with an on-panel marker set, or no evaluable cell,
         -> a skip (nothing written; the coverage keys are added).
     """
     import pandas as pd
     import scipy.sparse as sps
+    from scipy.spatial import cKDTree
+    from scipy.stats import spearmanr
 
     labels = check_labels(adata, label_key)
     mat, matrix = get_counts(adata, layer)
@@ -324,6 +338,9 @@ def neighbor_contamination(adata, marker_sets: dict, label_key: str = "cell_type
     if len(types) < 2:
         return {**skip(f"need >= 2 labels in adata.obs[{label_key!r}] with an on-panel marker set, "
                        f"found {len(types)}"), **cov}
+    A, how = _spatial_graph(adata, n_neighs, graph)
+    if A is None:
+        return {**skip(how), **cov}
 
     def pair_genes(s, t):
         if t in neg:
@@ -332,27 +349,71 @@ def neighbor_contamination(adata, marker_sets: dict, label_key: str = "cell_type
 
     pairs = {(s, t): sorted(pair_genes(s, t)) for s in types for t in types if s != t}
     pairs = {k: g for k, g in pairs.items() if g}
-    genes = sorted(set().union(*pairs.values()))
+    genes = sorted(set().union(*pairs.values())) if pairs else []
     col = {g: j for j, g in enumerate(genes)}
     Xm = sps.csr_matrix(mat[:, [panel[g] for g in genes]])          # cells x contaminant genes, sparse
     total = np.asarray(mat.sum(axis=1)).ravel().astype(float)
-    A, how = _spatial_graph(adata, n_neighs, graph)
     Ac = A.tocsc()
+    A_bin = (A > 0).astype(float).tocsc()
+    deg = np.asarray(A_bin.sum(axis=1)).ravel()
+    xy = np.asarray(adata.obsm["spatial"], dtype=float) if "spatial" in adata.obsm else None
+    if xy is not None and not np.all(np.isfinite(xy)):
+        xy = None
     rng = np.random.default_rng(seed)
 
     frames = {k: pd.DataFrame(np.nan, index=types, columns=types)
-              for k in ("source_target", "n_source_target", "baseline", "n_baseline", "excess", "p_value")}
+              for k in ("source_target", "n_source_target", "baseline", "n_baseline", "excess", "p_value",
+                        "split_slope", "split_corr", "distance_corr")}
+    curve_rows = []
     rows, cols = [], []                                # (cell, gene) local contaminants, OR-ed over sources
     for s in types:
         src = np.flatnonzero(labels == s)
         As = Ac[:, src]
         adj = np.asarray(As.sum(axis=1)).ravel() > 0   # touches an s cell
+        s_nb_all = np.asarray(A_bin[:, src].sum(axis=1)).ravel()
+        tree_s = cKDTree(xy[src]) if xy is not None and len(src) > 0 else None
         nb = (As @ (Xm[src] > 0).astype(float)).tocsr() if require_neighbor_expression else None
         for t in types:
             g = [col[x] for x in pairs.get((s, t), [])]
             if not g:
                 continue
             tgt = np.flatnonzero((labels == t) & (total > 0))
+            if not len(tgt):
+                continue
+            xs = Xm[tgt][:, g]
+            y_all = np.asarray(xs.sum(axis=1)).ravel() / total[tgt]
+            deg_t = deg[tgt]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                share = np.where(deg_t > 0, s_nb_all[tgt] / deg_t, np.nan)
+            m_sh = np.isfinite(share) & np.isfinite(y_all)
+            if m_sh.sum() >= 3 and share[m_sh].std() > 0:
+                sh_c = share[m_sh] - share[m_sh].mean()
+                y_c = y_all[m_sh] - y_all[m_sh].mean()
+                denom_sh = float(np.dot(sh_c, sh_c))
+                frames["split_slope"].loc[s, t] = float(np.dot(sh_c, y_c) / denom_sh)
+                y_norm = float(np.sqrt(np.dot(y_c, y_c)))
+                frames["split_corr"].loc[s, t] = (float(np.dot(sh_c, y_c) / (np.sqrt(denom_sh) * y_norm))
+                                                  if y_norm > 0 else 0.0)
+            if tree_s is not None:
+                d_st = tree_s.query(xy[tgt], k=1)[0]
+                m_d = np.isfinite(d_st) & np.isfinite(y_all)
+                if m_d.sum() >= 3 and d_st[m_d].std() > 0:
+                    frames["distance_corr"].loc[s, t] = (
+                        float(spearmanr(d_st[m_d], y_all[m_d]).statistic) if y_all[m_d].std() > 0 else 0.0)
+                if m_d.sum() >= 4 and d_st[m_d].max() > d_st[m_d].min():
+                    edges = np.unique(np.quantile(d_st[m_d], np.linspace(0.0, 1.0, 5)))
+                    if len(edges) >= 2:
+                        b_idx = np.clip(np.searchsorted(edges[1:-1], d_st[m_d], side="left"), 0, len(edges) - 2)
+                        for b in range(len(edges) - 1):
+                            in_b = b_idx == b
+                            if in_b.any():
+                                curve_rows.append({
+                                    "source": s, "target": t, "bin": int(b),
+                                    "r_min": float(edges[b]), "r_max": float(edges[b + 1]),
+                                    "mean_distance": float(d_st[m_d][in_b].mean()),
+                                    "mean_contamination": float(y_all[m_d][in_b].mean()),
+                                    "n_cells": int(in_b.sum()),
+                                })
             if require_neighbor_expression:           # an s neighbour detects the gene
                 hit = nb[tgt][:, g] > 0
             else:                                      # any s neighbour
@@ -360,7 +421,6 @@ def neighbor_contamination(adata, marker_sets: dict, label_key: str = "cell_type
             ok = hit.getnnz(axis=1) > 0
             if not ok.any():
                 continue
-            xs = Xm[tgt][:, g]
             v1 = np.asarray(xs.multiply(hit).sum(axis=1)).ravel()[ok] / total[tgt][ok]
             far = ~adj[tgt]
             v0 = np.asarray(xs[far].sum(axis=1)).ravel() / total[tgt][far]
@@ -375,6 +435,10 @@ def neighbor_contamination(adata, marker_sets: dict, label_key: str = "cell_type
 
     if not rows:
         return {**skip("no cell touches another marker-set type that could spill into it"), **cov}
+    distance_curve = pd.DataFrame(
+        curve_rows,
+        columns=["source", "target", "bin", "r_min", "r_max", "mean_distance", "mean_contamination", "n_cells"],
+    )
     r, c = np.concatenate(rows), np.concatenate(cols)
     local = sps.csr_matrix((np.ones(len(r)), (r, c)), shape=Xm.shape) > 0   # duplicates (two sources) -> once
     evaluable = local.getnnz(axis=1) > 0
@@ -382,6 +446,7 @@ def neighbor_contamination(adata, marker_sets: dict, label_key: str = "cell_type
     frac[evaluable] = np.asarray(Xm.multiply(local).sum(axis=1)).ravel()[evaluable] / total[evaluable]
     adata.obs[key_added] = frac
     out = {"status": "ok", "mean_contamination": float(np.nanmean(frac)), "n_evaluable": int(evaluable.sum()),
-           **frames, **cov, "graph": how, "n_perm": int(n_perm), "matrix": matrix}
+           **frames, "distance_curve": distance_curve, **cov, "graph": how, "n_perm": int(n_perm),
+           "matrix": matrix}
     _store(adata, "neighbor_contamination", out, key_added)
     return out

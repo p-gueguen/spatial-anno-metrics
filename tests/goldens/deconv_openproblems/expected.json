@@ -1,19 +1,53 @@
 {
  "generated": "2026-11-03",
- "upstream": "openproblems-bio/task_spatial_decomposition@892ab4818b3d28656cd1a05f71b34c4d31af1de2",
- "call": "src/metrics/{r2,jsd}/script.py, unchanged but for the VIASH par block; true -> solution.obsm['proportions_true'], pred -> method output obsm['proportions_pred']",
+ "upstream": {
+  "openproblems": "openproblems-bio/task_spatial_decomposition@892ab4818b3d28656cd1a05f71b34c4d31af1de2",
+  "li2022_ssim": "QuKunLab/SpatialBenchmarking@09abc998b4dc1deffcf4ff8efcdcbdf1dfcc1cd3 (GenesMetrics.py: scale_max + cal_ssim)",
+  "spotless_aupr": "sangaram/spotless-benchmark (precrec::evalmod Davis & Goadrich 2006 interpolated PR AUC; scikit-learn average_precision_score)"
+ },
+ "call": "src/metrics/{r2,jsd}/script.py, unchanged but for the VIASH par block; true -> solution.obsm['proportions_true'], pred -> method output obsm['proportions_pred']; SSIM via QuKunLab GenesMetrics.py cal_ssim on max-scaled columns; AUPR via precrec Davis-Goadrich interpolated PR AUC and sklearn average_precision_score",
  "results": {
   "close": {
    "r2": 0.9757759961507725,
-   "jsd": 0.06708556329896388
+   "jsd": 0.06708556329896388,
+   "aupr": null,
+   "aupr_precrec": null,
+   "ssim": 0.9889615203328905,
+   "ssim_per_type": [
+    0.9901880176913379,
+    0.9889641628252113,
+    0.9846672968792951,
+    0.9893659429571351,
+    0.9916221813114733
+   ]
   },
   "noisy": {
    "r2": -0.9234989842728909,
-   "jsd": 0.3716543474874577
+   "jsd": 0.3716543474874577,
+   "aupr": null,
+   "aupr_precrec": null,
+   "ssim": 0.13274901619248386,
+   "ssim_per_type": [
+    0.04880856913824828,
+    -0.013817546149700002,
+    0.11328932766585639,
+    0.37318443464326545,
+    0.14228029566474923
+   ]
   },
   "absent_type": {
    "r2": 0.7968233676068135,
-   "jsd": null
+   "jsd": null,
+   "aupr": 0.9952225198269317,
+   "aupr_precrec": 0.9952083330328676,
+   "ssim": 0.9987358656972639,
+   "ssim_per_type": [
+    0.9981767602246198,
+    0.998787778715378,
+    0.9988787381305568,
+    0.9991001857185009,
+    null
+   ]
   }
  }
 }

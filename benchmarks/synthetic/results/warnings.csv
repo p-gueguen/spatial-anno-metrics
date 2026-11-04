@@ -1,0 +1,21 @@
+source,adapter,category,message,count
+edge:all_zero_marker_gene,signal_qc,UserWarning,"1 variables were constant, will return nan for these.",1
+edge:base,neighbor_contamination,DeprecationWarning,pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html,1
+edge:base,neighbor_contamination,FutureWarning,Importing read_text from `anndata` is deprecated. Import anndata.io.read_text instead.,2
+edge:empty_marker_set,label_stability,RuntimeWarning,Mean of empty slice.,4
+edge:empty_marker_set,label_stability,RuntimeWarning,invalid value encountered in divide,4
+edge:markers_off_panel,label_stability,RuntimeWarning,Mean of empty slice.,24
+edge:markers_off_panel,label_stability,RuntimeWarning,invalid value encountered in divide,24
+edge:singleton_type,marker_program_fidelity,RuntimeWarning,Degrees of freedom <= 0 for slice,1
+edge:singleton_type,marker_program_fidelity,RuntimeWarning,invalid value encountered in scalar divide,1
+edge:singleton_type,neighborhood_sanity,RuntimeWarning,invalid value encountered in divide,1
+edge:tiny_30_cells,marker_program_fidelity,RuntimeWarning,Degrees of freedom <= 0 for slice,1
+edge:tiny_30_cells,marker_program_fidelity,RuntimeWarning,invalid value encountered in scalar divide,1
+edge:tiny_30_cells,neighborhood_sanity,RuntimeWarning,invalid value encountered in divide,1
+edge:tiny_30_cells,signal_qc,UserWarning,"13 variables were constant, will return nan for these.",1
+edge:two_types,external,UserWarning,y_pred contains classes not in y_true,1
+scenarios,external,UserWarning,y_pred contains classes not in y_true,30
+scenarios,neighbor_contamination,DeprecationWarning,pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html,24
+scenarios,neighbor_contamination,FutureWarning,Importing read_text from `anndata` is deprecated. Import anndata.io.read_text instead.,48
+scenarios,signal_qc,UserWarning,"1 variables were constant, will return nan for these.",1
+scenarios,signal_qc,UserWarning,"2 variables were constant, will return nan for these.",1

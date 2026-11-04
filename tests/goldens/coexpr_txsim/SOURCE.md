@@ -95,8 +95,12 @@ the counts and log-normalises them exactly as here (1e4, totals over each file's
 (with `label_key`) `per_celltype` match, max |diff| 6.7e-16 on both sections under Python 3.10 and 3.12, and the
 by-type `per_gene` is NaN for the one gene (`bg28`, clean) that no type scores
 (`tests/test_purity.py::test_coexpression_similarity_matches_txsim`, tolerance 1e-12). The `thresh` mask (default 0)
-and the Spearman option are not ported. On the synthetic sweep (`benchmarks/synthetic`, 3 seeds) it barely moves
-with spillover (0.9788 -> 0.9775 at 0.4) and the by-type score rises slightly (0.9666 -> 0.9671).
+and the Spearman option are not ported. `ncp(..., score="moldia")` re-implements Moldia
+`negative_marker_purity_coexpression` (`overall`, `n_negative_pairs`, `per_gene_as_conditioning` and
+`per_gene_as_target`), matching `moldia_ncp` to <= 1e-12 (`test_ncp_moldia_matches_xenium_benchmarking_golden`).
+On the synthetic sweep (`benchmarks/synthetic`, 5 seeds) `coexpression_similarity` barely moves
+with spillover (0.9788 -> 0.9775 at 0.4) and the by-type score rises slightly (0.9666 -> 0.9671), while
+`ncp(score="moldia")` drops monotonically with spillover.
 
 Ours = `spatial_anno_metrics.ncp` at `f71512f` (v0.6.0), called as a user would on the full section and the
 reference (counts): a shared-gene pair is non-coexpressed when `#(both > 0) / #(either > 0) <= 0.1` (top 400

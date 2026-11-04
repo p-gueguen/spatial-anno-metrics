@@ -345,14 +345,52 @@ def _ssim_li(x, y) -> float:
                  * (sxy + c3) / (sx * sy + c3))
 
 
-def deconvolution_metrics(*, true_prop, pred_prop) -> dict:
+def _aupr_precrec(present, scores) -> float:
+    """Area under the non-linearly interpolated PR curve (Davis & Goadrich 2006; R ``precrec::evalmod``).
+
+    Spotless (Sang-aram et al. 2024) evaluates presence/absence AUPR via ``precrec::evalmod``, which applies
+    Davis & Goadrich (2006, *ICML*, doi 10.1145/1143844.1143874) non-linear interpolation across tied score
+    steps with ``dTP > 1`` and integrates with the trapezoidal rule. When all predicted scores are distinct,
+    this equals ``sklearn.metrics.auc(recall, precision)`` and differs from ``average_precision_score``
+    (right-Riemann step sum) in the last digits.
+    """
+    y_t = np.asarray(present, dtype=bool).ravel()
+    y_s = np.asarray(scores, dtype=float).ravel()
+    n_pos = int(y_t.sum())
+    if n_pos == 0 or n_pos == y_t.size:
+        return float("nan")
+    order = np.argsort(-y_s, kind="mergesort")
+    y_t, y_s = y_t[order], y_s[order]
+    distinct = np.r_[np.flatnonzero(np.diff(y_s)), y_t.size - 1]
+    tps = np.r_[0.0, np.cumsum(y_t)[distinct].astype(float)]
+    fps = np.r_[0.0, (1 + distinct - tps[1:]).astype(float)]
+    rec_pts = [0.0]
+    prec_pts = [tps[1] / (tps[1] + fps[1]) if (tps[1] + fps[1]) > 0 else 1.0]
+    for i in range(1, len(tps)):
+        dtp = int(round(tps[i] - tps[i - 1]))
+        dfp = fps[i] - fps[i - 1]
+        if dtp > 1:
+            xs = np.arange(1, dtp + 1, dtype=float)
+            tp_x = tps[i - 1] + xs
+            fp_x = fps[i - 1] + (dfp / dtp) * xs
+            rec_pts.extend((tp_x / n_pos).tolist())
+            prec_pts.extend((tp_x / (tp_x + fp_x)).tolist())
+        else:
+            tp_x, fp_x = tps[i], fps[i]
+            rec_pts.append(tp_x / n_pos)
+            prec_pts.append(tp_x / (tp_x + fp_x) if (tp_x + fp_x) > 0 else 1.0)
+    trapz = getattr(np, "trapezoid", None) or getattr(np, "trapz")
+    return float(trapz(prec_pts, rec_pts))
+
+
+def deconvolution_metrics(*, true_prop, pred_prop, aupr_method: str = "sklearn") -> dict:
     """Score predicted vs ground-truth cell-type proportion matrices (spots x cell types).
 
     The soft, per-spot sibling of ``composition_accuracy``: score a deconvolver's per-spot proportions
     (RCTD / TACCO / cell2location) against known mixtures such as pseudo-spots. ``r2`` and ``jsd`` are the
-    OpenProblems ``task_spatial_decomposition`` metrics (``tests/goldens/deconv_openproblems``); ``aupr`` is
-    the Spotless presence/absence score (Sang-aram et al., *eLife* 2024, doi 10.7554/elife.88431); ``ssim`` is
-    Li et al. 2022 (*Nat Methods*, doi 10.1038/s41592-022-01480-9).
+    OpenProblems ``task_spatial_decomposition`` metrics (``tests/goldens/deconv_openproblems``); ``aupr`` and
+    ``aupr_precrec`` are the Spotless presence/absence scores (Sang-aram et al., *eLife* 2024,
+    doi 10.7554/elife.88431); ``ssim`` is Li et al. 2022 (*Nat Methods*, doi 10.1038/s41592-022-01480-9).
 
     Parameters
     ----------
@@ -360,11 +398,16 @@ def deconvolution_metrics(*, true_prop, pred_prop) -> dict:
         Ground-truth proportions (keyword-only).
     pred_prop : array-like or DataFrame, shape (n_spots, n_types)
         Predicted proportions, same rows and columns in the same order.
+    aupr_method : {'sklearn', 'precrec'}
+        How ``aupr`` is computed: ``'sklearn'`` (default) uses ``sklearn.metrics.average_precision_score``
+        (rectangular step integration); ``'precrec'`` uses Davis & Goadrich (2006) non-linear PR interpolation
+        with trapezoidal integration as in R ``precrec::evalmod`` (Spotless). ``aupr_precrec`` is always
+        included in the returned dict.
 
     Returns
     -------
     dict
-        ``{status, r2, jsd, jsd_per_spot, rmse, pearson, aupr, ssim, ssim_per_type}``:
+        ``{status, r2, jsd, jsd_per_spot, rmse, pearson, aupr, aupr_precrec, ssim, ssim_per_type}``:
 
         * ``r2`` - ``sklearn.r2_score(true, pred, multioutput='uniform_average')``, per cell type across
           spots, averaged (higher better).
@@ -373,9 +416,9 @@ def deconvolution_metrics(*, true_prop, pred_prop) -> dict:
         * ``jsd_per_spot`` - mean over spots of the row-wise JS distance.
         * ``rmse`` - RMSE over the whole matrix (lower better).
         * ``pearson`` - mean per-cell-type Pearson r across spots (higher better).
-        * ``aupr`` - average precision of the predicted proportions as scores for "type present in spot"
-          (true > 0), over all spot x type entries; NaN when every entry, or none, is present. Spotless used
-          precrec's interpolated PR area, which differs from average precision in the last digits.
+        * ``aupr`` - presence/absence PR score for "type present in spot" (true > 0) over all spot x type
+          entries using ``aupr_method``; NaN when every entry, or none, is present.
+        * ``aupr_precrec`` - Spotless / ``precrec::evalmod`` Davis-Goadrich interpolated PR AUC.
         * ``ssim_per_type`` - Li et al. SSIM of each type's column, both scaled by their max (keys: the
           DataFrame columns, else column indices); NaN for an all-zero column. ``ssim`` is their mean over the
           defined types (higher better).
@@ -383,6 +426,8 @@ def deconvolution_metrics(*, true_prop, pred_prop) -> dict:
     from scipy.spatial.distance import jensenshannon
     from sklearn.metrics import average_precision_score, r2_score
 
+    if aupr_method not in ("sklearn", "precrec"):
+        raise ValueError(f"aupr_method must be 'sklearn' or 'precrec', got {aupr_method!r}")
     names = list(getattr(true_prop, "columns", range(np.shape(true_prop)[1])))
     true = np.asarray(true_prop, dtype=float)
     pred = np.asarray(pred_prop, dtype=float)
@@ -398,16 +443,18 @@ def deconvolution_metrics(*, true_prop, pred_prop) -> dict:
              for k in range(n_ct) if true[:, k].std() > 0 and pred[:, k].std() > 0]
     pearson = float(np.mean(pears)) if pears else float("nan")
     present = (true > 0).ravel()
-    aupr = float(average_precision_score(present, pred.ravel())) if 0 < present.sum() < present.size \
-        else float("nan")
+    aupr_sk = (float(average_precision_score(present, pred.ravel()))
+               if 0 < present.sum() < present.size else float("nan"))
+    aupr_pr = _aupr_precrec(present, pred.ravel())
+    aupr = aupr_sk if aupr_method == "sklearn" else aupr_pr
     ssim = {name: _ssim_li(true[:, k], pred[:, k]) for k, name in enumerate(names)}
     defined = [v for v in ssim.values() if np.isfinite(v)]
     return {"status": "ok", "r2": r2, "jsd": jsd_ct, "jsd_per_spot": jsd_spot, "rmse": rmse,
-            "pearson": pearson, "aupr": aupr, "ssim": float(np.mean(defined)) if defined else float("nan"),
-            "ssim_per_type": ssim}
+            "pearson": pearson, "aupr": aupr, "aupr_precrec": aupr_pr,
+            "ssim": float(np.mean(defined)) if defined else float("nan"), "ssim_per_type": ssim}
 
 
-_HIGHER_IS_BETTER = {"r2": True, "pearson": True, "aupr": True, "ssim": True,
+_HIGHER_IS_BETTER = {"r2": True, "pearson": True, "aupr": True, "aupr_precrec": True, "ssim": True,
                      "rmse": False, "jsd": False, "jsd_per_spot": False}
 
 

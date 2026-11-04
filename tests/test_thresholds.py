@@ -29,6 +29,7 @@ DEFAULTS = {
     ("purity", "nmp", "max_neg_frac"): ("purity", "nmp_max_neg_frac"),
     ("purity", "nmp", "min_other_frac"): ("purity", "nmp_min_other_frac"),
     ("purity", "ncp", "coexpr_threshold"): ("purity", "ncp_coexpr_threshold"),
+    ("purity", "ncp", "moldia_threshold"): ("purity", "ncp_moldia_threshold"),
     ("purity", "ncp", "max_genes"): ("purity", "ncp_max_genes"),
     ("purity", "ncp", "max_pairs"): ("purity", "ncp_max_pairs"),
     ("spatial", "spatial_coherence", "n_neighs"): ("spatial", "coherence_n_neighs"),
@@ -63,6 +64,7 @@ DEFAULTS = {
     ("panel", "panel_resolvability", "f1_weak"): ("panel", "f1_adjusted_weak"),
     ("ontology", "ontology_consistency", "n_perm"): ("ontology", "n_perm"),
     ("ontology", "ontology_consistency", "min_cells"): ("ontology", "min_cells"),
+    ("ontology", "ontology_consistency", "rwr_restart"): ("ontology", "rwr_restart"),
 }
 
 
@@ -91,6 +93,12 @@ def test_function_defaults_are_the_table_values():
 
 def test_isc_thresholds_echo_the_table():
     from spatial_anno_metrics.isc import ISC_THRESHOLDS
-    from spatial_anno_metrics.thresholds import THRESHOLDS
+    from spatial_anno_metrics.thresholds import THRESHOLDS, thresholds_for
 
     assert ISC_THRESHOLDS == {k: THRESHOLDS["isc"][k]["value"] for k in ("iscg", "iscl")}
+    t_isc = thresholds_for("isc", min_cells=25)
+    assert t_isc["min_cells"] == 25 and t_isc["iscg"] == 0.74
+    with pytest.raises(KeyError, match="unknown threshold module"):
+        thresholds_for("nonexistent")
+    with pytest.raises(KeyError, match="unknown threshold"):
+        thresholds_for("isc", bad_param=1)

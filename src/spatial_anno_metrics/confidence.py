@@ -24,10 +24,6 @@ from .thresholds import value as _thr
 __all__ = ["per_cell_confidence", "label_stability"]
 
 
-def _dense(x):
-    return x.toarray() if hasattr(x, "toarray") else np.asarray(x)
-
-
 def per_cell_confidence(adata, marker_sets: dict[str, list[str]], *, layer: str | None = "counts",
                         key_added: tuple[str, str] = ("sam_marker_margin", "sam_marker_entropy")) -> dict:
     """Per-cell marker-score **margin** + **entropy** from panel-restricted lineage marker sets.
@@ -66,7 +62,7 @@ def per_cell_confidence(adata, marker_sets: dict[str, list[str]], *, layer: str 
         if not gi:
             continue
         names.append(name)
-        cols.append(_dense(mat[:, gi]).mean(1).ravel().astype(float))
+        cols.append(np.asarray(mat[:, gi].mean(axis=1), dtype=float).ravel())
     if len(names) < 2:
         return skip(f"need >= 2 marker sets with on-panel genes, found {len(names)}")
 
@@ -86,14 +82,23 @@ def per_cell_confidence(adata, marker_sets: dict[str, list[str]], *, layer: str 
     return out
 
 
-def _subsample_counts(counts, drop_frac: float, rng) -> "np.ndarray":
-    """Binomial transcript thinning: keep each count with prob ``1 - drop_frac`` (dense float32).
+def _subsample_counts(counts, drop_frac: float, rng):
+    """Binomial transcript thinning: keep each count with prob ``1 - drop_frac`` (preserves CSR sparsity).
 
     Non-integer values are rounded to the nearest count first (``astype(int)`` floored them, so 0.6 became 0).
     """
-    arr = _dense(counts).astype("float32")
+    import scipy.sparse as sp
+
+    if sp.issparse(counts):
+        csr = counts.tocsr().astype("float32", copy=True)
+        if drop_frac <= 0:
+            return csr
+        csr.data = rng.binomial(np.rint(csr.data).astype(np.int64), 1.0 - drop_frac).astype("float32")
+        csr.eliminate_zeros()
+        return csr
+    arr = np.asarray(counts, dtype="float32")
     if drop_frac <= 0:
-        return arr
+        return arr.copy()
     return rng.binomial(np.rint(arr).astype(np.int64), 1.0 - drop_frac).astype("float32")
 
 

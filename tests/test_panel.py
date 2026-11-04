@@ -193,3 +193,46 @@ def test_panel_resolvability_old_tiers_reproducible_per_type():
         assert d["tier"] == _rule(d["f1"], d["confused_frac"], 0.5, 0.3)
     assert new["per_type"]["A"]["tier"] != old["per_type"]["A"]["tier"]   # positive control: the rule changed
     assert [d["f1"] for d in old["per_type"].values()] == [d["f1"] for d in new["per_type"].values()]
+
+
+def test_panel_resolvability_weak_confusion_cut_and_f1_weak_threshold():
+    """Pins _CONF_WEAK = 0.25 independently of f1_resolvable = 0.80, and f1_weak = 0.50 independently of
+    _CONF_NOT = 0.30."""
+    from spatial_anno_metrics import panel as em
+
+    n_genes = 30
+    A_cells = np.zeros((200, n_genes), dtype="float32")
+    A_cells[:, :5] = 50.0
+    C_cells = np.zeros((200, n_genes), dtype="float32")
+    C_cells[:, 10:15] = 50.0
+    # 30 of 40 B cells (75 %) carry B's private markers (g5..g9); 10 of 40 (25.0 %) carry C's markers -> called C
+    B_cells = np.zeros((40, n_genes), dtype="float32")
+    B_cells[:30, 5:10] = 50.0
+    B_cells[30:, 10:15] = 50.0
+    a = anndata.AnnData(X=np.vstack([A_cells, B_cells, C_cells]))
+    a.var_names = [f"g{i}" for i in range(n_genes)]
+    a.obs["cell_type"] = ["A"] * 200 + ["B"] * 40 + ["C"] * 200
+
+    r = em.panel_resolvability(a, "cell_type", list(a.var_names), target_depth=250)
+    B = r["per_type"]["B"]
+    assert B["f1_adjusted"] == pytest.approx(59 / 70, abs=1e-6)    # 0.8429 > 0.80 (f1=6/7, f1_null=1/11)
+    assert B["confused_frac"] == pytest.approx(0.25) and B["confused_with"] == "C"
+    assert B["tier"] == "weak"
+    assert r["per_type"]["A"]["tier"] == "resolvable" and r["per_type"]["C"]["tier"] == "resolvable"
+
+    # D loses 20 % each to A, B, C (confused_frac = 0.20 < 0.25), with f1 = 4/7 and f1_adjusted = 3/7 = 0.4286 < 0.50
+    D_cells = np.zeros((100, n_genes), dtype="float32")
+    D_cells[:40, 15:20] = 50.0
+    D_cells[40:60, :5] = 50.0
+    D_cells[60:80, 5:10] = 50.0
+    D_cells[80:100, 10:15] = 50.0
+    B_clean = np.zeros((100, n_genes), dtype="float32")
+    B_clean[:, 5:10] = 50.0
+    a4 = anndata.AnnData(X=np.vstack([A_cells[:100], B_clean, C_cells[:100], D_cells]))
+    a4.var_names = [f"g{i}" for i in range(n_genes)]
+    a4.obs["cell_type"] = ["A"] * 100 + ["B"] * 100 + ["C"] * 100 + ["D"] * 100
+    r4 = em.panel_resolvability(a4, "cell_type", list(a4.var_names), target_depth=250)
+    D = r4["per_type"]["D"]
+    assert D["confused_frac"] == pytest.approx(0.20)
+    assert D["f1_adjusted"] == pytest.approx(3 / 7, abs=1e-6)      # 0.4286 in [0.20, 0.50), confused_frac < 0.25
+    assert D["tier"] == "not_resolvable"

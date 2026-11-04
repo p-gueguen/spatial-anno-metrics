@@ -81,9 +81,10 @@ pinned commit, rewrites this directory and prints the table above.
 
 ## Test
 
-`tests/test_external.py::test_deconvolution_matches_openproblems_golden` compares `r2` (all three pairs) and `jsd`
-(`close`, `noisy`) at rel/abs 1e-12, and for `absent_type` asserts the upstream NaN and that ours equals the
-mean JS distance of the four defined cell types. Positive control: adding 1e-9 to one expected value fails it.
-The SSIM, AUPR and rank-score keys added in 0.7.0 have no reference outputs here: running the Li et al. 2022
-reference code was not permitted in the generating session, so `_ssim_li` is checked against the paper's formula
-in `test_deconvolution_ssim_and_aupr` instead.
+`tests/test_external.py::test_deconvolution_matches_openproblems_golden` compares `r2` (all three pairs), `jsd`
+(`close`, `noisy`), `aupr` and `aupr_precrec` (Spotless Davis-Goadrich interpolated PR AUC vs scikit-learn
+average precision; `null` on `close` / `noisy` where every entry is present, and `0.9952083330328676` /
+`0.9952225198269317` on `absent_type`), and `ssim` / `ssim_per_type` (against QuKunLab `SpatialBenchmarking`
+`GenesMetrics.py` `scale_max` + `cal_ssim` at commit `09abc998b4dc1deffcf4ff8efcdcbdf1dfcc1cd3`) at rel/abs
+1e-12, and for `absent_type` asserts the upstream NaN on the absent column (type 4) and that ours equals the
+mean of the four defined cell types. Positive control: adding 1e-9 to one expected value fails it.

@@ -45,6 +45,14 @@ def check_labels(adata_or_values, key: str | None = None, *, min_labels: int = 1
     return y
 
 
+def _all_finite(M) -> bool:
+    """Return True when every entry (or stored sparse entry) of ``M`` is finite (no NaN or +/-inf)."""
+    import scipy.sparse as sp
+
+    v = np.asarray(M.data if sp.issparse(M) else M)
+    return bool(np.all(np.isfinite(v)))
+
+
 def _count_like(M) -> bool:
     """Non-negative integers (NaN-free) on up to 1000 evenly spaced rows: the "raw counts" test."""
     import scipy.sparse as sp
@@ -74,11 +82,14 @@ def get_counts(adata, layer: str | None = "counts"):
       ``which = "X"``; otherwise ``ValueError`` asking for ``layer=``. A typo is never silently replaced by
       log-normalised data.
 
-    A chosen matrix that is not raw counts (non-integer or negative values) is used, with one ``UserWarning``.
+    A chosen matrix containing ``NaN`` or ``inf`` always raises ``ValueError``. A chosen matrix that is finite
+    but not raw counts (non-integer or negative values) is used, with one ``UserWarning``.
     Every count-based metric returns ``which`` as ``"matrix"`` in its result.
     """
     which = matrix_name(adata, layer)
     if layer is not None and which == "X":                         # the named layer is missing
+        if not _all_finite(adata.X):
+            raise ValueError(f"X contains NaN or infinite values (and layer {layer!r} is not in adata.layers)")
         if not _count_like(adata.X):
             named = sorted(k for k in adata.layers if k is not None) or "none"   # anndata >= 0.12 lists X as None
             raise ValueError(f"layer {layer!r} is not in adata.layers ({named}) and X "
@@ -86,6 +97,8 @@ def get_counts(adata, layer: str | None = "counts"):
                              "raw-count layer, or layer=None to read X as it is")
         return adata.X, which
     mat = adata.X if which == "X" else adata.layers[layer]
+    if not _all_finite(mat):
+        raise ValueError(f"{which} contains NaN or infinite values")
     if not _count_like(mat):
         warnings.warn(f"{which} is not raw counts (negative or non-integer values) but this metric reads it as "
                       "counts; pass layer= naming the raw-count layer", UserWarning, stacklevel=3)

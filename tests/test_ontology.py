@@ -136,3 +136,77 @@ def test_p_value_matches_the_exact_mantel_permutation_distribution():
     exact = np.mean(np.asarray(null) >= rho - 1e-12)
     assert r["rho"] == pytest.approx(rho)
     assert 0.4 < exact < 0.65 and r["p_value"] == pytest.approx(exact, abs=0.03)
+
+
+def test_ontology_consistency_on_yerly2022_bcc_real_data():
+    """Real scRNA-seq (Yerly et al. 2022 human BCC, 2,620 cells x 2,000 HVGs): lymphoid (Tcell, Bcell), myeloid
+    (MoMacDC), epithelial (Normal_Kerat) and stromal (Fibroblast) PCA centroids follow the Cell Ontology, and a
+    planted cross-lineage swap (Tcell <-> Normal_Kerat) flips rho negative and names the swapped type."""
+    import pandas as pd
+    import scipy.sparse as sp
+
+    import spatial_anno_metrics as sam
+
+    gdir = Path(__file__).parent / "goldens" / "isc_yerly2022"
+    with np.load(gdir / "counts.npz", allow_pickle=False) as z:
+        X = sp.csr_matrix((z["data"].astype(np.float64), z["indices"], z["indptr"]), shape=tuple(z["shape"]))
+    obs = pd.read_csv(gdir / "obs.csv")
+    obs.index = obs["cell_id"].astype(str)
+    tot = np.asarray(X.sum(axis=1)).ravel()
+    scale = np.divide(1e4, tot, out=np.zeros_like(tot), where=tot > 0)
+    X.data *= np.repeat(scale, np.diff(X.indptr))
+    np.log1p(X.data, out=X.data)
+    a = anndata.AnnData(X=X, obs=obs)
+
+    cl_map = {
+        "Tcell": "CL:0000084",
+        "Bcell": "CL:0000236",
+        "MoMacDC": "CL:0000235",
+        "Normal_Kerat": "CL:0000312",
+        "Fibroblast": "CL:0000057",
+    }
+    good = sam.ontology_consistency(a, "annotation", OBO, cl_map, n_perm=499, seed=0)
+    assert good["status"] == "ok" and good["n_labels"] == 5
+    assert good["rho"] > 0.45
+    assert good["per_label"]["Tcell"]["nearest_embedding"] == "Bcell"
+    assert good["per_label"]["Bcell"]["nearest_embedding"] == "Tcell"
+    assert good["per_label"]["Normal_Kerat"]["nearest_embedding"] == "Fibroblast"
+
+    # On the 4-type immune + keratinocyte subset, rho > 0.75
+    four = sam.ontology_consistency(a, "annotation", OBO, {k: v for k, v in cl_map.items() if k != "Fibroblast"},
+                                    n_perm=199, seed=0)
+    assert four["rho"] > 0.75
+
+    # Swapping Tcell and Normal_Kerat flips rho negative and flags Normal_Kerat
+    swapped = a.copy()
+    swapped.obs["annotation"] = swapped.obs["annotation"].replace(
+        {"Tcell": "Normal_Kerat", "Normal_Kerat": "Tcell"})
+    bad = sam.ontology_consistency(swapped, "annotation", OBO, cl_map, n_perm=499, seed=0)
+    assert bad["rho"] < -0.35 and bad["rho"] < good["rho"] - 0.8
+    assert bad["most_inconsistent"] in {"Normal_Kerat", "Tcell"}
+
+
+def test_ontology_rwr_distance_resolves_multi_parent_ties_and_flags_swaps():
+    """distance='rwr' (scGraph-OntoRWR) uses Random-Walk-with-Restart stationary distributions to break ties
+    where shortest-path hop counts are equal (T -> mono vs T -> epithelial both 5 hops on cl_tiny.obo)."""
+    import spatial_anno_metrics as sam
+    from spatial_anno_metrics.ontology import _ontology_distances, _ontology_rwr_distances, _read_obo
+
+    parents = _read_obo(OBO)
+    ids = ["CL:0000084", "CL:0000236", "CL:0000576", "CL:0000235", "CL:0000312", "CL:0000066", "CL:0000057"]
+    d_path = _ontology_distances(ids, parents)
+    d_rwr = _ontology_rwr_distances(ids, parents, restart=0.5)
+    # Under shortest-path hop count, T (0) is 5 hops from mono (2), epithelial (5), and fibroblast (6)
+    assert d_path[0, 2] == d_path[0, 5] == d_path[0, 6] == 5.0
+    # Under RWR, T shares hematopoietic/leukocyte paths with mono, so d_rwr(T, mono) < d_rwr(T, epithelial)
+    assert d_rwr[0, 2] < d_rwr[0, 5] < d_rwr[0, 4]
+
+    good = sam.ontology_consistency(_section(), "cell_type", OBO, CL, distance="rwr", n_perm=199)
+    assert good["status"] == "ok" and good["distance"] == "rwr" and good["rho"] > 0.6 and good["p_value"] <= 0.03
+    bad = sam.ontology_consistency(_section({**CENTRES, "macrophage": (0.5, 8.5, 0)}), "cell_type", OBO, CL,
+                                   distance="rwr", n_perm=199)
+    assert bad["rho"] < good["rho"] - 0.2 and bad["most_inconsistent"] == "macrophage"
+    with pytest.raises(ValueError, match="distance"):
+        sam.ontology_consistency(_section(), "cell_type", OBO, CL, distance="bad")
+    with pytest.raises(ValueError, match="rwr_restart"):
+        sam.ontology_consistency(_section(), "cell_type", OBO, CL, distance="rwr", rwr_restart=1.0)

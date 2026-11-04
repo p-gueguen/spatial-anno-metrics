@@ -107,6 +107,9 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
                                        "its 0.25 is MECR's detection floor)"),
         "ncp_coexpr_threshold": _e(0.1, f"{_PKG}: a gene pair co-detected in <= 10 % of the cells detecting "
                                         "either is non-coexpressed"),
+        "ncp_moldia_threshold": _e(0.05, "Moldia Xenium_benchmarking negative_marker_purity_coexpression: "
+                                         "(g, h) is negative when #(g & h) / #(h) < 0.05 in the reference",
+                                   False),
         "ncp_max_genes": _e(400, f"{_PKG}: tractability cap on shared genes (top by reference mean)"),
         "ncp_max_pairs": _e(2000, f"{_PKG}: tractability cap on candidate pairs"),
         "null_draws": _e(20, f"{_PKG}: draws of the detection-matched null for crisp_purity / mecr "
@@ -154,6 +157,8 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
         "min_labels": _e(4, f"{_PKG}: labels with a CL id needed by ontology_consistency (6 label pairs)"),
         "min_cells": _e(10, f"{_PKG}: cells a label needs for its embedding centroid to be used"),
         "n_perm": _e(999, f"{_PKG}: label permutations for the Mantel-style p-value (floor 0.001)"),
+        "rwr_restart": _e(0.5, "Wang et al. 2024 (Nat Commun, doi 10.1038/s41467-024-49280-7) scGraph-OntoRWR: "
+                               "random-walk-with-restart probability on the ontology graph", False),
     },
     # Recorded, not wired: aqi.py keeps these literals. tests/test_thresholds.py checks that its parameter
     # defaults agree; the body literals (w_coh_range, softmin_floor, default_target_depth,
@@ -177,3 +182,26 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
 def value(module: str, name: str):
     """``THRESHOLDS[module][name]["value"]``: what the metric modules use as a default."""
     return THRESHOLDS[module][name]["value"]
+
+
+def thresholds_for(module: str, **overrides) -> dict:
+    """Return ``{name: value}`` of the thresholds registered for ``module``, with ``overrides`` applied.
+
+    Parameters
+    ----------
+    module : str
+        Key in :data:`THRESHOLDS` (e.g. ``'purity'``, ``'spatial'``, ``'panel'``).
+    **overrides
+        Caller-supplied parameter values that override the table defaults.
+
+    Returns
+    -------
+    dict
+        ``{name: value}`` mapping every registered threshold of ``module`` to its effective value.
+    """
+    if module not in THRESHOLDS:
+        raise KeyError(f"unknown threshold module {module!r}; expected one of {sorted(THRESHOLDS)}")
+    unknown = set(overrides) - set(THRESHOLDS[module])
+    if unknown:
+        raise KeyError(f"unknown threshold(s) {sorted(unknown)} for module {module!r}")
+    return {k: overrides.get(k, e["value"]) for k, e in THRESHOLDS[module].items()}

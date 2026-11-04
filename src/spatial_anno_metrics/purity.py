@@ -344,13 +344,15 @@ def _type_means(M, labels, types):
     return sums / np.asarray(ind.sum(axis=1)).reshape(-1, 1)
 
 
-def _nmp_salas_reads(X, labels, genes, ref_X, ref_labels, ref_genes, permutations=()):
+def _nmp_salas_reads(X, labels, genes, ref_X, ref_labels, ref_genes, permutations=(), *, criterion: str = "txsim"):
     """Salas et al. 2025 negative marker purity, as txsim ``negative_marker_purity_reads`` computes it.
 
     Re-implemented from the definitions in ``tests/goldens/nmp_txsim/SOURCE.md`` (txsim has no licence: run
     for the golden, never copied). Types in both datasets with >= ``_SALAS_MIN_CELLS`` cells in each are
     used. ``x[g, t]`` = the mean count of gene ``g`` over type ``t``'s cells divided by its sum over the types
-    (a type-balanced share). ``(g, t)`` is a negative pair when the reference share is < ``_SALAS_MAX_SHARE``.
+    (a type-balanced share). ``(g, t)`` is a negative pair when the reference share is < ``_SALAS_MAX_SHARE``
+    (``criterion="txsim"``) or when the reference mean is < ``_SALAS_MAX_SHARE`` of the mean over types, i.e.
+    share < ``_SALAS_MAX_SHARE / len(types)`` (``criterion="moldia"``, Moldia's older reads criterion).
     NMP = ``1 - max(0, mean x_section - mean x_reference)`` over the negative pairs (NaN shares skipped);
     ``per_type`` / ``per_gene`` = mean over a type's (gene's) negative pairs of ``max(0, x_sp - x_sc)``.
     ``permutations`` (index arrays) relabel the section and give ``permuted`` NMPs.
@@ -370,13 +372,19 @@ def _nmp_salas_reads(X, labels, genes, ref_X, ref_labels, ref_genes, permutation
                                                  "in both the section and the reference"}
 
     def shares(M, lab):
+        from scipy import sparse
+
+        if criterion == "cells":
+            det_m = M > _DETECT if sparse.issparse(M) else np.asarray(M) > _DETECT
+            return _type_means(det_m, lab, types)
         m = _type_means(M, lab, types)
         with np.errstate(divide="ignore", invalid="ignore"):
             return m / m.sum(axis=0)
 
     x_sc = shares(Xr, ref_labels)
+    cut = _SALAS_MAX_SHARE / len(types) if criterion == "moldia" else _SALAS_MAX_SHARE
     neg = np.zeros(x_sc.shape, dtype=bool)
-    np.less(x_sc, _SALAS_MAX_SHARE, out=neg, where=np.isfinite(x_sc))
+    np.less(x_sc, cut, out=neg, where=np.isfinite(x_sc))
     if not neg.any():
         return {**info, "nmp": np.nan, "reason": "no negative (gene, type) pair in the reference"}
     base = x_sc[neg].mean()
@@ -415,7 +423,12 @@ def nmp(adata, reference=None, label_key: str = "cell_type", ref_label_key: str 
     ``nmp = (NMP - b) / (1 - b)``, ``b`` = mean NMP over ``n_permutations`` random permutations of the section
     labels, so 0 = random labels and 1 = no more negative-marker reads than the reference. Only types with
     >= 10 cells in both datasets are scored. A per-section score: nothing is written to ``adata``. The
-    reference matrix is read with the same ``layer`` rule as the section.
+    reference matrix is read with the same ``layer`` rule as the section. ``score="moldia"`` runs the same
+    Salas et al. reads formula with Moldia ``Xenium_benchmarking``'s older relative-to-mean negative-pair
+    criterion (reference share < ``0.005 / n_types``; golden-tested). ``score="cells"`` runs the cell-fraction
+    variant ``negative_marker_purity_cells`` (txsim / Moldia ``Xenium_benchmarking``; golden-tested), where
+    ``f[g, t]`` is the fraction of type-``t`` cells detecting gene ``g`` and negative pairs have
+    ``f_reference[g, t] < 0.005``.
 
     ``score="raw"`` (the v0.6 score): per cell, the fraction of its counts (over the genes shared with the
     reference) on its type's negatives, lower = cleaner. A gene is a negative for type ``t`` when the
@@ -437,11 +450,11 @@ def nmp(adata, reference=None, label_key: str = "cell_type", ref_label_key: str 
     max_neg_frac, min_other_frac
         ``score="raw"`` negative rule (inclusive cuts).
     score
-        ``"salas"`` or ``"raw"``.
+        ``"salas"``, ``"moldia"``, ``"cells"``, or ``"raw"``.
     n_permutations
-        ``score="salas"``: label permutations of the baseline ``b`` (>= 1).
+        ``score="salas"`` / ``"moldia"`` / ``"cells"``: label permutations of the baseline ``b`` (>= 1).
     seed
-        ``score="salas"``: seed of the permutations.
+        ``score="salas"`` / ``"moldia"`` / ``"cells"``: seed of the permutations.
     layer
         Count matrix (see ``_validate.get_counts``).
     key_added
@@ -450,15 +463,16 @@ def nmp(adata, reference=None, label_key: str = "cell_type", ref_label_key: str 
     Returns
     -------
     dict
-        ``score="salas"``: ``{status, score, nmp, nmp_unscaled, nmp_null, n_permutations, per_type, per_gene,
-        n_negative_pairs, types_scored, types_absent_from_reference, types_below_min_cells, matrix}``;
-        ``per_type`` / ``per_gene`` are mean excess shares (0 = clean). ``nmp`` is NaN when ``b >= 1``.
+        ``score="salas"`` / ``"moldia"`` / ``"cells"``: ``{status, score, nmp, nmp_unscaled, nmp_null,
+        n_permutations, per_type, per_gene, n_negative_pairs, types_scored, types_absent_from_reference,
+        types_below_min_cells, matrix}``; ``per_type`` / ``per_gene`` are mean excess shares (0 = clean).
+        ``nmp`` is NaN when ``b >= 1``.
         ``score="raw"``: ``{status, score, mean_nmp, n_defined, types_absent_from_reference,
         types_without_negatives, matrix}``; ``mean_nmp`` over the defined cells. Nothing scorable -> a skip
         carrying the type lists.
     """
-    if score not in ("salas", "raw"):
-        raise ValueError(f"score must be 'salas' or 'raw', got {score!r}")
+    if score not in ("salas", "moldia", "cells", "raw"):
+        raise ValueError(f"score must be 'salas', 'moldia', 'cells' or 'raw', got {score!r}")
     if reference is None:
         return skip("no reference")
     labels = check_labels(adata, label_key)
@@ -469,20 +483,21 @@ def nmp(adata, reference=None, label_key: str = "cell_type", ref_label_key: str 
         return skip("no shared genes with reference")
     mat, matrix = get_counts(adata, layer)
 
-    if score == "salas":
+    if score in ("salas", "moldia", "cells"):
         if n_permutations < 1:
             raise ValueError(f"n_permutations must be >= 1, got {n_permutations}")
         ref_mat, _ = get_counts(reference, layer)
         rng = np.random.default_rng(seed)
         perms = [rng.permutation(adata.n_obs) for _ in range(n_permutations)]
+        crit = "txsim" if score == "salas" else score
         r = _nmp_salas_reads(mat, labels, list(map(str, adata.var_names)), ref_mat, ref_labels,
-                             list(map(str, reference.var_names)), perms)
+                             list(map(str, reference.var_names)), perms, criterion=crit)
         lists = {k: r[k] for k in ("types_scored", "types_absent_from_reference", "types_below_min_cells")}
         if not np.isfinite(r["nmp"]):
             return {**skip(r["reason"]), **lists}
         b = float(np.mean(r["permuted"]))
         scaled = (r["nmp"] - b) / (1.0 - b) if b < 1 else float("nan")
-        return {"status": "ok", "score": "salas", "nmp": float(scaled), "nmp_unscaled": r["nmp"],
+        return {"status": "ok", "score": score, "nmp": float(scaled), "nmp_unscaled": r["nmp"],
                 "nmp_null": b, "n_permutations": int(n_permutations), "per_type": r["per_type"],
                 "per_gene": r["per_gene"], "n_negative_pairs": r["n_negative_pairs"], **lists,
                 "matrix": matrix}
@@ -539,36 +554,52 @@ def _cooccurrence(M):
 
 def ncp(adata, reference=None, coexpr_threshold: float = _thr("purity", "ncp_coexpr_threshold"),
         max_genes: int = _thr("purity", "ncp_max_genes"), max_pairs: int = _thr("purity", "ncp_max_pairs"), *,
+        score: str = "pairs", moldia_threshold: float = _thr("purity", "ncp_moldia_threshold"),
         layer: str | None = "counts") -> dict:
     """Non-coexpression preservation (reference-based, MECR-style; after Salas et al. 2025's NCP).
 
-    Fraction of reference-defined non-coexpressed gene pairs that STAY non-coexpressed in the section - a
-    spillover/diffusion sanity check complementary to :func:`mecr` (which uses curated lineage pairs instead
-    of reference-derived ones). A shared-gene pair is "non-coexpressed" when its co-detection rate
-    ``#(both>0)/#(either>0)`` is ``<= coexpr_threshold``; ``ncp`` is the fraction of reference-flagged pairs
-    still below it in the section (the paper's wording; the authors' code averages a clipped excess instead,
-    see ``tests/goldens/coexpr_txsim/SOURCE.md``). To stay tractable on WTA/large panels, the shared gene set
-    is capped to the top ``max_genes`` by reference mean expression and the candidate pairs to ``max_pairs``
-    (stable order, no RNG). Label-free.
+    ``score="pairs"`` (default): fraction of reference-defined non-coexpressed gene pairs that STAY
+    non-coexpressed in the section - a spillover/diffusion sanity check complementary to :func:`mecr` (which
+    uses curated lineage pairs instead of reference-derived ones). A shared-gene pair is "non-coexpressed"
+    when its co-detection rate ``#(both>0)/#(either>0)`` is ``<= coexpr_threshold``; ``ncp`` is the fraction
+    of reference-flagged pairs still below it in the section (the paper's wording). To stay tractable on
+    WTA/large panels, the shared gene set is capped to the top ``max_genes`` by reference mean expression and
+    the candidate pairs to ``max_pairs`` (stable order, no RNG). Label-free.
+
+    ``score="moldia"``: Moldia ``Xenium_benchmarking``'s ``negative_marker_purity_coexpression``
+    (``tests/goldens/coexpr_txsim``; golden-tested). For each ordered pair of shared genes ``(g, h)`` (in
+    reference order, capped to ``max_genes``), ``K[g, h] = #(g>0 & h>0) / #(h>0)`` (1.0 when ``#(h>0) == 0``);
+    negative pairs have ``K_reference[g, h] < moldia_threshold`` (default 0.05), and
+    ``ncp = 1 - mean(max(0, K_section - K_reference))`` over those negative pairs, with per-gene excess means
+    ``per_gene_as_conditioning`` (by column ``h``) and ``per_gene_as_target`` (by row ``g``).
 
     Parameters
     ----------
     adata
         Section with raw counts.
     reference
-        Matched reference (its ``X`` is read for detection); None -> a skip.
+        Matched reference (its ``X`` is read for detection under ``score="pairs"``, or its ``layer`` under
+        ``score="moldia"``); None -> a skip.
     coexpr_threshold
-        Co-detection rate at or below which a pair is non-coexpressed.
+        ``score="pairs"``: co-detection rate at or below which a pair is non-coexpressed.
     max_genes, max_pairs
         Tractability caps.
+    score
+        ``"pairs"`` or ``"moldia"``.
+    moldia_threshold
+        ``score="moldia"``: conditional co-detection cut ``K_reference[g, h] < moldia_threshold`` (default 0.05).
     layer
         Count matrix of the section (see ``_validate.get_counts``).
 
     Returns
     -------
     dict
-        ``{status, ncp, matrix}``.
+        ``score="pairs"``: ``{status, ncp, matrix}``.
+        ``score="moldia"``: ``{status, score, ncp, n_negative_pairs, per_gene_as_conditioning,
+        per_gene_as_target, matrix}``.
     """
+    if score not in ("pairs", "moldia"):
+        raise ValueError(f"score must be 'pairs' or 'moldia', got {score!r}")
     if reference is None:
         return skip("no reference")
     ref_names = set(map(str, reference.var_names))
@@ -577,6 +608,37 @@ def ncp(adata, reference=None, coexpr_threshold: float = _thr("purity", "ncp_coe
         return skip("fewer than 2 shared genes with reference")
 
     ref_idx = {g: i for i, g in enumerate(map(str, reference.var_names))}
+    var_idx = {g: i for i, g in enumerate(map(str, adata.var_names))}
+    if score == "moldia":
+        genes = [g for g in map(str, reference.var_names) if g in var_idx]
+        ref_mat, _ = get_counts(reference, layer)
+        ref_sub = ref_mat[:, [ref_idx[g] for g in genes]]
+        if len(genes) > max_genes:
+            top = np.sort(np.argsort(np.asarray(ref_sub.mean(axis=0)).ravel())[::-1][:max_genes])
+            genes = [genes[i] for i in top]
+            ref_sub = ref_sub[:, top]
+        mat, matrix = get_counts(adata, layer)
+        sec_sub = mat[:, [var_idx[g] for g in genes]]
+
+        def _cond_coocc(M):
+            both_m, _ = _cooccurrence(M)
+            denom = np.diag(both_m).astype(np.float64)[None, :]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                k = both_m.astype(np.float64) / denom
+            return np.where(np.isnan(k), 1.0, k)
+
+        K_sc, K_sp = _cond_coocc(ref_sub), _cond_coocc(sec_sub)
+        neg = K_sc < moldia_threshold
+        if not neg.any():
+            return skip("no non-coexpressed reference gene pairs found")
+        val = float(1.0 - np.mean(np.clip(K_sp[neg] - K_sc[neg], 0.0, None)))
+        D = np.where(neg, K_sp - K_sc, np.nan)
+        fin_col, fin_row = np.isfinite(D).any(axis=0), np.isfinite(D).any(axis=1)
+        by_cond = {g: float(np.nanmean(D[:, j])) for j, g in enumerate(genes) if fin_col[j]}
+        by_targ = {g: float(np.nanmean(D[i])) for i, g in enumerate(genes) if fin_row[i]}
+        return {"status": "ok", "score": "moldia", "ncp": val, "n_negative_pairs": int(neg.sum()),
+                "per_gene_as_conditioning": by_cond, "per_gene_as_target": by_targ, "matrix": matrix}
+
     ref_sub = reference.X[:, [ref_idx[g] for g in shared]]
     if len(shared) > max_genes:
         top = np.sort(np.argsort(np.asarray(ref_sub.mean(axis=0)).ravel())[::-1][:max_genes])
@@ -590,7 +652,6 @@ def ncp(adata, reference=None, coexpr_threshold: float = _thr("purity", "ncp_coe
     if not keep.size:
         return skip("no non-coexpressed reference gene pairs found")
 
-    var_idx = {g: i for i, g in enumerate(map(str, adata.var_names))}
     mat, matrix = get_counts(adata, layer)
     both, either = (m[iu][keep] for m in _cooccurrence(mat[:, [var_idx[g] for g in shared]]))
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -599,19 +660,45 @@ def ncp(adata, reference=None, coexpr_threshold: float = _thr("purity", "ncp_coe
 
 
 def _lognorm_cols(M, cols):
-    """``log1p(target_sum * counts / total)`` of columns ``cols`` (dense float64), totals over all genes."""
+    """``log1p(target_sum * counts / total)`` of columns ``cols`` (preserves CSR sparsity), totals over all genes."""
+    from scipy import sparse
+
     tot = np.asarray(M.sum(axis=1), dtype=np.float64).ravel()
-    sub = M[:, cols]
-    sub = sub.toarray() if hasattr(sub, "toarray") else np.asarray(sub)
-    # ponytail: dense cells x shared genes; go sparse (log1p keeps zeros) if a WTA section does not fit
     scale = np.divide(_TARGET_SUM, tot, out=np.zeros_like(tot), where=tot > 0)
-    return np.log1p(sub.astype(np.float64) * scale[:, None])
+    sub = M[:, cols]
+    if sparse.issparse(sub):
+        sub = sub.tocsr().astype(np.float64, copy=True)
+        sub.data *= np.repeat(scale, np.diff(sub.indptr))
+        np.log1p(sub.data, out=sub.data)
+        sub.eliminate_zeros()
+        return sub
+    return np.log1p(np.asarray(sub, dtype=np.float64) * scale[:, None])
+
+
+def _corrcoef_cols(L):
+    """Gene-by-gene Pearson correlation over rows of ``L`` without densifying sparse ``cells x genes``."""
+    from scipy import sparse
+
+    if not sparse.issparse(L):
+        return np.atleast_2d(np.corrcoef(L, rowvar=False))
+    n, g = L.shape
+    if n < 2:
+        return np.full((g, g), np.nan)
+    mu = np.asarray(L.mean(axis=0), dtype=np.float64).ravel()
+    gram = (L.T @ L).toarray().astype(np.float64, copy=False)
+    cov = gram - n * np.outer(mu, mu)
+    sd = np.sqrt(np.maximum(np.diag(cov), 0.0))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        C = cov / np.outer(sd, sd)
+    np.clip(C, -1.0, 1.0, out=C, where=np.isfinite(C))
+    np.fill_diagonal(C, np.where(sd > 0, 1.0, np.nan))
+    return C
 
 
 def _similarity(L_sp, L_sc):
     """Return ``1 - |rho_sc - rho_sp| / 2`` (Pearson over cells), diagonal NaN."""
     with np.errstate(divide="ignore", invalid="ignore"):
-        S = 1.0 - np.abs(np.corrcoef(L_sc, rowvar=False) - np.corrcoef(L_sp, rowvar=False)) / 2.0
+        S = 1.0 - np.abs(_corrcoef_cols(L_sc) - _corrcoef_cols(L_sp)) / 2.0
     S = np.atleast_2d(S)
     np.fill_diagonal(S, np.nan)
     return S
@@ -671,7 +758,9 @@ def coexpression_similarity(adata, reference=None, *, label_key: str | None = No
     L_sc = _lognorm_cols(ref_mat, [ref_idx[g] for g in shared])
 
     def expressed(L_a, L_b):
-        return ((L_a > 0).sum(axis=0) >= min_cells) & ((L_b > 0).sum(axis=0) >= min_cells)
+        na = np.asarray((L_a > 0).sum(axis=0)).ravel()
+        nb = np.asarray((L_b > 0).sum(axis=0)).ravel()
+        return (na >= min_cells) & (nb >= min_cells)
 
     keep = expressed(L_sp, L_sc)
     if not keep.any():

@@ -81,6 +81,66 @@ def _ontology_distances(ids, parents: dict) -> np.ndarray:
     return D
 
 
+def _ontology_rwr_distances(ids, parents: dict, restart: float = 0.5) -> np.ndarray:
+    """Pairwise Jensen-Shannon distance between Random-Walk-with-Restart (RWR) distributions on the ontology.
+
+    Follows the ontology-graph RWR construction of Wang et al. (*Nat Commun* 2024,
+    doi 10.1038/s41467-024-49280-7, ``scGraph-OntoRWR``): on the undirected ``is_a`` graph, a random walk
+    starting at term ``u`` restarts at ``u`` with probability ``restart`` at each step, converging to the
+    stationary distribution ``p_u = restart * (I - (1 - restart) W^T)^(-1) e_u``. Unlike shortest-path hop
+    count, RWR integrates over multiple ``is_a`` inheritance paths and resolves ties between lineage branches.
+
+    Parameters
+    ----------
+    ids : list of str
+        Term ids, all keys of ``parents``.
+    parents : dict
+        ``{term: [is_a parents]}`` from :func:`_read_obo`.
+    restart : float
+        Restart probability in ``(0, 1)``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Symmetric ``len(ids) x len(ids)`` float matrix of Jensen-Shannon distances, 0 on the diagonal.
+    """
+    from scipy import sparse
+    from scipy.spatial.distance import jensenshannon, pdist, squareform
+
+    if not 0.0 < restart < 1.0:
+        raise ValueError(f"rwr_restart must be in (0, 1), got {restart}")
+    nodes = sorted(set(parents).union(*parents.values()))
+    idx = {u: i for i, u in enumerate(nodes)}
+    rows, cols = [], []
+    for u, ps in parents.items():
+        for v in ps:
+            if u != v:
+                rows += [idx[u], idx[v]]
+                cols += [idx[v], idx[u]]
+    n = len(nodes)
+    A = sparse.csr_matrix((np.ones(len(rows)), (rows, cols)), shape=(n, n))
+    A = (A > 0).astype(float)
+    deg = np.asarray(A.sum(axis=1)).ravel()
+    iso = deg == 0
+    if iso.any():
+        A = A + sparse.diags(iso.astype(float))
+        deg = np.where(iso, 1.0, deg)
+    WT = (sparse.diags(1.0 / deg) @ A).T.tocsr()
+    E0 = np.zeros((n, len(ids)), dtype=float)
+    for j, t in enumerate(ids):
+        E0[idx[t], j] = 1.0
+    P = E0.copy()
+    for _ in range(200):
+        P_next = (1.0 - restart) * (WT @ P) + restart * E0
+        if np.max(np.abs(P_next - P)) < 1e-13:
+            P = P_next
+            break
+        P = P_next
+    D = squareform(pdist(P.T, metric=jensenshannon))
+    np.fill_diagonal(D, 0.0)
+    return D
+
+
 def _rank_corr(x, y) -> float:
     """Spearman correlation (Pearson of average ranks); NaN when either side is constant."""
     from scipy.stats import rankdata
@@ -92,14 +152,17 @@ def _rank_corr(x, y) -> float:
 
 
 def ontology_consistency(adata, label_key: str, obo_path, label_to_cl: dict, *, embedding: str | None = "X_pca",
+                         distance: str = "path", rwr_restart: float = _thr("ontology", "rwr_restart"),
                          n_perm: int = _thr("ontology", "n_perm"), min_cells: int = _thr("ontology", "min_cells"),
                          seed: int = 0) -> dict:
     """Score whether label centroids sit in the embedding the way the Cell Ontology relates the labels.
 
     Reference-free and truth-free: a "macrophage" whose centroid lies inside the epithelium is far from its
     ontology neighbours (monocyte) and close to its ontology strangers. For every pair of labels, the Euclidean
-    distance between their embedding centroids is compared with the ``is_a`` path length between their Cell
-    Ontology terms (shortest walk up to a common ancestor); ``rho`` is the Spearman correlation over the pairs,
+    distance between their embedding centroids is compared with the Cell Ontology distance between their terms
+    (``distance="path"``: shortest ``is_a`` walk up to a common ancestor; ``distance="rwr"``: Jensen-Shannon
+    distance between Random-Walk-with-Restart stationary distributions on the ``is_a`` graph, after Wang et al.
+    *Nat Commun* 2024 ``scGraph-OntoRWR``); ``rho`` is the Spearman correlation over the pairs,
     and ``p_value`` a one-sided Mantel test that permutes which label holds which ontology term
     (``(1 + #{rho_perm >= rho}) / (1 + n_perm)``; with ``K`` labels there are only ``K!`` distinct permutations,
     so with 4 labels the p cannot go below ~1/24). ``loo_delta`` is how much ``rho`` rises when that label is
@@ -122,6 +185,11 @@ def ontology_consistency(adata, label_key: str, obo_path, label_to_cl: dict, *, 
         left out and listed in ``excluded``.
     embedding : str or None
         ``adata.obsm`` key; absent or None -> a PCA of ``X``.
+    distance : {'path', 'rwr'}
+        Ontology distance metric: ``'path'`` (default) uses shortest ``is_a`` hop count through a common
+        ancestor; ``'rwr'`` uses Random Walk with Restart stationary-distribution JS distance.
+    rwr_restart : float
+        Restart probability in ``(0, 1)`` when ``distance='rwr'`` (default 0.5).
     n_perm : int
         Label permutations for the p-value.
     min_cells : int
@@ -132,11 +200,16 @@ def ontology_consistency(adata, label_key: str, obo_path, label_to_cl: dict, *, 
     Returns
     -------
     dict
-        ``{status, rho, p_value, n_perm, n_labels, most_inconsistent, per_label: {label: {cl_id, loo_delta,
-        nearest_embedding, nearest_ontology}}, excluded: {label: reason}}``. ``nearest_ontology`` lists every
-        label tied at the smallest ontology distance. Fewer than 4 usable labels, or ontology distances that are
-        all equal, -> a skip (with ``excluded``). ``rho`` is NaN when all centroid distances are equal.
+        ``{status, distance, rho, p_value, n_perm, n_labels, most_inconsistent, per_label: {label: {cl_id,
+        loo_delta, nearest_embedding, nearest_ontology}}, excluded: {label: reason}}``. ``nearest_ontology``
+        lists every label tied at the smallest ontology distance. Fewer than 4 usable labels, or ontology
+        distances that are all equal, -> a skip (with ``excluded``). ``rho`` is NaN when all centroid distances
+        are equal.
     """
+    if distance not in ("path", "rwr"):
+        raise ValueError(f"distance must be 'path' or 'rwr', got {distance!r}")
+    if distance == "rwr" and not 0.0 < rwr_restart < 1.0:
+        raise ValueError(f"rwr_restart must be in (0, 1), got {rwr_restart}")
     y = check_labels(adata, label_key)
     parents = _read_obo(obo_path)
     labels, counts = np.unique(y, return_counts=True)
@@ -155,7 +228,8 @@ def ontology_consistency(adata, label_key: str, obo_path, label_to_cl: dict, *, 
         return {**skip(f"{len(keep)} labels with a CL id and >= {min_cells} cells, need >= {_MIN_LABELS}"),
                 "excluded": excluded}
     ids = [label_to_cl[lab] for lab in keep]
-    Do = _ontology_distances(ids, parents)
+    Do = (_ontology_distances(ids, parents) if distance == "path"
+          else _ontology_rwr_distances(ids, parents, restart=rwr_restart))
     E = _embedding(adata, embedding, seed=seed)
     C = np.vstack([E[y == lab].mean(0) for lab in keep])
     De = np.sqrt(((C[:, None, :] - C[None, :, :]) ** 2).sum(-1))
@@ -179,6 +253,6 @@ def ontology_consistency(adata, label_key: str, obo_path, label_to_cl: dict, *, 
                     "nearest_ontology": [keep[j] for j in others[o_row == o_row.min()]]}
     deltas = {lab: d["loo_delta"] for lab, d in per.items() if np.isfinite(d["loo_delta"])}
     worst = max(deltas, key=deltas.get) if deltas else None
-    return {"status": "ok", "rho": rho, "p_value": p_value, "n_perm": int(n_perm), "n_labels": k,
-            "most_inconsistent": worst if worst is not None and deltas[worst] > 0 else None,
+    return {"status": "ok", "distance": distance, "rho": rho, "p_value": p_value, "n_perm": int(n_perm),
+            "n_labels": k, "most_inconsistent": worst if worst is not None and deltas[worst] > 0 else None,
             "per_label": per, "excluded": excluded}

@@ -28,6 +28,7 @@ for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):  # one
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 sys.path.insert(0, str(Path(__file__).parent))
 import sim  # noqa: E402
 
@@ -90,15 +91,17 @@ _MERGED = {"Fibro+Epi": "structural", "B+Myeloid": "immune", "T_CD4+T_CD8": "T"}
 
 def _obo_path():
     import tempfile
-    p = Path(tempfile.gettempdir()) / f"sam_sweep_toy_{os.getpid()}.obo"
+    p = Path(tempfile.gettempdir()) / "sam_sweep_toy.obo"
     if not p.exists():
-        p.write_text("format-version: 1.2\n\n" + "\n".join(
+        tmp = Path(tempfile.gettempdir()) / f"sam_sweep_toy_{os.getpid()}.obo.tmp"
+        tmp.write_text("format-version: 1.2\n\n" + "\n".join(
             f"[Term]\nid: TOY:{i:07d}\nname: {t}\n" + (f"is_a: TOY:{list(_OBO_TERMS).index(par):07d}\n" if par else "")
             for i, (t, par) in enumerate(_OBO_TERMS.items())))
+        tmp.replace(p)
     return p
 
 
-@adapter("ontology_consistency", {"onto.rho": (1, [L])})
+@adapter("ontology_consistency", {"onto.rho": (1, [L]), "onto.rwr_rho": (1, [L])})
 def _onto(a, ref):
     cl = {t: f"TOY:{i:07d}" for i, t in enumerate(_OBO_TERMS)}
     names = dict(zip(a.uns["hierarchy"], sim.TYPES))     # label vocabulary -> sim type (renamed edge cases too)
@@ -108,7 +111,8 @@ def _onto(a, ref):
         if t is not None:
             to_cl[lab] = cl[t]
     r = sam.ontology_consistency(a, "label", _obo_path(), to_cl, embedding="X_pca", n_perm=199)
-    return {"onto.rho": r.get("rho", np.nan)}
+    r_rwr = sam.ontology_consistency(a, "label", _obo_path(), to_cl, embedding="X_pca", distance="rwr", n_perm=199)
+    return {"onto.rho": r.get("rho", np.nan), "onto.rwr_rho": r_rwr.get("rho", np.nan)}
 
 
 @adapter("inter_sample_consistency", {"isc.iscg": (1, [L, "isc"]), "isc.iscl": (1, [L, "isc"]),
@@ -150,9 +154,10 @@ def _coex(a, ref):
                                                                                          np.nan)}
 
 
-@adapter("ncp", {"ncp": (1, [PUR, REF])})
+@adapter("ncp", {"ncp": (1, [PUR, REF]), "ncp.moldia": (1, [PUR, REF])})
 def _ncp(a, ref):
-    return {"ncp": sam.ncp(a, ref).get("ncp", np.nan)}
+    return {"ncp": sam.ncp(a, ref).get("ncp", np.nan),
+            "ncp.moldia": sam.ncp(a, ref, score="moldia").get("ncp", np.nan)}
 
 
 @adapter("neighbor_contamination", {"neighbor_contamination": (-1, [L, PUR, SP])})
@@ -242,8 +247,8 @@ def _cal(a, ref):
     Xq = np.asarray(Xq.todense()) if hasattr(Xq, "todense") else np.asarray(Xq)
     clf = LogisticRegression(max_iter=500, C=0.3).fit(_lognorm(Xr), ref.obs["cell_type"])
     y = a.obs["truth"].astype(str).to_numpy()
-    ece = (sam.calibration_error(clf.predict_proba(_lognorm(Xq)), clf.classes_, y) if set(y) <= set(clf.classes_)
-           else {})                                  # renamed-vocabulary edge cases: truth names not the classes
+    ece = (sam.calibration_error(clf.predict_proba(_lognorm(Xq)), clf.classes_, y)
+           if set(y) <= {str(c) for c in clf.classes_} else {})
     rng = np.random.default_rng(0)
     depth = rng.choice(np.maximum(Xq.sum(1), 1), len(Xr))[:, None]
     Xm = rng.binomial(Xr.astype(int), np.clip(depth / np.maximum(Xr.sum(1, keepdims=True), 1), 0, 1))
@@ -509,7 +514,7 @@ def deconv_check(seeds):
         for s in [0, 0.1, 0.25, 0.5, 1.0]:
             r = sam.deconvolution_metrics(true_prop=T, pred_prop=(1 - s) * T + s * noise)
             rows.append(dict(seed=seed, noise=s, r2=r["r2"], jsd=r["jsd"], rmse=r["rmse"], aupr=r["aupr"],
-                             ssim=r["ssim"]))
+                             aupr_precrec=r["aupr_precrec"], ssim=r["ssim"]))
     return pd.DataFrame(rows)
 
 
@@ -589,7 +594,14 @@ EDGES = ["one_label", "singleton_type", "two_types", "empty_marker_set", "marker
 def _edge_task(args):
     name, adapters = args
     a = _edge(name)
-    vals, _, warned, errs = run_adapters(a, sim.reference(0), adapters)
+    ref = sim.reference(0)
+    if name == "integer_labels":
+        code = {t: i for i, t in enumerate(sim.TYPES)}
+        ref.obs["cell_type"] = [code[x] for x in ref.obs["cell_type"]]
+    elif name == "unicode_labels":
+        ren = {t: f"{t} (cellule é+)" for t in sim.TYPES}
+        ref.obs["cell_type"] = [ren[x] for x in ref.obs["cell_type"]]
+    vals, _, warned, errs = run_adapters(a, ref, adapters)
     return name, vals, errs, [(f"edge:{name}", *w) for w in warned]
 
 

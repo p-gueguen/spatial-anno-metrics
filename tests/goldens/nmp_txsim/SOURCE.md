@@ -107,8 +107,11 @@ matches it: overall, the 6 `per_celltype` and 22 `per_gene` values and the 20 st
 tolerance 1e-12; it fails when the 0.5 % cut is halved or multiplied by 20, or the per-pair clip is dropped,
 but not at x2: no pair here sits between 0.5 % and 1 %, so `test_nmp_salas_share_cut_is_strict` pins the cut). Its
 scaling draws its own 20 permutations (seed 0), so `b` differs from the stored ones: 0.833789 / 0.834392,
-scaled 1.0000 / 0.9838, the same to 4 decimals as `scaled_overall`. The Moldia reads criterion is not
-implemented. The v0.6.0 score below is `score="raw"`; its values are unchanged.
+scaled 1.0000 / 0.9838, the same to 4 decimals as `scaled_overall`. `nmp(score="moldia")` reproduces the Moldia
+relative-to-mean reads criterion (`test_nmp_moldia_matches_xenium_benchmarking_reads`), and `nmp(score="cells")`
+reproduces the cell-fraction variant `txsim_cells` / `moldia_seg_cells` and its 20 stored permutations
+(`test_nmp_cells_matches_txsim_cells_golden`), both at tolerance 1e-12. The v0.6.0 score below is `score="raw"`;
+its values are unchanged.
 
 Ours = `spatial_anno_metrics.nmp` at `f71512f` (v0.6.0), called as a user would: the full 102-gene section
 and the reference, labels in `obs['cell_type']`. A gene is a negative for type `t` when it is detected in

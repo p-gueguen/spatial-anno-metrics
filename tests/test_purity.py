@@ -398,10 +398,68 @@ def test_nmp_salas_matches_txsim_reads(section):
     assert "sam_nmp" not in sec.obs                        # a per-section score: no per-cell column
 
 
-def test_nmp_salas_positive_control_moldia_criterion_differs():
-    """The comparison can fail: Moldia's (older) relative-to-mean criterion gives a different number."""
-    exp = _expected("nmp_txsim")["clean"]
+@pytest.mark.parametrize("section", ["clean", "spillover"])
+def test_nmp_moldia_matches_xenium_benchmarking_reads(section):
+    """score='moldia' reproduces Moldia Xenium_benchmarking's relative-to-mean reads NMP to 1e-12."""
+    from spatial_anno_metrics import purity as p
+
+    exp = _expected("nmp_txsim")[section]
+    sec = _golden_adata("nmp_txsim", f"section_{section}.npz")
+    ref = _golden_adata("nmp_txsim", "reference.npz")
+    out = p.nmp(sec, ref, score="moldia")
+    assert out["status"] == "ok" and out["score"] == "moldia"
+    assert out["nmp_unscaled"] == pytest.approx(exp["moldia_seg_reads"]["overall"], abs=1e-12)
     assert abs(exp["txsim_reads"]["overall"] - exp["moldia_seg_reads"]["overall"]) > 1e-4
+
+
+@pytest.mark.parametrize("section", ["clean", "spillover"])
+def test_nmp_cells_matches_txsim_cells_golden(section):
+    """score='cells' reproduces txsim / Moldia negative_marker_purity_cells and its 20 stored permutations."""
+    from spatial_anno_metrics import purity as p
+
+    exp = _expected("nmp_txsim")[section]
+    sec = _golden_adata("nmp_txsim", f"section_{section}.npz")
+    ref = _golden_adata("nmp_txsim", "reference.npz")
+    out = p.nmp(sec, ref, score="cells")
+    assert out["status"] == "ok" and out["score"] == "cells"
+    assert out["nmp_unscaled"] == pytest.approx(exp["txsim_cells"]["overall"], abs=1e-12)
+    assert out["nmp_unscaled"] == pytest.approx(exp["moldia_seg_cells"]["overall"], abs=1e-12)
+    with np.load(GOLDENS / "nmp_txsim" / "label_permutations.npz") as z:
+        perms = z[section]
+    r = p._nmp_salas_reads(sec.X, sec.obs["cell_type"].to_numpy(), list(sec.var_names), ref.X,
+                           ref.obs["cell_type"].to_numpy(), list(ref.var_names), perms, criterion="cells")
+    np.testing.assert_allclose(r["permuted"], exp["txsim_cells_permuted"]["values"], rtol=0, atol=1e-12)
+    b = float(np.mean(r["permuted"]))
+    assert b == pytest.approx(exp["txsim_cells_permuted"]["mean"], abs=1e-12)
+    assert (r["nmp"] - b) / (1.0 - b) == pytest.approx(exp["txsim_cells_permuted"]["scaled_overall"], abs=1e-12)
+
+
+@pytest.mark.parametrize("section", ["clean", "spillover"])
+def test_ncp_moldia_matches_xenium_benchmarking_golden(section):
+    """ncp(..., score='moldia') reproduces Moldia negative_marker_purity_coexpression to 1e-12."""
+    from scipy import sparse
+
+    from spatial_anno_metrics import purity as p
+
+    exp = _expected("coexpr_txsim")[section]["moldia_ncp"]
+    sec = _golden_adata("coexpr_txsim", f"section_{section}.npz")
+    ref = _golden_adata("coexpr_txsim", "reference.npz")
+    out = p.ncp(sec, ref, score="moldia")
+    assert out["status"] == "ok" and out["score"] == "moldia"
+    assert out["ncp"] == pytest.approx(exp["overall"], abs=1e-12)
+    assert out["n_negative_pairs"] == exp["n_negative_pairs"]
+    assert set(out["per_gene_as_conditioning"]) == set(exp["per_gene_as_conditioning"])
+    for g, v in exp["per_gene_as_conditioning"].items():
+        assert out["per_gene_as_conditioning"][g] == pytest.approx(v, abs=1e-12), g
+    assert set(out["per_gene_as_target"]) == set(exp["per_gene_as_target"])
+    for g, v in exp["per_gene_as_target"].items():
+        assert out["per_gene_as_target"][g] == pytest.approx(v, abs=1e-12), g
+    # Sparse CSR input matches dense exactly
+    sec_s, ref_s = sec.copy(), ref.copy()
+    sec_s.X, ref_s.X = sparse.csr_matrix(sec_s.X), sparse.csr_matrix(ref_s.X)
+    assert p.ncp(sec_s, ref_s, score="moldia")["ncp"] == pytest.approx(out["ncp"], abs=1e-12)
+    with pytest.raises(ValueError, match="score"):
+        p.ncp(sec, ref, score="bad")
 
 
 def test_nmp_salas_skips_with_fewer_than_two_eligible_types():
@@ -521,7 +579,20 @@ def test_sparse_and_dense_inputs_agree():
         assert fn(a, MARKERS) == fn(s, MARKERS)
     assert p.pmp(a, MARKERS)["mean_pmp"] == p.pmp(s, MARKERS)["mean_pmp"]
     ref = _section(0.0, seed=8)
-    assert p.ncp(a, ref) == p.ncp(s, ref)
+    s_ref = ref.copy()
+    s_ref.X = sparse.csr_matrix(s_ref.X)
+    assert p.ncp(a, ref) == p.ncp(s, s_ref)
+    for by_type in (False, True):
+        kw = {"label_key": "cell_type", "ref_label_key": "cell_type"} if by_type else {}
+        da = p.coexpression_similarity(a, ref, **kw)
+        sa = p.coexpression_similarity(s, s_ref, **kw)
+        assert sparse.issparse(p._lognorm_cols(s.X, [0, 1, 2]))
+        assert sa["coexpression_similarity"] == pytest.approx(da["coexpression_similarity"], abs=1e-12)
+        for g in da["per_gene"]:
+            assert sa["per_gene"][g] == pytest.approx(da["per_gene"][g], abs=1e-12, nan_ok=True)
+        if by_type:
+            for t in da["per_type"]:
+                assert sa["per_type"][t] == pytest.approx(da["per_type"][t], abs=1e-12, nan_ok=True)
 
 
 def test_ncp_matches_a_pair_loop():

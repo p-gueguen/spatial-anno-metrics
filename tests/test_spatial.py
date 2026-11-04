@@ -479,6 +479,7 @@ def _two_block_probe(spill: bool, seed=0, n_rows=20, coexpr_border=37.0):
     a.var_names = ["a", "b", "bg"]
     a.obs_names = [f"c{k}" for k in range(n)]
     a.obs["cell_type"] = np.where(is_a, "A", "B")
+    a.obsm["spatial"] = np.array(cells, dtype=float)
     a.obsp["spatial_connectivities"] = csr_matrix((np.ones(2 * len(i)), (i + j, j + i)), shape=(n, n))
     return a
 
@@ -514,3 +515,40 @@ def test_contamination_p_value_is_one_sided():
     far, near = rng.normal(0.03, 0.005, 100), rng.normal(0.01, 0.005, 20)
     assert _perm_p(near, far, 199, np.random.default_rng(0)) > 0.9
     assert _perm_p(far[:20], near, 199, np.random.default_rng(0)) == pytest.approx(1 / 200)
+
+
+def test_neighbor_contamination_split_and_cellspa_distance_readouts():
+    """Roadmap #19 follow-ups: SPLIT (contaminant share vs source neighbour share) and CellSPA (contaminant
+    share vs distance to nearest source cell) separate boundary spillover from uniform co-expression."""
+    from spatial_anno_metrics import spatial as sp
+
+    ms = {"A": ["a"], "B": ["b"]}
+    sp_ = sp.neighbor_contamination(_two_block_probe(spill=True), ms, n_perm=99, seed=0)
+    co = sp.neighbor_contamination(_two_block_probe(spill=False, coexpr_border=34.0), ms, n_perm=99, seed=0)
+
+    # SPLIT readout: under boundary spillover from B into A, contaminant share rises with B's neighbour share
+    assert sp_["split_slope"].loc["B", "A"] > 0.10
+    assert sp_["split_corr"].loc["B", "A"] > 0.80
+    assert abs(co["split_slope"].loc["B", "A"]) < 0.02
+    assert abs(co["split_corr"].loc["B", "A"]) < 0.15
+
+    # CellSPA distance readout: under spillover, B marker share in A cells decays with distance from B
+    assert sp_["distance_corr"].loc["B", "A"] < -0.20
+    assert abs(co["distance_corr"].loc["B", "A"]) < 0.15
+    curve = sp_["distance_curve"]
+    ba = curve[(curve["source"] == "B") & (curve["target"] == "A")].sort_values("bin")
+    assert len(ba) == 4 and int(ba["n_cells"].sum()) == 200
+    assert ba.iloc[0]["mean_contamination"] > ba.iloc[-1]["mean_contamination"] + 0.005
+
+
+def test_spatial_metrics_skip_when_no_coordinates_or_graph():
+    """Without obsm['spatial'] or obsp['spatial_connectivities'], all three spatial label metrics skip cleanly."""
+    from spatial_anno_metrics import spatial as sp
+
+    a = _blocks(n_side=6)
+    del a.obsm["spatial"]
+    a.X = np.ones((a.n_obs, 3), dtype="float32")
+    a.var_names = ["g0", "g1", "g2"]
+    for out in (sp.spatial_coherence(a), sp.neighborhood_sanity(a),
+                sp.neighbor_contamination(a, {"A": ["g0"], "B": ["g1"]})):
+        assert out["status"] == "skipped" and "spatial" in out["reason"]

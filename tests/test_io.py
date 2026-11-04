@@ -21,3 +21,17 @@ def test_from_spatialdata_returns_the_table_itself():
     assert a is sdata.tables["cells"]                  # obs columns the metrics write land in the SpatialData
     with pytest.raises(KeyError, match="'table'.*cells"):
         io.from_spatialdata(sdata)                     # default key absent: name what is there
+
+
+def test_segtraq_covariates_passthrough_and_summary():
+    from spatial_anno_metrics import io
+
+    t = anndata.AnnData(X=np.ones((4, 2), dtype="float32"), obs=pd.DataFrame(index=["a", "b", "c", "d"]))
+    assert io.segtraq_covariates(t)["status"] == "skipped"
+    t.obs["border_admixture_score"] = [0.1, 0.2, 0.3, np.nan]
+    t.obs["similarity_top_bottom"] = [0.9, 0.8, 0.7, 0.6]
+    out = io.segtraq_covariates(t)
+    assert out["status"] == "ok" and out["columns"] == ["border_admixture_score", "similarity_top_bottom"]
+    assert out["summary"]["border_admixture_score"]["mean"] == pytest.approx(0.2)
+    assert out["summary"]["border_admixture_score"]["n_defined"] == 3
+    assert out["summary"]["similarity_top_bottom"]["median"] == pytest.approx(0.75)

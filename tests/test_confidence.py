@@ -146,3 +146,28 @@ def test_label_stability_hands_the_labeller_a_slim_object_not_a_full_copy():
     assert seen[0][0] == ["counts", "lognorm"]                      # the baseline call gets the caller's object
     assert seen[1] == (["counts"], True, "x", ["cell_type"]) and seen[2][0] == ["counts"]
     assert "scribble" not in a.obs and layers(a) == ["counts", "lognorm"]
+
+
+def test_confidence_and_stability_preserve_sparse_counts():
+    """CSR count matrices stay sparse in per_cell_confidence and label_stability (no dense cells x genes copy)."""
+    import scipy.sparse as sp
+
+    from spatial_anno_metrics import confidence as cf
+
+    a = _section(n=60, seed=6)
+    s = a.copy()
+    s.X = sp.csr_matrix(s.X)
+    s.layers["counts"] = sp.csr_matrix(s.layers["counts"])
+    d_conf = cf.per_cell_confidence(a, MARKERS)
+    s_conf = cf.per_cell_confidence(s, MARKERS)
+    assert s_conf["mean_margin"] == pytest.approx(d_conf["mean_margin"], abs=1e-6)
+    assert s_conf["mean_entropy"] == pytest.approx(d_conf["mean_entropy"], abs=1e-6)
+
+    sparse_flags = []
+
+    def labeller(x):
+        sparse_flags.append(sp.issparse(x.X) and sp.issparse(x.layers["counts"]))
+        return _marker_argmax(x)
+
+    out = cf.label_stability(s, labeller, drop_frac=0.2, reps=3, seed=1)
+    assert out["status"] == "ok" and all(sparse_flags) and len(sparse_flags) == 4

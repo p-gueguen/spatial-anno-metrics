@@ -1,0 +1,5 @@
+# Keep golden fixtures and OBO test ontologies byte-identical across OSes
+# (prevent git core.autocrlf from rewriting LF -> CRLF and breaking sha256 checks).
+tests/goldens/** -text
+tests/data/*.obo -text
+

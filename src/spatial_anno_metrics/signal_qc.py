@@ -196,12 +196,16 @@ def moran_signal(adata, n_neighs: int = _thr("signal_qc", "moran_n_neighs"), gen
     if method == "squidpy":
         sq = _squidpy()
         if "spatial_connectivities" not in adata.obsp:
+            if "spatial" not in adata.obsm:
+                return skip("no obsm['spatial'] or obsp['spatial_connectivities']")
             sq.gr.spatial_neighbors(adata, coord_type="generic", n_neighs=n_neighs)
         sq.gr.spatial_autocorr(adata, mode="moran", genes=list(names[use]), n_perms=n_perms, seed=seed,
                                layer=None if matrix == "X" else layer)
         per = adata.uns["moranI"]["I"].reindex(names).astype(float)
         ctrl = ~gene
     else:
+        if "spatial" not in adata.obsm:
+            return skip("no obsm['spatial']")
         ctrl = _control_mask(adata, probes_only=True)
         X, xy = _csr(mat), np.asarray(adata.obsm["spatial"], dtype=float)[:, :2]
         per = pd.Series(np.nan, index=names)

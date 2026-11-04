@@ -1,9 +1,16 @@
 """Shared fixtures: well-separated labelled blobs and a label shuffler, as factories so a test picks the size."""
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
+
+_SRC = str(Path(__file__).resolve().parents[1] / "src")
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
 
 def _blobs(n_per=80, k=4, dim=10, sep=8.0, seed=0):

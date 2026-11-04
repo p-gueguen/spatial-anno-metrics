@@ -1,5 +1,9 @@
 """Sphinx configuration for the spatial-anno-metrics docs (ReadTheDocs builds it from .readthedocs.yaml)."""
+import sys
 from importlib.metadata import version as _version
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 project = "spatial-anno-metrics"
 author = "Paul Gueguen"

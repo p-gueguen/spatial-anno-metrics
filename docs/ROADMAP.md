@@ -28,34 +28,9 @@ QC (SpatialQM), conformal (scConform), `neighbor_contamination` and decompositio
 |---|---|---|---|
 | 5 | **AQI validation and tuning** | Tracked outside this repo. | - |
 | 8d | **ISC regime calls** are still wrong in 3 of 4 synthetic cases: merge reads `consistent`, 20 % label noise `split` (13/18 labels), a batch effect `split` (18/18); only over-split is right. | Flagged, not fixed: results carry `regime_status="experimental"`. The headline ISCG/ISCL now match scTypeEval (#7), so the calls, not the scores, are the problem; they need real multi-sample data with a known answer before they can be trusted. | `isc.py:231-237` (Notes, with the numbers); `tests/test_isc.py::test_regime_calls_flagged_experimental`; `benchmarks/synthetic/results/check_isc_regimes.csv` |
-| 15 | **Dense-matrix hotspots** (remainder) | Three call sites still densify cells x genes: `label_stability` thins a dense float32 copy per rep (making it sparse changes the RNG stream and what `annotate_fn` receives); `coexpression_similarity` densifies cells x shared genes; `conformal_novelty` densifies both inputs. `_embedding` densifies only on scikit-learn < 1.4. | `confidence.py:94`; `purity.py:605-606` (`ponytail:` note); `conformal.py:315-316`; `_utils.py:47` |
-| 19 | **`neighbor_contamination` follow-ups** | The baseline, excess and permutation p shipped. Left: the SPLIT readout (secondary signal vs the source's share of neighbours) and CellSPA's negative-marker-vs-distance curve. The p is optimistic on real data (Xenium breast: 75 of 100 source-target pairs at p <= 0.01), so the docs say to read the excess. | `tests/test_spatial.py::test_neighbor_contamination_baseline_separates_spillover_from_coexpression` (spillover excess 0.040, p 0.001; co-expression excess 0.004, p 0.19) |
-| §8 | **Two catalog §8 rules not yet written** | (a) Internal separability mostly measures dataset difficulty: dataset identity explained ~84 % of annotation-kappa variance vs ~4 % for the tool ([10.64898/2026.08.28.747622](https://doi.org/10.64898/2026.08.28.747622), preprint; figures to re-check before quoting). (b) ISC 0.74 / 0.45 rests on one preprint with no independent 2024-26 replication: said in the `inter_sample_consistency` docstring, not in §8. | `docs/cell-annotation-quality-metrics.md` §8 (no hit for `747622` or "difficulty"); `isc.py:237` |
 
-### Small gaps found while checking 0.7.0
+## P2 - later (external PRs & publication)
 
-- **Parity not checked against the original code**: deconvolution SSIM is tested against the paper's formula
-  only (running Li et al.'s `GenesMetrics.py` was blocked); AUPR against sklearn average precision, not
-  Spotless's `precrec`; NMP against txsim, not Moldia's older reads criterion.
-- **Test mutants that survive**: dropping the 25 % `weak` confusion cut in `panel_resolvability` (needs a type
-  with adjusted F1 >= 0.8 and confused fraction 0.25-0.30; none stable found in 72 configurations); the
-  ECE bin-edge side in `calibration_error` (no value lands on an edge in the tests).
-- **Untested on real data**: `consensus_entropy` (no multi-annotator section yet); `ontology_consistency` is
-  an own statistic (`is_a` path, Spearman, Mantel), not compared with scGraph-OntoRWR.
-- `tests/goldens/signalqc_spatialqm/cells.csv` is pinned by sha256 but has no `.gitattributes` `-text`
-  entry, so a CRLF checkout would fail that golden.
-
-## P2 - later (deferred)
-
-- **Real-data perturbation harness** (T1-T9 on real sections: label noise, over-partitioning, merge, type swap,
-  contamination injection, segmentation dilation, transcript dropout, coordinate shuffle, nuisance), scored
-  by monotonicity, minimum detectable perturbation and constant-fit - the ISC benchmark's design (catalog §7).
-  The synthetic half exists (`benchmarks/synthetic`, rerun for 0.7.0).
-- **Threshold provenance, remainder**: `THRESHOLDS` (every constant with source and `provisional`) shipped;
-  echoing the thresholds used into every result (only ISC does) and reporting noise-equivalent values are not
-  done.
-- **Transcript-level admixture** (SegTraQ border admixture / z-layer overlap, cellAdmix, ovrlpy) as per-cell
-  covariates: take them from SegTraQ on the SpatialData table (`from_spatialdata`) rather than re-implement.
 - **OpenProblems contribution**: PMP / MECR / CRISP to `task_ist_preprocessing`; `task_label_projection` has no
   calibration metric, an open slot for `calibration_error` / `conformal_novelty`.
 - **Publication**: JOSS needs 6 months of public history (repo created 2026-07-08, so not before ~Jan 2027),
@@ -67,18 +42,32 @@ QC (SpatialQM), conformal (scConform), `neighbor_contamination` and decompositio
 
 Details, with the `old -> new` call for every breaking change, are in [CHANGELOG.md](../CHANGELOG.md).
 
-- **P0**: #1 NMP (Salas score by default, txsim golden; raw score NaN for unscorable types;
-  `coexpression_similarity`), #2 PAS to Shang & Zhou 2022 + CHAOS, #3 `internal_validity` at 1e5+ cells
-  (1.64e5 cells: 2,951 s / 211 GB -> 20 s / 0.74 GB), #4 ISCL classifier genes (`rcm_genes`) and `integrated`
-  documented and golden-tested, #6 docstring, #7 goldens (clusim, OpenProblems, scTypeEval, SpatialQM, txsim),
-  #8 single-control test gaps, #9 LCA-depth hierarchical credit, #10 attributions (CRISP = Rose et al. 2026,
-  Mitchel et al. *Nat Genet* 2026).
-- **P0b**: 8a label validation, 8b non-count input, 8c dictionary coverage (`no_dict_frac`), 8e CRISP / MECR
-  null, 8f spatial-metric docs, 8g SNR without the eps floor, 8h chance-corrected panel tiers.
+- **P0**: #1 NMP (Salas score by default, txsim golden; `score="moldia"` matched to Moldia `Xenium_benchmarking`
+  reads golden; `score="cells"` matched to `txsim_cells` / `moldia_seg_cells` golden and its 20 permutations; raw
+  score NaN for unscorable types; `coexpression_similarity`; `ncp(score="moldia")` matched to Moldia
+  `negative_marker_purity_coexpression` golden), #2 PAS to Shang & Zhou 2022 + CHAOS,
+  #3 `internal_validity` at 1e5+ cells (1.64e5 cells: 2,951 s / 211 GB -> 20 s / 0.74 GB), #4 ISCL classifier genes
+  (`rcm_genes`) and `integrated` documented and golden-tested, #6 docstring, #7 goldens (clusim, OpenProblems +
+  QuKunLab `GenesMetrics.py` SSIM + Spotless `precrec` Davis-Goadrich PR AUC, scTypeEval, SpatialQM, txsim + Moldia),
+  #8 single-control test gaps (including the 25 % `weak` confusion cut in `panel_resolvability` and ECE bin-edge side
+  in `calibration_error`), #9 LCA-depth hierarchical credit, #10 attributions (CRISP = Rose et al. 2026, Mitchel et
+  al. *Nat Genet* 2026).
+- **P0b**: 8a label validation, 8b non-count input + NaN/Inf rejection in `get_counts`, 8c dictionary coverage
+  (`no_dict_frac`), 8e CRISP / MECR null, 8f spatial-metric docs, 8g SNR without the eps floor, 8h chance-corrected
+  panel tiers, `thresholds.thresholds_for(module, **overrides)` helper.
 - **P1**: #12 docs site (Sphinx + myst-nb, ReadTheDocs, numpydoc enforced by ruff `D`), #13 Xenium breast
-  tutorial (167,780 cells, 86 s), #14 API consistency, #15 sparse paths (except the remainder above), #16 release
-  hygiene (except the Zenodo DOI, moved to #11), #17 `from_spatialdata`, #19 contamination baseline, #20
-  conformal novelty, #21 decomposition purity + SpatialQM TPC / FTC / FDR, #22 consensus entropy, #23 isolated
-  labels + cLISI, #24 ECE / CovGap / clustered Mondrian, #25 ontology consistency, #26 deconvolution AUPR / SSIM
-  / rank score, #27 spARI.
-- **Catalog §8**: the label-trained-embedding circularity rule (and `embedding_label_trained=True`).
+  tutorial (167,780 cells, 86 s), #14 API consistency (including `skip` instead of `KeyError` when spatial metrics
+  run without `obsm['spatial']` or `obsp`), #15 sparse paths across all count and feature metrics (including
+  `coexpression_similarity`, `conformal_novelty`, `per_cell_confidence` and `label_stability`), #16 release
+  hygiene (including `.gitattributes` locking golden and `.obo` line endings; except the Zenodo DOI, moved to #11),
+  #17 `from_spatialdata` + `io.segtraq_covariates` passthrough/summary for SegTraQ transcript-level admixture
+  columns, #19 contamination baseline + SPLIT (`split_slope`, `split_corr`) and CellSPA (`distance_corr`,
+  `distance_curve`) readouts, #20 conformal novelty, #21 decomposition purity + SpatialQM TPC / FTC / FDR,
+  #22 consensus entropy (tested on Yerly 2022 BCC annotations), #23 isolated labels + cLISI, #24 ECE / CovGap /
+  clustered Mondrian + real-data perturbation harness (`benchmarks/real_perturbation.py` on Yerly 2022 BCC and Xenium
+  breast crop) + 5-seed synthetic sweep (`benchmarks/synthetic/sweep.py`), #25 ontology consistency (`distance="path"`
+  and `distance="rwr"` Random Walk with Restart after `scGraph-OntoRWR`, tested on Yerly 2022 BCC data),
+  #26 deconvolution AUPR (`aupr_method="sklearn" | "precrec"` + `aupr_precrec`) / SSIM / rank score, #27 spARI.
+- **Catalog §8**: the label-trained-embedding circularity rule (and `embedding_label_trained=True`), the
+  dataset-difficulty variance rule (Wardhana, Zeng & Lu 2026), and the single-preprint caveat on the ISC 0.74 / 0.45
+  guide thresholds.

@@ -70,3 +70,54 @@ def test_consensus_input_checks():
         consensus_entropy(_adata([["X", "Y"]]), ["a0", "a1"], hierarchy={"X": "Y", "Y": "X"})
     with pytest.raises(ValueError, match="min_share"):
         consensus_entropy(_adata([["X", "Y"]]), ["a0", "a1"], min_share=0.4)
+
+
+def test_consensus_entropy_on_yerly2022_bcc_real_annotations():
+    """Real multi-annotator table on Yerly et al. 2022 human BCC (2,620 cells): author annotation, the
+    benchmark's over-split annotation (Fibroblast.Nspl2, Tcell.Nspl2), and a coarse lineage annotator.
+    Flat majority leaves every over-split cell without consensus (3 distinct strings); ontology-path voting
+    resolves them to their parent type (Tcell, Fibroblast) with zero ontology entropy at the parent depth."""
+    from pathlib import Path
+
+    from spatial_anno_metrics.consensus import consensus_entropy
+
+    obs = pd.read_csv(Path(__file__).parent / "goldens" / "isc_yerly2022" / "obs.csv")
+    obs.index = obs["cell_id"].astype(str)
+    coarse_map = {
+        "Tcell": "Lymphoid", "Bcell": "Lymphoid", "PlasmaCell": "Lymphoid",
+        "MoMacDC": "Myeloid", "Mast": "Myeloid",
+        "Fibroblast": "Stromal", "Endothelial": "Stromal",
+        "Normal_Kerat": "Epithelial", "Melanocyte": "Melanocytic",
+    }
+    obs["annotation_coarse"] = obs["annotation"].map(coarse_map)
+    hierarchy = {
+        "Tcell.Nspl2": "Tcell",
+        "Fibroblast.Nspl2": "Fibroblast",
+        **coarse_map,
+    }
+    a = anndata.AnnData(X=np.zeros((len(obs), 1), dtype="float32"), obs=obs)
+    cols = ["annotation", "annotation_oversplit", "annotation_coarse"]
+
+    flat = consensus_entropy(a, cols)
+    hier = consensus_entropy(a, cols, hierarchy=hierarchy)
+    assert flat["status"] == "ok" and hier["status"] == "ok"
+
+    # Under flat voting, every cell where annotation_oversplit != annotation has 3 distinct strings -> no consensus
+    split_mask = (obs["annotation"] != obs["annotation_oversplit"]).to_numpy()
+    assert split_mask.sum() == 350                               # 7 patients x (25 Tcell + 25 Fibroblast)
+    assert flat["summary"]["pct_no_consensus"] == pytest.approx(split_mask.mean())
+    assert all(c is None for c, m in zip(flat["consensus"], split_mask) if m)
+
+    # With the hierarchy, Tcell + Tcell.Nspl2 both vote for Tcell (2/3 majority) and all 3 vote for the root
+    h23 = -(2 / 3 * np.log(2 / 3) + 1 / 3 * np.log(1 / 3)) / np.log(3)
+    assert hier["summary"]["pct_no_consensus"] == 0.0
+    assert hier["summary"]["mean_ontology_entropy"] < hier["summary"]["mean_entropy"]
+    assert hier["summary"]["mean_ontology_entropy"] == pytest.approx(h23)
+    for i in np.flatnonzero(split_mask):
+        assert hier["consensus"][i] == obs["annotation"].iloc[i]
+        assert hier["consensus_share"][i] == pytest.approx(2 / 3)
+        assert flat["entropy"][i] == pytest.approx(1.0)
+        assert hier["ontology_entropy"][i] == pytest.approx(h23)
+    for i in np.flatnonzero(~split_mask):
+        assert hier["consensus"][i] == obs["annotation"].iloc[i]
+        assert hier["ontology_entropy"][i] == pytest.approx(h23)

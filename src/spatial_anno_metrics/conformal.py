@@ -312,21 +312,42 @@ def conformal_novelty(X_query, X_ref, *, method: str = "pca", fdr: float = _thr(
     """
     if method not in ("pca", "iforest"):
         raise ValueError(f"method must be 'pca' or 'iforest', got {method!r}")
-    Xq = np.asarray(_dense(X_query), dtype=float)
-    Xr = np.asarray(_dense(X_ref), dtype=float)
+    import scipy.sparse as sp
+
+    from ._validate import _all_finite
+
+    if not (_all_finite(X_query) and _all_finite(X_ref)):
+        raise ValueError("X_query and X_ref must be finite (no NaN or infinite values)")
+    Xq = X_query.tocsr().astype(float) if sp.issparse(X_query) else np.asarray(X_query, dtype=float)
+    Xr = X_ref.tocsr().astype(float) if sp.issparse(X_ref) else np.asarray(X_ref, dtype=float)
     if Xq.shape[1] != Xr.shape[1]:
         raise ValueError(f"X_query has {Xq.shape[1]} features, X_ref {Xr.shape[1]}: use the same features")
-    perm = np.random.default_rng(seed).permutation(len(Xr))
-    n_tr = int(round(frac_train * len(Xr)))
+    n_ref = Xr.shape[0]
+    perm = np.random.default_rng(seed).permutation(n_ref)
+    n_tr = int(round(frac_train * n_ref))
     tr, cal = Xr[perm[:n_tr]], Xr[perm[n_tr:]]
-    if len(tr) < 2 or len(cal) < 1:
-        return skip(f"{len(Xr)} reference cells: need >= 2 to fit the score and >= 1 to calibrate it")
+    n_train, n_cal = tr.shape[0], cal.shape[0]
+    if n_train < 2 or n_cal < 1:
+        return skip(f"{n_ref} reference cells: need >= 2 to fit the score and >= 1 to calibrate it")
     if method == "pca":
         from sklearn.decomposition import PCA
 
-        pca = PCA(n_components=max(1, min(n_components, len(tr) - 1, Xr.shape[1])), random_state=seed).fit(tr)
+        k = max(1, min(n_components, n_train - 1, Xr.shape[1]))
+        if sp.issparse(tr) and k < min(tr.shape):
+            pca = PCA(n_components=k, svd_solver="arpack", random_state=seed).fit(tr)
+        else:
+            pca = PCA(n_components=k, random_state=seed).fit(_dense(tr) if sp.issparse(tr) else tr)
+        mu = np.asarray(pca.mean_, dtype=float)
+        vt = np.asarray(pca.components_, dtype=float).T
+        mu_vt = mu @ vt
+        mu_sq = float(np.dot(mu, mu))
 
         def score(X):
+            if sp.issparse(X):
+                row_sq = np.asarray(X.multiply(X).sum(axis=1), dtype=float).ravel()
+                x_mu = np.asarray(X @ mu, dtype=float).ravel()
+                z = np.asarray(X @ vt, dtype=float) - mu_vt
+                return np.maximum(0.0, row_sq - 2.0 * x_mu + mu_sq - (z ** 2).sum(axis=1))
             return ((X - pca.inverse_transform(pca.transform(X))) ** 2).sum(1)
     else:
         from sklearn.ensemble import IsolationForest
@@ -341,5 +362,5 @@ def conformal_novelty(X_query, X_ref, *, method: str = "pca", fdr: float = _thr(
     novel = q <= fdr
     return {"status": "ok", "pvalues": p, "qvalues": q, "novel": novel, "score": s_q,
             "summary": {"n_novel": int(novel.sum()), "frac_novel": float(novel.mean()) if len(novel) else float("nan"),
-                        "fdr": fdr, "method": method, "n_train": int(len(tr)), "n_calibration": int(len(cal)),
-                        "min_attainable_p": 1.0 / (len(cal) + 1)}}
+                        "fdr": fdr, "method": method, "n_train": int(n_train), "n_calibration": int(n_cal),
+                        "min_attainable_p": 1.0 / (n_cal + 1)}}

@@ -54,3 +54,10 @@ def test_signalqc_spatialqm_golden_ties_expected_to_inputs():
     e = json.loads((HERE / "expected.json").read_text())
     assert e["meta"]["input"]["sha256"] == {f: _sha256(f) for f in FIXTURES}   # computed from these bytes
     assert _sha256("expected.json") == EXPECTED_SHA256                         # and not edited since
+
+
+def test_gitattributes_locks_golden_line_endings():
+    """A CRLF checkout would change the byte sha256 of cells.csv and expected.json."""
+    ga = (HERE.parents[2] / ".gitattributes").read_text()
+    assert "tests/goldens/** -text" in ga
+    assert "tests/data/*.obo -text" in ga

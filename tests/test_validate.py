@@ -119,6 +119,25 @@ def test_get_counts_checks_rows_beyond_the_first():
     assert len(w) == 1
 
 
+def test_get_counts_refuses_nan_or_inf_in_dense_or_sparse_matrix():
+    """NaN or +/-inf in the count matrix raises ValueError immediately instead of leaking into metrics."""
+    import scipy.sparse as sp
+
+    from spatial_anno_metrics._validate import get_counts
+
+    X = np.ones((2000, 3), dtype="float32")
+    X[1234, 1] = np.nan                                              # row 1234 is not in the 1000-row sample
+    a = _adata(X)
+    with pytest.raises(ValueError, match="NaN or infinite"):
+        get_counts(a, layer=None)
+    with pytest.raises(ValueError, match="NaN or infinite"):
+        get_counts(a, layer="counts")
+    a.layers["counts"] = sp.csr_matrix(np.array([[1.0, np.inf], [0.0, 2.0]], dtype="float32")[:a.n_obs]
+                                       if a.n_obs == 2 else X)
+    with pytest.raises(ValueError, match="NaN or infinite"):
+        get_counts(a, layer="counts")
+
+
 def test_layer_is_keyword_only_in_every_public_function():
     import inspect
 

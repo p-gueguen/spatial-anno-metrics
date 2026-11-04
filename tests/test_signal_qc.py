@@ -130,6 +130,8 @@ def test_run_signal_qc_reports_skipped_parts():
     head = sq.run_signal_qc(a)                                     # no cell_area, no coordinates
     assert head["tx_per_area"]["status"] == "skipped" and head["moran"]["status"] == "skipped"
     assert head["sparsity"]["status"] == "ok"
+    for method in ("squidpy", "spatialqm"):
+        assert sq.moran_signal(a, method=method)["status"] == "skipped"
 
 
 def test_signal_qc_refuses_log_X_without_a_counts_layer():

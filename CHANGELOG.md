@@ -112,7 +112,11 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
 
 - `nmp`: the default `score` is now `"salas"`, Salas et al. 2025 negative marker purity as txsim
   `negative_marker_purity_reads` computes it (`nmp`, higher = cleaner, scaled so 0 = the mean of 20 label
-  permutations; writes nothing to `adata`). The 0.6 score is `score="raw"` (`mean_nmp`, lower = cleaner, writes
+  permutations; writes nothing to `adata`). `score="moldia"` computes the older Moldia `Xenium_benchmarking`
+  reads criterion (`x_sc < max_share / n_types`, relative to the mean across types; matched to 1e-12 on the
+  golden), and `score="cells"` computes txsim's cell-based variant (`negative_marker_purity_cells`, with
+  `moldia_cells=True` for Moldia's cell-based variant; matched to 1e-12 on the golden). The 0.6 score is
+  `score="raw"` (`mean_nmp`, lower = cleaner, writes
   `obs['sam_nmp']`); on the golden it reproduces 0.001030 / 0.004628 exactly.
 - `nmp(score="raw")`: cells of a type absent from the reference, of a type with no negative gene, or with no counts
   on the shared genes are NaN, not 0.0; `mean_nmp` is the mean over the defined cells (new `n_defined`), and a
@@ -180,11 +184,12 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   the column name(s) under `key_added`. Frames, per-type dicts and lists stay in the returned dict only, so the
   AnnData still saves to h5ad.
 
-- `from_spatialdata(sdata, table_key="table")` (new module `io`): the AnnData table of a SpatialData object.
-  Needs the optional `spatialdata` package.
-- `THRESHOLDS` (new module `thresholds`): every hard-coded constant (ISC 0.74 / 0.45, panel F1 tiers, kNN sizes,
-  NMP / NCP rules, the PAS threshold, the SNR floor, ...) as `{"value", "source", "provisional"}`. The functions
-  take their defaults from it; the values are unchanged.
+- `from_spatialdata(sdata, table_key="table")` and `segtraq_covariates(adata_or_sdata, table_key="table")`
+  (new module `io`): the AnnData table of a SpatialData object and SegTraQ's transcript-level admixture covariates
+  from `obs`. Needs the optional `spatialdata` package for `SpatialData` inputs.
+- `THRESHOLDS` and `thresholds_for(module, **overrides)` (new module `thresholds`): every hard-coded constant
+  (ISC 0.74 / 0.45, panel F1 tiers, kNN sizes, NMP / NCP rules, the PAS threshold, the SNR floor, ...) as
+  `{"value", "source", "provisional"}`. The functions take their defaults from it; the values are unchanged.
 - `spatial_anno_metrics._hierarchy`, for hierarchy-aware metrics: `ancestors(label, parent_map)` and
   `lca_depth(a, b, parent_map)`.
 - `spatial_anno_metrics._validate`, shared by the metrics: `check_labels`, `get_counts`, `skip` and
@@ -233,11 +238,12 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   10.1038/s41588-024-01993-3): every label votes for itself and its ancestors, the consensus is the deepest label
   with more than `min_share` of the votes; flat `entropy` and `ontology_entropy` (votes projected to the consensus
   depth, so a CD4 / CD8 / T split scores 0), both divided by log(number of annotators). Writes nothing to `adata`.
-- `ontology_consistency(adata, label_key, obo_path, label_to_cl, *, embedding="X_pca", n_perm=999, min_cells=10,
-  seed=0)`: do the label centroids sit in the embedding the way the Cell Ontology relates the labels? Spearman `rho`
-  between centroid distances and `is_a` path lengths over label pairs, a one-sided Mantel permutation `p_value`,
-  per-label leave-one-out `loo_delta` and `most_inconsistent`. The OBO file is read with the standard library. An
-  own statistic, not a port of scGraph-OntoRWR.
+- `ontology_consistency(adata, label_key, obo_path, label_to_cl, *, embedding="X_pca", distance="path",
+  rwr_restart=0.5, n_perm=999, min_cells=10, seed=0)`: do the label centroids sit in the embedding the way the
+  Cell Ontology relates the labels? Spearman `rho` between centroid distances and `is_a` path lengths (`distance="path"`)
+  or Random Walk with Restart stationary L1 distances (`distance="rwr"`, `scGraph-OntoRWR`, Wang et al. *Genome Biol*
+  2025, 10.1186/s13059-025-03781-6) over label pairs, a one-sided Mantel permutation `p_value`, per-label
+  leave-one-out `loo_delta` and `most_inconsistent`. The OBO file is read with the standard library.
 
 **New options and result keys**
 
@@ -258,8 +264,16 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   `neighbor_contamination`; `"delaunay"` is SegTraQ's default graph.
 - `neighbor_contamination`: `baseline`, `n_baseline`, `excess` and `p_value` source x target frames (the same
   share in target cells with no source neighbour, the raw value minus it, and a one-sided permutation p; `n_perm=199`,
-  `seed=0`), which separate spillover from genuine co-expression; it accepts SegTraQ's marker format
-  `{type: {"positive": [...], "negative": [...]}}` (mixable with plain lists).
+  `seed=0`), which separate spillover from genuine co-expression; `split_slope` and `split_corr` frames (Bilous et al.
+  *Nat Methods* 2026 SPLIT readout: regression slope and Pearson correlation of target cells' contaminant share vs
+  the source type's share of their spatial neighbours); `distance_corr` and `distance_curve` (CellSPA readout:
+  Spearman correlation and 4-quantile distance curve of contaminant share vs Euclidean distance to the nearest
+  source cell); and accepts SegTraQ's marker format `{type: {"positive": [...], "negative": [...]}}` (mixable with
+  plain lists).
+- `spatial_coherence`, `neighborhood_sanity`, `neighbor_contamination` and `moran_signal` return `status="skipped"`
+  with a reason instead of raising `KeyError` when `obsm['spatial']` (and any reusable `obsp['spatial_connectivities']`)
+  is missing.
+- `get_counts` and `conformal_novelty` reject matrices containing `NaN` or infinite values with a `ValueError`.
 - `moran_signal(..., method="spatialqm")`: SpatialQM `getMorans` (per group, cells with a count, log-normalised,
   20 nearest neighbours weighted 1/d), reproducing all 341 per-feature values of the Xenium golden to 5.3e-15;
   needs no squidpy and writes nothing. Result keys `n_genes_excluded`, `n_controls_excluded`, `per_feature`,
@@ -267,9 +281,15 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
 - `signal_to_noise(..., method="spatialqm")` (`getMeanSignalRatio` / `getMaxRatio`), keyword-only `eps=`, result
   keys `pooled_mean_signal_ratio`, `n_cells_with_controls`, `frac_cells_with_controls`;
   `detection_entropy(..., method="spatialqm")` (`getEntropy`); `tx_per_area` result key `mean_tx_per_area`.
-- `deconvolution_metrics` result keys `aupr` (presence/absence average precision, Spotless, Sang-aram et al. *eLife*
-  2024) and `ssim` / `ssim_per_type` (per-type SSIM after max-scaling, Li et al. *Nat Methods* 2022; ported from
+- `deconvolution_metrics(..., aupr_method="sklearn" | "precrec")` result keys `aupr` (presence/absence average
+  precision, or Davis & Goadrich 2006 non-linear PR interpolation when `aupr_method="precrec"`), `aupr_precrec`
+  (always reported: Spotless / R `precrec::evalmod` curve area, Sang-aram et al. *eLife* 2024) and `ssim` /
+  `ssim_per_type` (per-type SSIM after max-scaling, Li et al. *Nat Methods* 2022; ported from
   QuKunLab/SpatialBenchmarking, BSD-2-Clause).
+- `ncp(..., score="pairs" | "moldia", moldia_threshold=0.05)`: `score="moldia"` computes Moldia
+  `Xenium_benchmarking`'s `non_coexpression_purity` (`1 - mean(clip(p_B|A - p_B|A^sc, 0, None))` over reference
+  negative pairs `p_B|A^sc < moldia_threshold`) and returns `per_gene_as_conditioning` and `per_gene_as_target`,
+  reproducing `tests/goldens/coexpr_txsim/expected.json` to 1e-12.
 - `hierarchical_accuracy` result keys `credit`, `hierarchical_precision`, `hierarchical_recall`,
   `coarse_call_frac` and `coarse_call_accuracy`.
 - `conformal_prediction_sets(..., class_conditional="clustered", *, n_clusters=None, frac_clustering=None, seed=0)`:
@@ -279,25 +299,25 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   keyword-only `f1_resolvable`, `f1_weak`, `null_adjusted`.
 - `THRESHOLDS` entries for the new defaults: `internal` (`clisi_n_neighbors`, `isolated_f1_cuts_per_label`), `isc`
   (`n_pcs`, `rcm_marker_n`), `purity` (`null_draws`, `nmp_salas_max_share`, `nmp_salas_min_cells`,
-  `nmp_n_permutations`, `coexpr_min_cells`, `coexpr_target_sum`), `spatial` (`contamination_n_perm`), `external`
-  (`spari_alpha`, `spari_max_cells`), `signal_qc` (`spatialqm_moran_n_neighs`, `spatialqm_pseudocount`),
-  `conformal` (`ece_n_bins`, `clustered_quantiles`, `novelty_fdr`, `novelty_frac_train`, `novelty_n_components`),
-  and the new blocks `consensus` (`min_share`) and `ontology` (`min_labels`, `min_cells`, `n_perm`); `panel` gains
-  `f1_adjusted_resolvable` and `f1_adjusted_weak`.
+  `nmp_n_permutations`, `coexpr_min_cells`, `coexpr_target_sum`, `ncp_moldia_threshold`), `spatial`
+  (`contamination_n_perm`), `external` (`spari_alpha`, `spari_max_cells`), `signal_qc` (`spatialqm_moran_n_neighs`,
+  `spatialqm_pseudocount`), `conformal` (`ece_n_bins`, `clustered_quantiles`, `novelty_fdr`, `novelty_frac_train`,
+  `novelty_n_components`), and the new blocks `consensus` (`min_share`) and `ontology` (`min_labels`, `min_cells`,
+  `n_perm`, `rwr_restart`); `panel` gains `f1_adjusted_resolvable` and `f1_adjusted_weak`.
 - `sam.__all__` gains the 12 new metrics above (45 names).
 
 **Goldens and tests**
 
 - Value tests against reference implementations: `element_centric_similarity` vs clusim 0.4 (1e-12),
-  `deconvolution_metrics` vs OpenProblems `task_spatial_decomposition` (1e-12), `nmp` and
-  `coexpression_similarity` vs txsim, the 30-PC ISCG and the label-mean headline vs scTypeEval 1.0.0, and every
-  SpatialQM scalar offered vs SpatialQM. The SpatialQM golden records the sha256 of its three input fixtures and
-  pins its own.
+  `deconvolution_metrics` vs OpenProblems `task_spatial_decomposition`, Spotless `precrec` AUPR and Li et al. 2022
+  SSIM (1e-12), `nmp` (`score="salas" | "moldia" | "cells"`), `ncp` (`score="moldia"`) and
+  `coexpression_similarity` vs txsim / Moldia (1e-12), the 30-PC ISCG and the label-mean headline vs scTypeEval
+  1.0.0, and every SpatialQM scalar offered vs SpatialQM. The SpatialQM golden records the sha256 of its three
+  input fixtures and pins its own. `.gitattributes` locks `tests/goldens/**` and `tests/data/*.obo` to `-text`.
 - `tests/data/cl_tiny.obo`: a 14-term Cell Ontology slice for the ontology tests.
-- Synthetic benchmark: `check_conformal.csv` gains `mondrian="clustered"` rows, a `held_out="B"` novel-type arm and
-  the columns `held_out`, `covgap`, `pct_empty_known`, `pct_empty_novel`, `ece`, `classwise_ece`, `nov_*`;
-  `check_deconvolution.csv` gains `aupr` and `ssim`; `check_panel_resolvability.csv` gains
-  `frac_not_resolvable`, `T_CD8_f1_adjusted` and `T_CD8_tier`.
+- Synthetic and real-data perturbation benchmarks: `benchmarks/synthetic/sweep.py` (5 seeds across all scenarios,
+  recording `onto.rwr_rho`, `ncp.moldia`, and `aupr_precrec`) and `benchmarks/real_perturbation.py` (controlled
+  perturbations on the committed Yerly 2022 human BCC cohort and 10x Xenium human breast cancer crop).
 
 ### Changed
 
@@ -323,7 +343,14 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
     1,132 -> 57 MB, overlap 2,184 -> 650 MB and 12.5 -> 3.3 s);
   - `ncp` pair counts are one sparse `P.T @ P` instead of a Python loop over pairs;
   - `neighbor_contamination` is sparse throughout (400,000 cells x 300 markers: 1.88 -> 0.14 GB,
-    10.2 -> 3.5 s with `n_perm=0`).
+    10.2 -> 3.5 s with `n_perm=0`);
+  - `coexpression_similarity` keeps `log1p(1e4 * counts / total)` sparse in CSR and computes the gene x gene Pearson
+    correlation matrix via the sparse Gram matrix `(L.T @ L).toarray() - n * outer(mu, mu)` without densifying
+    cells x genes;
+  - `conformal_novelty` fits `PCA(svd_solver="arpack")` or `IsolationForest` directly on CSR inputs and computes
+    squared PCA reconstruction error via the sparse projection identity `||x - mu||^2 - ||(x - mu) V^T||^2`;
+  - `per_cell_confidence` averages marker columns on sparse CSR slices directly, and `label_stability` thins CSR
+    `.data` in place (`eliminate_zeros()`) without densifying the count matrix.
 - Signal QC: `moran_signal`, `transcript_qc` and every `method="spatialqm"` call return their result and write
   nothing to `uns['sam']`. Docstrings no longer claim SpatialQM ports for different quantities; the default recipes
   say how they differ.

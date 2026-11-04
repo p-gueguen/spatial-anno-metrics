@@ -1,0 +1,17 @@
+block,source,n_cells,n_genes,median_tx,sdlog_tx,zero_fraction,ctrl_to_gene,overdispersion,overdispersion_within_type,marker_specificity,offtarget_marker_detect,moran_median_all,moran_median_markers,knn_same_type
+native depth,toy,2400,82,149,0.3079,0.4799,0.01277,1.321,1.124,999.6,0.1881,0.09588,0.8917,0.9364
+thinned to 60,toy,2395,82,60,0.101,0.6537,0.01282,1.057,0.985,978,0.08029,,,
+native depth,sccube:stripes,2400,306,163.8,0.719,0.914,0.001868,10.01,6.624,154.1,0.2737,0.1064,0.4714,0.8419
+thinned to 60,sccube:stripes,2199,306,60,0.1034,0.9403,0.001583,3.182,2.528,102.8,0.2331,,,
+native depth,sccube:domains,2400,306,164.5,0.7212,0.9141,0.001864,8.951,6.637,141.5,0.2757,0.08844,0.3942,0.7016
+thinned to 60,sccube:domains,2182,306,60,0.103,0.9405,0.002067,3.192,2.546,86.85,0.2329,,,
+native depth,sccube:fine,2400,306,164.5,0.7212,0.9141,0.001864,8.951,6.637,141.5,0.2757,0.06118,0.2214,0.5283
+thinned to 60,sccube:fine,2182,306,60,0.103,0.9405,0.002067,3.192,2.546,86.85,0.2329,,,
+native depth,sccube:mixed,2400,306,164.5,0.7212,0.9141,0.001864,8.951,6.637,141.5,0.2757,0.04303,0.1934,0.4387
+thinned to 60,sccube:mixed,2182,306,60,0.103,0.9405,0.002067,3.192,2.546,86.85,0.2329,,,
+native depth,real cells (Yerly ref),2274,306,93.33,0.784,0.8953,,3.187,2.073,64.14,0.4985,,,
+thinned to 60,real cells (Yerly ref),1677,306,60,0.09145,0.9236,,2.106,1.441,62.77,0.3987,,,
+native depth,xenium 800 um window,2476,313,153,0.6692,0.7971,0.00212,2.319,,,,0.1063,,
+thinned to 60,xenium 800 um window,2269,313,60,0.09981,0.8865,0.002022,1.429,,,,,,
+native depth,xenium 1200 um window,5768,313,154,0.6711,0.7979,0.002025,2.343,,,,0.1235,,
+thinned to 60,xenium 1200 um window,5278,313,60,0.1,0.8867,0.001937,1.483,,,,,,

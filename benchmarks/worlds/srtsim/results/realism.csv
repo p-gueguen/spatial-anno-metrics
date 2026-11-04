@@ -1,0 +1,28 @@
+check,real,srtsim,toy
+library size: median,116,116,149
+library size: mean,147.9,147.3,156.5
+library size: CV,0.7331,0.7209,0.3116
+library size: 5th pct,35,37,90
+library size: 95th pct,368,361,246
+zero fraction (cells x genes),0.8176,0.8195,0.4799
+genes detected per cell: median,56,55,43
+mean-variance: slope of log10 var on log10 mean,1.23,1.187,2.074
+mean-variance: median var / mean,2.002,2.068,2.432
+"Moran's I, all genes: median",0.1142,0.1095,0.4614
+"Moran's I, marker genes: median",0.1872,0.1818,0.7549
+marker specificity: median own / max other type (fold),6.472,6.404,873.9
+cells with markers of >= 2 lineages (share of marker+ cells),0.8267,0.8311,0.4404
+"gene-gene |r| within Epi, top-50 genes: median",0.1065,0.09536,0.0497
+per-gene log10 mean: Pearson r real vs SRTsim,,0.9913,
+per-gene log10 variance: Pearson r real vs SRTsim,,0.9924,
+per-gene log10 variance within type: mean Pearson r over types,,0.9832,
+per-gene zero fraction: mean |real - SRTsim|,,0.002676,
+per-gene zero fraction: Pearson r,,0.9999,
+per-cell library size: Spearman rho real vs SRTsim,,0.9971,
+library size distribution: KS statistic,,0.007209,
+Moran's I per gene: Pearson r real vs SRTsim,,0.9979,
+Moran's I per marker gene: Pearson r real vs SRTsim,,0.9992,
+Moran's I per gene: median SRTsim / real,,0.9876,
+gene-gene r within Epi (top-50): Pearson r of the two correlation matrices,,0.9963,
+"negative-control probe counts per 1,000 cells (28 probes)",108,67.56,487.2
+cells (all cached seeds),2.76e+04,2.76e+04,

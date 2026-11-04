@@ -171,3 +171,22 @@ def test_confidence_and_stability_preserve_sparse_counts():
 
     out = cf.label_stability(s, labeller, drop_frac=0.2, reps=3, seed=1)
     assert out["status"] == "ok" and all(sparse_flags) and len(sparse_flags) == 4
+
+
+def test_confidence_and_stability_parameter_and_empty_checks():
+    from spatial_anno_metrics import confidence as cf
+
+    a = _section(n=20)
+    empty = a[:0].copy()
+    assert cf.per_cell_confidence(empty, MARKERS)["status"] == "skipped"
+    assert cf.label_stability(empty, _marker_argmax)["status"] == "skipped"
+
+    with pytest.raises(ValueError, match="drop_frac"):
+        cf.label_stability(a, _marker_argmax, drop_frac=-0.1)
+    with pytest.raises(ValueError, match="drop_frac"):
+        cf.label_stability(a, _marker_argmax, drop_frac=1.5)
+    with pytest.raises(ValueError, match="reps"):
+        cf.label_stability(a, _marker_argmax, reps=0)
+    with pytest.raises(ValueError, match="annotate_fn"):
+        cf.label_stability(a, lambda x: ["T"])
+

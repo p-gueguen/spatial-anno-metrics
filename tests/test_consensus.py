@@ -70,6 +70,16 @@ def test_consensus_input_checks():
         consensus_entropy(_adata([["X", "Y"]]), ["a0", "a1"], hierarchy={"X": "Y", "Y": "X"})
     with pytest.raises(ValueError, match="min_share"):
         consensus_entropy(_adata([["X", "Y"]]), ["a0", "a1"], min_share=0.4)
+    with pytest.raises(ValueError, match="min_share"):
+        consensus_entropy(_adata([["X", "Y"]]), ["a0", "a1"], min_share=1.0)
+    with pytest.raises(ValueError, match="min_share"):
+        consensus_entropy(_adata([["X", "Y"]]), ["a0", "a1"], min_share=float("nan"))
+    # None-mapped and self-mapped roots act as distinct roots (never share None as a fake common ancestor)
+    r_none = consensus_entropy(_adata([["X", "Y"]]), ["a0", "a1"], hierarchy={"X": None, "Y": None})
+    assert r_none["consensus"][0] is None
+    r_self = consensus_entropy(_adata([["T_CD4", "T_CD8", "T"]]), ["a0", "a1", "a2"],
+                               hierarchy={"T_CD4": "T", "T_CD8": "T", "T": "T"})
+    assert r_self["consensus"][0] == "T" and r_self["ontology_entropy"][0] == pytest.approx(0.0)
 
 
 def test_consensus_entropy_on_yerly2022_bcc_real_annotations():

@@ -251,7 +251,10 @@ def test_spatial_coherence_honours_n_neighs_over_a_cached_graph():
     sp.neighborhood_sanity(a, n_neighs=6)                       # caches a 6-NN graph
     assert sp.spatial_coherence(a, n_neighs=10)["pas"] == pytest.approx(fresh["pas"])
     b = _scatter()
-    sq.gr.spatial_neighbors(b, coord_type="generic", n_neighs=6)  # a squidpy graph built elsewhere
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        sq.gr.spatial_neighbors(b, coord_type="generic", n_neighs=6)  # a squidpy graph built elsewhere
     assert sp.spatial_coherence(b, n_neighs=10)["mean_coherence"] == pytest.approx(fresh["mean_coherence"])
     assert b.uns["spatial_neighbors"]["params"]["n_neighbors"] == 6   # ... and left in place
     assert sp.spatial_coherence(b, n_neighs=10, graph="obsp")["mean_coherence"] != pytest.approx(
@@ -447,7 +450,10 @@ def test_neighbor_contamination_delaunay_graph():
     out = sp.neighbor_contamination(a, ms, graph="delaunay")
     assert out["graph"] == "delaunay"
     b = a.copy()
-    sq.gr.spatial_neighbors(b, coord_type="generic", delaunay=True)
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        sq.gr.spatial_neighbors(b, coord_type="generic", delaunay=True)
     ref = sp.neighbor_contamination(b, ms, graph="obsp")
     assert out["mean_contamination"] == pytest.approx(ref["mean_contamination"])
     knn = sp.neighbor_contamination(a.copy(), ms)

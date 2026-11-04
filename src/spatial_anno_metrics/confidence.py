@@ -52,6 +52,8 @@ def per_cell_confidence(adata, marker_sets: dict[str, list[str]], *, layer: str 
     """
     if isinstance(key_added, str) or len(key_added) != 2:
         raise TypeError("key_added takes two column names: (margin column, entropy column)")
+    if adata.n_obs == 0:
+        return skip("no cells in adata")
     panel = set(adata.var_names)
     mat, matrix = get_counts(adata, layer)
     var_idx = {g: i for i, g in enumerate(adata.var_names)}
@@ -141,8 +143,16 @@ def label_stability(adata, annotate_fn, drop_frac: float = _thr("confidence", "s
     """
     import anndata
 
+    if not np.isfinite(drop_frac) or not (0.0 <= drop_frac <= 1.0):
+        raise ValueError(f"drop_frac must be in [0, 1], got {drop_frac}")
+    if reps < 1:
+        raise ValueError(f"reps must be >= 1, got {reps}")
+    if adata.n_obs == 0:
+        return skip("no cells in adata")
     counts, matrix = get_counts(adata, layer)
     base = np.asarray(annotate_fn(adata)).astype(str)
+    if base.ndim != 1 or len(base) != adata.n_obs:
+        raise ValueError(f"annotate_fn must return a 1D array of {adata.n_obs} labels, got shape {base.shape}")
     rng = np.random.default_rng(seed)
     flips = np.zeros(adata.n_obs, dtype=float)
     for _ in range(reps):
@@ -151,6 +161,8 @@ def label_stability(adata, annotate_fn, drop_frac: float = _thr("confidence", "s
                               obsm=dict(adata.obsm), obsp=dict(adata.obsp),
                               layers={layer: thinned} if layer and layer in adata.layers else None)
         lab = np.asarray(annotate_fn(tmp)).astype(str)
+        if lab.ndim != 1 or len(lab) != adata.n_obs:
+            raise ValueError(f"annotate_fn must return a 1D array of {adata.n_obs} labels, got shape {lab.shape}")
         flips += (lab != base).astype(float)
     stability = flips / max(1, reps)
     adata.obs[key_added] = stability

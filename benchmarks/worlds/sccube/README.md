@@ -51,12 +51,14 @@ uv pip install --python venv-sccube/bin/python anndata==0.8.0 numpy==1.23.5 pand
 2. **Generate the cache** (scCube venv, one GPU; torch 2.4 has no kernels for Blackwell GPUs, so use an L40S):
    `python benchmarks/worlds/sccube/generate.py --yerly <export dir> --device cuda:0`.
    The cache (about 200 MB of h5ad and csv.gz) goes to `benchmarks/worlds/sccube/cache/` (git-ignored; a
-   symlink works) or wherever `--out` / `SAM_SCCUBE_CACHE` point. `world.py` only reads it and needs only the
+   symlink works) or wherever `--out` / `SAM_SCCUBE_CACHE` point; without either, `world.py` reads
+   `/srv/GT/analysis/pgueguen/sam_dev/data/sim_worlds/sccube/`. `world.py` only reads it and needs only the
    normal environment.
 3. **Run the sweep, one pattern at a time:**
-   `PYTHONPATH=src python benchmarks/worlds/sccube/run.py --pattern domains --seeds 3 --workers 16 --out <dir>`.
-   `run.py` replaces `sim.simulate` / `sim.reference` (and `sim.marker_sets` / `sim.T_LINEAGE`, used by the
-   panel check) with this world, then calls `sweep.main`. The workers are forked, so they inherit the patch. It
+   `PYTHONPATH=src python benchmarks/synthetic/sweep.py --world sccube --pattern domains --seeds 3 --workers 16`
+   (or the wrapper `benchmarks/worlds/sccube/run.py --pattern domains`; default output `results/<pattern>`).
+   The install (`benchmarks/worlds/__init__.py::install`) replaces `sim.simulate` / `sim.reference` (and
+   `sim.marker_sets` / `sim.T_LINEAGE`, used by the panel check) with this world before `sweep.main` forks. The workers are forked, so they inherit the patch. It
    also rewires the one edge case that names a toy gene (`all_zero_marker_gene`) to zero the first B marker.
 4. **Summarise:** `realism.py --xenium <section.h5ad> --plot results/layouts.png` (realism table and layout
    figure) and `compare.py --toy3 results/toy3` (verdict changes).

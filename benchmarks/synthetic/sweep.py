@@ -1,6 +1,7 @@
 """Run every public metric over the synthetic scenarios and say which ones behave.
 
     python benchmarks/synthetic/sweep.py [--seeds 3] [--workers 24] [--out benchmarks/synthetic/results]
+                                         [--world toy|scdesign3|srtsim|sccube] [--pattern P] [--sample-mode M]
 
 For each scenario x strength x seed it simulates a section (``sim.py``), runs every metric, and scores
 each metric's trajectory against what it SHOULD do: move with the damage (labels wrong / data degraded),
@@ -10,10 +11,17 @@ UserWarnings the metric's adapter raised in ``n_user_warnings``), ``verdicts.csv
 deconvolution), ``errors.csv`` (every adapter error, edge cases included, with its full traceback) and
 ``warnings.csv`` (every warning message, counted). Extra metrics can be plugged in with
 ``main(extra_adapters=...)`` without touching this file.
+
+``--world`` runs the same scenarios and scoring on a realistic world from ``benchmarks/worlds/`` (scDesign3,
+SRTsim, scCube; see ``benchmarks/worlds/README.md``) instead of the toy world of ``sim.py``. ``--pattern``
+(scCube: stripes / domains / fine / mixed), ``--sample-mode`` / ``--alpha0`` (scDesign3: bands / dirichlet) and
+``--fixed-crops`` (SRTsim: one crop set, only the count draw varies) choose the variant. Without ``--out`` a
+world writes to its own ``benchmarks/worlds/<world>/results/...``. The default (``toy``) is unchanged.
 """
 from __future__ import annotations
 
 import argparse
+import multiprocessing
 import os
 import sys
 import traceback
@@ -22,8 +30,10 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):  # one thread per worker
-    os.environ.setdefault(_v, "1")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # benchmarks/: the ``worlds`` package
+import worlds  # noqa: E402  (imports nothing heavy)
+
+worlds.limit_threads()                     # one BLAS / OpenMP thread per worker; must precede the numpy import
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -643,16 +653,29 @@ def main(argv=None, extra_adapters=None, extra_metrics=None):
     p = argparse.ArgumentParser()
     p.add_argument("--seeds", type=int, default=3)
     p.add_argument("--workers", type=int, default=24)
-    p.add_argument("--out", default=str(Path(__file__).parent / "results"))
+    p.add_argument("--out", default=None, help="default: benchmarks/synthetic/results for the toy world, "
+                   "benchmarks/worlds/<world>/results[/<variant>] otherwise")
     p.add_argument("--only", nargs="*", default=None, help="subset of scenarios")
+    p.add_argument("--world", choices=worlds.WORLDS, default="toy", help="simulation world (default: toy)")
+    p.add_argument("--pattern", default=None, help="sccube: stripes, domains (default), fine or mixed")
+    p.add_argument("--sample-mode", choices=["bands", "dirichlet"], default="bands",
+                   help="scdesign3: horizontal bands of one section, or six Dirichlet-composition pieces")
+    p.add_argument("--alpha0", type=float, default=None, help="scdesign3 dirichlet: concentration (default 20)")
+    p.add_argument("--fixed-crops", type=int, default=None,
+                   help="srtsim: use the crops of this world seed for every seed; only the count draw varies")
     args = p.parse_args(argv)
-    out = Path(args.out)
+    module = sys.modules[__name__]
+    world = worlds.install(args.world, sim, module, seeds=args.seeds, pattern=args.pattern,
+                           sample_mode=args.sample_mode, alpha0=args.alpha0, fixed_crops=args.fixed_crops)
+    # a world reaches the workers only through fork (the patched module state is not pickled)
+    ctx = multiprocessing.get_context("fork") if world is not None else None
+    out = Path(args.out or worlds.default_out(args.world, args.pattern, args.sample_mode, args.fixed_crops))
     out.mkdir(parents=True, exist_ok=True)
     adapters = {**ADAPTERS, **(extra_adapters or {})}
     scen = args.only or list(sim.SCENARIOS)
     tasks = [(s, lv, seed, adapters) for s in scen for lv in sim.SCENARIOS[s][1] for seed in range(args.seeds)]
     rows, errs, warned = [], [], Counter()
-    with ProcessPoolExecutor(args.workers) as ex:
+    with ProcessPoolExecutor(args.workers, mp_context=ctx) as ex:
         for r, e, w in ex.map(_task, tasks):
             rows += r
             errs += e
@@ -677,7 +700,8 @@ def main(argv=None, extra_adapters=None, extra_metrics=None):
     (out / "edge_cases.md").write_text(edge_md(edge_rows, _flat(base_vals)) + "\n")
     if extra_adapters is None:
         checks = {"isc_regimes": isc_regimes(args.seeds), "conformal": conformal_check(args.seeds),
-                  "panel_resolvability": panel_check(args.seeds), "deconvolution": deconv_check(args.seeds)}
+                  "panel_resolvability": panel_check(args.seeds),
+                  "deconvolution": module.deconv_check(args.seeds)}   # a world may replace it
         for k, v in checks.items():
             v.to_csv(out / f"check_{k}.csv", index=False)
     return df, sc

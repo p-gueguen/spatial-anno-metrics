@@ -28,6 +28,11 @@ How the knobs are honoured (all 15 sweep scenarios run):
 * ``depth``: not honoured (``None`` only): the depth is the section's. No scenario sets it.
 * ``n_samples`` <= 6 (the crops). A seed outside the cache raises.
 
+``FIXED_CROPS`` (``install(fixed_crops=K)``, ``sweep.py --world srtsim --fixed-crops K``): every seed uses the crops
+of world seed K and only the count draw changes with the seed. The draw is ``srtsim_count`` (domain scheme, random
+tie breaks) re-implemented on the cached fits (``_redraw``), so seed 0 is a fresh draw, not the cached R draw. This
+is the control that separates between-crop variance from what the metrics do.
+
 ``reference(seed, n_per_type, depth, coexpr, extra_bg)``: a matched dissociated reference from the same fits:
 for each type, real cells of that type are drawn with replacement across the six crops, and every gene is drawn
 from the crop's fitted marginal with the mean scaled by ``rr`` (``depth`` / the section's mean depth; default
@@ -63,6 +68,7 @@ N_CROPS = 6
 CROP_UM = 400.0
 GAP_UM = 100.0
 REF_RR = 400.0 / 150.0          # the toy's reference / section depth ratio
+FIXED_CROPS: int | None = None  # None: seed k = the crops of cache seed k; K: the crops of seed K, redrawn per seed
 
 
 @functools.lru_cache(maxsize=None)
@@ -91,6 +97,40 @@ def _t_lineage() -> list[str]:
 
 def _dense(X) -> np.ndarray:
     return np.asarray(X.todense()) if sp.issparse(X) else np.asarray(X)
+
+
+@functools.lru_cache(maxsize=None)
+def _redraw(crop_seed: int, draw_seed: int) -> ad.AnnData:
+    """The crops of world seed ``crop_seed`` with a new SRTsim count draw (``srtsim_count``, domain scheme).
+
+    For each crop, type and feature: n values from the cached fitted marginal, placed by the rank of the real
+    counts of the type's cells in that crop, ties broken at random; unfitted slots (< 2 non-zero cells) stay 0,
+    as in SRTsim. Controls are redrawn the same way.
+    """
+    w = _load(crop_seed).copy()
+    real = _dense(w.layers["real"])
+    truth = w.obs["truth"].astype(str).to_numpy()
+    crop = w.obs["crop"].to_numpy()
+    X = np.zeros_like(real, dtype=float)
+    rng = np.random.default_rng([30_000, crop_seed, draw_seed])
+    pi0, theta, mu = w.uns["dom_pi0"], w.uns["dom_theta"], w.uns["dom_mu"]
+    for c in np.unique(crop):
+        for ti, t in enumerate(TYPES):
+            ids = np.flatnonzero((crop == c) & (truth == t))
+            if not len(ids):
+                continue
+            for g in range(real.shape[1]):
+                if not np.isfinite(mu[c, ti, g]):
+                    continue
+                v = _draw(rng, pi0[c, ti, g], theta[c, ti, g], mu[c, ti, g], len(ids))
+                X[ids, g] = _rank_assign(rng, v, real[ids, g])
+    w.layers["counts"] = sp.csr_matrix(X.astype("float32"))
+    return w
+
+
+def _section(seed: int) -> ad.AnnData:
+    """The cached world for ``seed``: its own crops (default), or the fixed crops redrawn with ``seed``."""
+    return _load(seed) if FIXED_CROPS is None else _redraw(FIXED_CROPS, seed)
 
 
 def _window(w: ad.AnnData, n_samples: int, n_cells: int) -> np.ndarray:
@@ -178,7 +218,7 @@ def simulate(seed: int = 0, n_cells: int = 2400, depth=None, weights=None, n_sam
         raise TypeError(f"simulate() got unsupported arguments {sorted(kw)}")
     if not 1 <= n_samples <= N_CROPS:
         raise ValueError(f"n_samples must be 1..{N_CROPS} (one crop per sample)")
-    w = _load(seed)
+    w = _section(seed)
     idx = _window(w, n_samples, n_cells)
     types = w.obs["truth"].astype(str).to_numpy()[idx]
     if weights is not None:
@@ -191,7 +231,8 @@ def simulate(seed: int = 0, n_cells: int = 2400, depth=None, weights=None, n_sam
     Xg, Xc = X[:, ~w.var["control"].to_numpy()], X[:, w.var["control"].to_numpy()]
     if coexpr:
         Xg = _coexpr_add(np.random.default_rng(seed + 31), Xg, types, crops, w, genes, coexpr)
-    Xx = _extra_genes(w, crops, extra_bg, choice_seed=seed, draw_seed=seed)
+    choice = seed if FIXED_CROPS is None else FIXED_CROPS        # which real genes the xg* copy: part of the crops
+    Xx = _extra_genes(w, crops, extra_bg, choice_seed=choice, draw_seed=seed)
     xy = w.obsm["spatial"][idx].copy()
     if infiltrate:
         ri = np.random.default_rng(seed + 7)
@@ -213,14 +254,15 @@ def simulate(seed: int = 0, n_cells: int = 2400, depth=None, weights=None, n_sam
     a.obsm["spatial"] = xy
     a.uns["marker_sets"] = {k: list(v) for k, v in marker_sets().items()}
     a.uns["hierarchy"] = dict(HIERARCHY)
-    a.uns["world"] = {"seed": seed, "coexpr": coexpr, "extra_bg": extra_bg, "name": "srtsim"}
+    a.uns["world"] = {"seed": seed, "coexpr": coexpr, "extra_bg": extra_bg, "name": "srtsim",
+                      "fixed_crops": -1 if FIXED_CROPS is None else FIXED_CROPS}
     return sim.finish(a, seed)
 
 
 def reference(seed: int = 0, n_per_type: int = 300, depth=None, coexpr: float = 0.0, extra_bg: int = 0,
               **kw) -> ad.AnnData:
     seeds = _seeds()
-    wseed = seed if seed in seeds else seeds[seed % len(seeds)]
+    wseed = FIXED_CROPS if FIXED_CROPS is not None else (seed if seed in seeds else seeds[seed % len(seeds)])
     w = _load(wseed)
     rr = REF_RR if depth is None else float(depth) / float(w.uns["section_mean_depth"])
     rng = np.random.default_rng(50_000 + seed)

@@ -39,7 +39,9 @@ import scipy.sparse as sp
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "synthetic"))
 import sim  # noqa: E402
 
-CACHE = Path(os.environ.get("SAM_SCCUBE_CACHE", Path(__file__).resolve().parent / "cache"))
+_LOCAL = Path(__file__).resolve().parent / "cache"         # generate.py's default --out (git-ignored)
+CACHE = Path(os.environ.get("SAM_SCCUBE_CACHE", _LOCAL if _LOCAL.exists()
+                            else "/srv/GT/analysis/pgueguen/sam_dev/data/sim_worlds/sccube"))
 PATTERNS = ["stripes", "domains", "fine", "mixed"]
 PATTERN = os.environ.get("SAM_SCCUBE_PATTERN", "domains")
 TYPES = list(sim.TYPES)

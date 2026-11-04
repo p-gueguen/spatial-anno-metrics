@@ -27,7 +27,7 @@ QC (SpatialQM), conformal (scConform), `neighbor_contamination` and decompositio
 | # | Item | Why it is open | Evidence |
 |---|---|---|---|
 | 5 | **AQI validation and tuning** | Tracked outside this repo. | - |
-| 8d | **ISC regime calls** are still wrong in 3 of 4 synthetic cases: merge reads `consistent`, 20 % label noise `split` (21/30 labels), a batch effect `split` (30/30); only over-split is right. | Flagged, not fixed: results carry `regime_status="experimental"`. The headline ISCG/ISCL now match scTypeEval (#7), so the calls, not the scores, are the problem; they need real multi-sample data with a known answer before they can be trusted. | `isc.py` (Notes, with the numbers); `tests/test_isc.py::test_regime_calls_flagged_experimental`; `benchmarks/synthetic/results/check_isc_regimes.csv` |
+| 8d | **ISC `split` (under-partitioning) is not identifiable from ISC.** The other calls are fixed and benchmarked (done list); two real types pooled under one label read compact and replicable in 16 / 16 real merge scorings (ISCG 0.64-0.92, ISCL 0.71-1.00), whatever their ratio across patients, so `regime` never says `split`. | Needs a cell-level test (e.g. subcluster a label and ask whether both parts replicate across samples), not a new ISC threshold. | `isc.py` (Notes); `benchmarks/isc_regimes_real/results/summary.md` (`merge` rows); `tests/test_isc.py::test_regime_never_calls_split_merged_types_read_consistent` |
 
 ## P2 - later (external PRs & publication)
 
@@ -53,7 +53,11 @@ Details, with the `old -> new` call for every breaking change, are in [CHANGELOG
   in `calibration_error`), #9 LCA-depth hierarchical credit, #10 attributions (CRISP = Rose et al. 2026, Mitchel et
   al. *Nat Genet* 2026).
 - **P0b**: 8a label validation, 8b non-count input + NaN/Inf rejection in `get_counts`, 8c dictionary coverage
-  (`no_dict_frac`), 8e CRISP / MECR null, 8f spatial-metric docs, 8g SNR without the eps floor, 8h chance-corrected
+  (`no_dict_frac`), 8d ISC regime calls benchmarked on real cohorts with planted errors
+  (`benchmarks/isc_regimes_real.py`: Yerly 2022, Ganier 2024, Joanito 2022 held out; untouched labels
+  `consistent` 1,397 / 1,397, over-split halves `merge` 96 / 96, planted bad labels `remove` 54 / 84 and never
+  another action, no `merge` / `split` under label noise or batch effects; `regime_status="benchmarked"`, the
+  paper's call kept as `quadrant`), 8e CRISP / MECR null, 8f spatial-metric docs, 8g SNR without the eps floor, 8h chance-corrected
   panel tiers, `thresholds.thresholds_for(module, **overrides)` helper.
 - **P1**: #12 docs site (Sphinx + myst-nb, ReadTheDocs, numpydoc enforced by ruff `D`), #13 Xenium breast
   tutorial (167,780 cells, 86 s), #14 API consistency (including `skip` instead of `KeyError` when spatial metrics

@@ -405,8 +405,11 @@ def isc_regimes(seeds):
         for seed in range(seeds):
             r = sam.inter_sample_consistency(fn(s, seed), "label", "sample", layer="counts")
             for t, reg in r.get("regime", {}).items():
-                rows.append(dict(case=name, seed=seed, type=t, regime=reg,
-                                 iscg=r["per_type_iscg"][t], iscl=r["per_type_iscl"][t]))
+                ev = r["regime_evidence"][t]
+                rows.append(dict(case=name, seed=seed, type=t, regime=reg, quadrant=r["quadrant"][t],
+                                 iscg=r["per_type_iscg"][t], iscl=r["per_type_iscl"][t],
+                                 iscg_calibrated=ev["iscg_calibrated"], partner=ev["partner"],
+                                 partner_rate=ev["partner_rate"], iscg_floor=r["iscg_floor"]))
     return pd.DataFrame(rows)
 
 

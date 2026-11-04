@@ -140,6 +140,20 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   mutual best hit between two labels counts only when both labels occur in both samples, and a sample with fewer
   than 2 scored profiles matches nothing. This moves ISCL only when a scored label is missing from some samples and
   is part of a cross-label mutual hit (0 values moved on the golden and the synthetic sweep).
+- `inter_sample_consistency(...)["regime"]`: the per-label call is benchmarked on real cohorts and no longer the
+  paper's fixed-threshold quadrant (roadmap 8d). Values: `consistent` / `merge` / `remove` / `inconclusive` /
+  `not_computable`; `split` is never returned (`split` -> `consistent` or `inconclusive`): ISC cannot see two
+  types pooled under one label (16 / 16 real merge scorings read compact and replicable). `merge` needs two
+  labels that are each other's reciprocal partner across samples; `remove` / `inconclusive` come from ISCG
+  calibrated between a label of random cells (0) and the dataset's median label (1), so batch effects and label
+  noise no longer read `split`. `regime_status`: `"experimental"` -> `"benchmarked"`. The old call is kept as
+  `quadrant` (`isc_regime` is unchanged). On `benchmarks/isc_regimes_real.py` (Yerly 2022, Ganier 2024 and,
+  held out, Joanito 2022): untouched labels `consistent` 980 / 980 and 417 / 417 (quadrant 816, 398), no
+  `merge` / `split` under 20-40 % label noise (quadrant: `split` for 59 / 163 and 32 / 66), over-split halves `merge`
+  72 / 72 and 24 / 24 (quadrant 61, 24), planted bad labels `remove` 39 / 63 and 15 / 21 (quadrant 10, 15;
+  the rest `inconclusive` or missed, never another action). Synthetic sweep: batch log-sd 1.0 `split` 30 / 30
+  -> `consistent` 30 / 30, 20 % label noise `split` 21 / 30 -> `consistent` 30 / 30. ISCG / ISCL are unchanged
+  (goldens to 1e-12).
 - `internal_validity`: Ward-PropMatch runs on the `subsample` (as the silhouettes, Davies-Bouldin and
   Calinski-Harabasz already did), not on every cell: O(N^2) memory made it unusable at 1e5 cells (1.64e5 Xenium
   cells: 2,951 s / 211 GB -> 20 s / 0.74 GB). When `n_obs > subsample`, `ward_propmatch` and `integrated` move
@@ -252,8 +266,10 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   trained with the labels are circular; Metric Mirages, 10.1101/2024.04.02.587824); result key `nan_reasons`.
 - `inter_sample_consistency(..., reduction="pca" | None, n_pcs=30, rcm_genes=None | "markers" | <gene list>)`:
   `rcm_genes="markers"` runs the reciprocal classifier on SingleR's classic marker union of each training sample;
-  a gene list (e.g. HVGs) restricts it. Result keys `iscg_profile_mean`, `iscl_profile_mean`, `regime_status`
-  (`isc_regime` / `regime` are marked experimental), `reduction`, `n_pcs`, `rcm_genes`.
+  a gene list (e.g. HVGs) restricts it. Result keys `iscg_profile_mean`, `iscl_profile_mean`, `regime_status`,
+  `regime_evidence` (per label: `iscg_calibrated`, `self_match`, `partner`, `partner_rate`), `quadrant`,
+  `iscg_floor`, `low_global_signal`, `reduction`, `n_pcs`, `rcm_genes`. `thresholds=` accepts the regime keys
+  below and rejects unknown ones.
 - `crisp_purity` and `mecr` report a detection-matched null (each marker's detections reassigned to random cells,
   `n_null=20` draws, `seed=0`): `crisp_purity_null` / `mecr_null` and `vs_null` (0 = exclusive lineages, 1 = no
   more exclusive than independent markers). `n_null=0` skips it.
@@ -299,7 +315,8 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
 - `panel_resolvability` per-type keys `f1_null` (the type's share of the scored cells) and `f1_adjusted`, and
   keyword-only `f1_resolvable`, `f1_weak`, `null_adjusted`.
 - `THRESHOLDS` entries for the new defaults: `internal` (`clisi_n_neighbors`, `isolated_f1_cuts_per_label`), `isc`
-  (`n_pcs`, `rcm_marker_n`), `purity` (`null_draws`, `nmp_salas_max_share`, `nmp_salas_min_cells`,
+  (`n_pcs`, `rcm_marker_n`, `regime_partner_rate`, `regime_partner_ratio`, `regime_remove`, `regime_low`,
+  `regime_floor_gap`), `purity` (`null_draws`, `nmp_salas_max_share`, `nmp_salas_min_cells`,
   `nmp_n_permutations`, `coexpr_min_cells`, `coexpr_target_sum`, `ncp_moldia_threshold`), `spatial`
   (`contamination_n_perm`), `external` (`spari_alpha`, `spari_max_cells`), `signal_qc` (`spatialqm_moran_n_neighs`,
   `spatialqm_pseudocount`), `conformal` (`ece_n_bins`, `clustered_quantiles`, `novelty_fdr`, `novelty_frac_train`,
@@ -316,6 +333,10 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   1.0.0, and every SpatialQM scalar offered vs SpatialQM. The SpatialQM golden records the sha256 of its three
   input fixtures and pins its own. `.gitattributes` locks `tests/goldens/**` and `tests/data/*.obo` to `-text`.
 - `tests/data/cl_tiny.obo`: a 14-term Cell Ontology slice for the ontology tests.
+- `benchmarks/isc_regimes_real.py`: known-answer benchmark of the ISC regime calls on the ISC authors' Zenodo
+  cohorts (planted merges, random splits, contaminated and random labels, label noise, batch effects; Joanito 2022
+  held out), with scTypeEval 1.0.0 run on the same Yerly perturbations
+  (`isc_regimes_real_sctypeeval.R`); results in `benchmarks/isc_regimes_real/results/`.
 - Synthetic and real-data perturbation benchmarks: `benchmarks/synthetic/sweep.py` (5 seeds across all scenarios,
   recording `onto.rwr_rho`, `ncp.moldia`, and `aupr_precrec`) and `benchmarks/real_perturbation.py` (controlled
   perturbations on the committed Yerly 2022 human BCC cohort and 10x Xenium human breast cancer crop).

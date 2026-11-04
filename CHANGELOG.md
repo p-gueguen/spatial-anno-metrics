@@ -301,6 +301,9 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
 
 ### Changed
 
+- Minimum versions: `scipy>=1.11` (was 1.10; `scipy.stats.false_discovery_control`) and `scikit-learn>=1.4`
+  (was 1.3; sparse-input PCA). Both proven by the lowest-direct CI job.
+
 - `benchmarks/synthetic/sweep.py` uses the 0.7.0 API, with the same metric names in `values.csv`. Warnings are
   recorded instead of silenced. `values.csv` gains an `n_user_warnings` column: the UserWarnings raised by the
   adapter that produced the value. A new `warnings.csv` counts every warning message. `errors.csv` is always

@@ -1,0 +1,9 @@
+world,BLIND,FALSE-ALARM,WRONG-WAY,detects,drifts-up,erratic,stable
+toy,61,22,3,134,0,35,280
+scdesign3,49,11,10,121,17,53,274
+srtsim,74,16,6,112,4,41,282
+srtsim_fixed,38,30,7,123,9,65,263
+sccube_stripes,48,27,5,125,5,55,270
+sccube_domains,47,28,5,129,4,52,270
+sccube_fine,42,28,6,130,7,55,267
+sccube_mixed,41,29,9,129,7,54,266

@@ -53,10 +53,20 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
         "regime_partner_ratio": _e(1 / 3, f"{_PKG}: in a 'merge' pair one label hits its partner at least this "
                                           "often relative to its own profiles. benchmarks/isc_regimes_real.py: "
                                           "random halves >= 0.70, labels sharing a contaminant <= 0.25"),
+        "regime_pair_auc": _e(0.65, f"{_PKG}: a 'merge' pair's cells must not be told apart on held-out samples "
+                                    "(leave-one-sample-out AUC of one label against its partner, scored by the "
+                                    "pair's pseudobulk difference on the other samples) at this AUC or more. "
+                                    "Random halves 0.47-0.54 (real development sets) and 0.47-0.57 (simulation "
+                                    "worlds); T_CD4 / T_CD8 in the worlds >= 0.70"),
         "regime_remove": _e(0.25, f"{_PKG}: calibrated ISCG (0 = the per-sample average profile, a label of "
                                   "random cells; 1 = the median other label) below which a label is 'remove'"),
         "regime_low": _e(0.5, f"{_PKG}: calibrated ISCG below which a label is closer to random cells than to "
                               "a typical label: 'remove' with low ISCL, else 'inconclusive'"),
+        "regime_signature_auc": _e(0.85, f"{_PKG}: a label whose held-out cells are told apart from the rest of "
+                                         "their sample at this AUC or more (its signature learned on the other "
+                                         "samples) is not random cells: 'remove' is demoted to 'inconclusive'. "
+                                         "Planted bad labels <= 0.75 (real development sets); correct labels "
+                                         ">= 0.88 (real) and the worlds' false 'remove' 0.91-0.99"),
         "regime_floor_gap": _e(0.1, f"{_PKG}: the median label ISCG must exceed the random-cell floor by this "
                                     "much for the calibrated ISCG to be used (identical composition in every "
                                     "sample makes random cells replicable)"),

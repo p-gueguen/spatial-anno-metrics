@@ -258,17 +258,23 @@ def test_pseudobulk_sparse_equals_dense():
     assert np.allclose(Pm[0], dense[(lab == "T0") & (smp == "S0")].mean(0), atol=1e-6)  # layer=None: the mean
 
 
-def _mixture_adata(seed=0, n_samples=6, n_types=5, n_genes=80, n_cells=500, batch_sd=0.0, same_composition=False):
+def _mixture_adata(seed=0, n_samples=6, n_types=5, n_genes=80, n_cells=500, batch_sd=0.0, same_composition=False,
+                   marker=None, sibling=None):
     """Raw counts with a graded per-gene baseline (as real genes have) and a per-sample cell-type composition
     drawn from a Dirichlet, so a label made of random cells differs between samples (as on real data). Each
-    type adds a marker block. ``batch_sd`` > 0 multiplies every gene of a sample by its own log-normal factor;
-    ``same_composition`` gives every sample the same (unequal) type counts, as the synthetic world does."""
+    type adds a marker block (``marker[t]``, default 8 for every type). ``batch_sd`` > 0 multiplies every gene of
+    a sample by its own log-normal factor; ``same_composition`` gives every sample the same (unequal) type
+    counts, as the synthetic world does. ``sibling = (fold, n)`` makes T1 a near copy of T0: T0's rates with its
+    first ``n`` genes multiplied by ``fold`` (two distinct but similar types, as T_CD4 / T_CD8)."""
     rng = np.random.default_rng(seed)
     base = rng.lognormal(0, 1, n_genes)
     rates = np.tile(base, (n_types, 1))
     block = n_genes // (2 * n_types)
     for t in range(n_types):
-        rates[t, t * block:(t + 1) * block] += 8.0
+        rates[t, t * block:(t + 1) * block] += 8.0 if marker is None else marker[t]
+    if sibling is not None:
+        rates[1] = rates[0]
+        rates[1, :sibling[1]] *= sibling[0]
     rates /= rates.sum(1, keepdims=True)
     X, types, samples = [], [], []
     fixed = 20 + np.round(np.linspace(0.5, 1.5, n_types) / n_types * (n_cells - 20 * n_types)).astype(int)
@@ -297,16 +303,40 @@ def _isc(a, **kw):
     return em.inter_sample_consistency(a, "cell_type", "sample", layer="counts", **kw)
 
 
+def _label_noise(a, f, seed):
+    """The benchmark's label-noise task: a fraction ``f`` of each sample relabelled from its label distribution."""
+    rng = np.random.default_rng(seed)
+    lab, smp = a.obs["cell_type"].to_numpy().copy(), a.obs["sample"].to_numpy()
+    for s in np.unique(smp):
+        ids = np.flatnonzero(smp == s)
+        pick = rng.choice(ids, int(round(f * len(ids))), replace=False)
+        lab[pick] = rng.choice(lab[ids], len(pick))
+    a.obs["cell_type"] = lab
+    return a
+
+
+def _split_half(a, t, seed):
+    """The benchmark's over-split task: a random half of ``t`` in every sample relabelled ``t.b``."""
+    rng = np.random.default_rng(seed)
+    lab, smp = a.obs["cell_type"].to_numpy().copy(), a.obs["sample"].to_numpy()
+    for s in np.unique(smp):
+        ids = np.flatnonzero((lab == t) & (smp == s))
+        lab[rng.choice(ids, len(ids) // 2, replace=False)] = f"{t}.b"
+    a.obs["cell_type"] = lab
+    return a
+
+
 def test_regime_status_and_threshold_echo():
     out = _isc(_mixture_adata())
     assert out["regime_status"] == "benchmarked"
-    assert {"iscg", "iscl", "regime_partner_rate", "regime_partner_ratio", "regime_remove", "regime_low",
-            "regime_floor_gap"} <= set(
+    assert {"iscg", "iscl", "regime_partner_rate", "regime_partner_ratio", "regime_pair_auc", "regime_remove",
+            "regime_low", "regime_floor_gap", "regime_signature_auc"} <= set(
         out["thresholds"])
     assert set(out["regime"].values()) == {"consistent"} and set(out["quadrant"].values()) == {"consistent"}
     ev = out["regime_evidence"]["T0"]
-    assert set(ev) == {"iscg_calibrated", "self_match", "partner", "partner_rate"}
+    assert set(ev) == {"iscg_calibrated", "self_match", "partner", "partner_rate", "partner_auc", "signature_auc"}
     assert ev["partner"] is None and ev["partner_rate"] == 0.0 and ev["self_match"] == 1.0
+    assert ev["partner_auc"] is None and ev["signature_auc"] > 0.95                # a well-separated real type
     assert out["iscg_floor"] < 0.74 and out["low_global_signal"] is False
 
 
@@ -324,7 +354,24 @@ def test_regime_merge_names_its_reciprocal_partner():
     for t, u in (("T0", "T0.b"), ("T0.b", "T0")):
         assert out["regime"][t] == "merge", (t, out["regime"], out["regime_evidence"][t])
         assert out["regime_evidence"][t]["partner"] == u and out["regime_evidence"][t]["partner_rate"] >= 0.05
+        assert 0.4 < out["regime_evidence"][t]["partner_auc"] < 0.6        # halves: held-out cells not told apart
     assert {out["regime"][t] for t in ("T1", "T2", "T3", "T4")} == {"consistent"}
+
+
+@pytest.mark.parametrize("noise", [0.0, 0.2])
+def test_regime_similar_distinct_types_are_not_merged(noise):
+    """Two distinct but similar types (T1 = T0 with 8 genes 1.5x; the worlds' T_CD4 / T_CD8 differ 1.5-1.6x)
+    become each other's reciprocal partner, clean and under 20 % label noise, as random halves do. Their cells
+    are told apart on held-out samples (partner_auc >= regime_pair_auc), so the pair is not 'merge'."""
+    from spatial_anno_metrics import isc as em
+
+    a = _mixture_adata(seed=int(noise * 5), sibling=(1.5, 8))
+    out = _isc(_label_noise(a, noise, 1) if noise else a)
+    ev = out["regime_evidence"]
+    assert ev["T0"]["partner"] == "T1" and ev["T1"]["partner"] == "T0"
+    assert em._merge_pairs(ev, {**out["thresholds"], "regime_pair_auc": np.inf}) == {"T0", "T1"}  # positive control
+    assert ev["T0"]["partner_auc"] == ev["T1"]["partner_auc"] >= 0.75
+    assert out["regime"]["T0"] != "merge" and out["regime"]["T1"] != "merge"
 
 
 def test_regime_never_calls_split_merged_types_read_consistent():
@@ -363,6 +410,36 @@ def test_regime_random_label_reads_remove():
     out = _isc(a)
     assert out["regime"]["Junk"] == "remove", out["regime_evidence"]["Junk"]
     assert out["regime_evidence"]["Junk"]["iscg_calibrated"] < 0.25
+    assert 0.4 < out["regime_evidence"]["Junk"]["signature_auc"] < 0.6   # held-out cells not told from the rest
+    assert {out["regime"][t] for t in ("T0", "T1", "T2", "T3", "T4")} == {"consistent"}
+
+
+def test_regime_weak_real_label_is_not_removed():
+    """A weak but real type under batch (marker block +1 instead of +8) is no more compact than random cells
+    (iscg_calibrated < 0.25, the scCube B / SRTsim Fibro case), but its held-out cells are told apart from the
+    rest of their sample by its signature (signature_auc >= regime_signature_auc): random cells are not, so the
+    call is 'inconclusive', not 'remove'."""
+    a = _mixture_adata(seed=1, n_types=6, n_genes=96, n_cells=500, batch_sd=1.0, marker=[1.0] * 4 + [8.0, 8.0])
+    out = _isc(a)
+    for t in ("T1", "T2"):
+        ev = out["regime_evidence"][t]
+        assert ev["iscg_calibrated"] < 0.25                                  # positive control: ISCG alone says remove
+        assert ev["signature_auc"] >= 0.9
+        assert out["regime"][t] == "inconclusive"
+
+
+def test_regime_halves_do_not_set_the_typical_label():
+    """Beside an over-split strong type, its two halves are counted once each in the median 'typical' label and
+    raise it, so weak but correct labels land near 0 (scDesign3: 9 of 50 untouched labels 'remove'). The median
+    leaves out the labels of a 'merge' pair: the calibration stays undefined as on the unsplit data and the weak
+    labels read 'consistent'."""
+    kw = dict(seed=2, n_types=6, n_genes=96, n_cells=600, marker=[0.2] * 4 + [8.0, 8.0])
+    clean = _isc(_mixture_adata(**kw))
+    assert set(clean["regime"].values()) == {"consistent"}
+    assert clean["regime_evidence"]["T0"]["iscg_calibrated"] is None
+    out = _isc(_split_half(_mixture_adata(**kw), "T5", 2))
+    assert out["regime"]["T5"] == out["regime"]["T5.b"] == "merge"
+    assert out["regime_evidence"]["T0"]["iscg_calibrated"] is None
     assert {out["regime"][t] for t in ("T0", "T1", "T2", "T3", "T4")} == {"consistent"}
 
 
@@ -452,10 +529,10 @@ def test_merge_pairs_need_mutual_partners_matched_like_themselves():
     (ratio <= 0.25: Mast / Normal_Kerat with 40 % T cells each). Only the first pair is 'merge'."""
     from spatial_anno_metrics import isc as em
 
-    thr = {"regime_partner_rate": 0.05, "regime_partner_ratio": 1 / 3}
+    thr = {"regime_partner_rate": 0.05, "regime_partner_ratio": 1 / 3, "regime_pair_auc": 0.65}
 
-    def ev(partner, rate, self_match):
-        return {"self_match": self_match, "partner": partner, "partner_rate": rate}
+    def ev(partner, rate, self_match, auc=0.5):
+        return {"self_match": self_match, "partner": partner, "partner_rate": rate, "partner_auc": auc}
 
     halves = {"A": ev("A.b", 0.24, 0.30), "A.b": ev("A", 0.24, 0.10), "C": ev(None, 0.0, 1.0)}
     assert em._merge_pairs(halves, thr) == {"A", "A.b"}
@@ -466,3 +543,100 @@ def test_merge_pairs_need_mutual_partners_matched_like_themselves():
     assert em._merge_pairs(one_way, thr) == {"B", "C"}                  # A -> B is not returned by B
     rare = {"A": ev("A.b", 0.04, 0.04), "A.b": ev("A", 0.04, 0.04)}
     assert em._merge_pairs(rare, thr) == set()                          # below regime_partner_rate
+    # distinct but similar types: reciprocal partners like halves, but their held-out cells are told apart
+    siblings = {"A": ev("B", 0.24, 0.30, 0.80), "B": ev("A", 0.24, 0.10, 0.80)}
+    assert em._merge_pairs(siblings, thr) == set()
+    assert em._merge_pairs(siblings, {**thr, "regime_pair_auc": 0.81}) == {"A", "B"}   # positive control
+    at = {"A": ev("B", 0.24, 0.30, 0.65), "B": ev("A", 0.24, 0.10, 0.65)}
+    assert em._merge_pairs(at, thr) == set()                            # the threshold itself separates
+    unknown = {"A": ev("B", 0.24, 0.30, None), "B": ev("A", 0.24, 0.10, None)}
+    assert em._merge_pairs(unknown, thr) == {"A", "B"}                  # not computable: the partner rule alone
+
+
+def test_calibrated_regime_signature_veto_boundaries():
+    """'remove' needs a label that is not told apart from the rest of its sample: signature_auc at or above
+    regime_signature_auc demotes it to 'inconclusive'; below, or not computable, it stays 'remove'. The veto
+    never touches the other calls."""
+    from spatial_anno_metrics import isc as em
+
+    thr = {"iscl": 0.45, "regime_remove": 0.25, "regime_low": 0.5, "regime_signature_auc": 0.85}
+    assert em._calibrated_regime(1.0, 0.1, False, thr, 0.85) == "inconclusive"
+    assert em._calibrated_regime(1.0, 0.1, False, thr, 0.8499) == "remove"
+    assert em._calibrated_regime(1.0, 0.1, False, thr, None) == "remove"
+    assert em._calibrated_regime(0.2, 0.4, False, thr, 0.99) == "inconclusive"        # low ISCL + g < 0.5
+    assert em._calibrated_regime(0.2, 0.4, False, thr, 0.5) == "remove"
+    assert em._calibrated_regime(1.0, 0.4, False, thr, 0.5) == "inconclusive"         # g < 0.5, ISCL high
+    assert em._calibrated_regime(1.0, 0.9, False, thr, 0.5) == "consistent"
+    assert em._calibrated_regime(1.0, 0.1, True, thr, 0.99) == "merge"
+
+
+def test_regime_multiplet_label_reads_remove_whatever_its_depth():
+    """Multiplets (the paper's 'remove'): each cell the sum of two random cells of its sample, so twice the
+    depth. The held-out scores are per-cell normalised, so depth alone does not tell the label apart from the
+    rest of its sample (signature_auc near 0.5) and the label is not rescued from 'remove'."""
+    a = _mixture_adata(seed=4)
+    X, smp = np.asarray(a.layers["counts"]), a.obs["sample"].to_numpy()
+    rng = np.random.default_rng(4)
+    rows, labs, smps = [], [], []
+    for s in np.unique(smp):
+        ids = np.flatnonzero(smp == s)
+        for _ in range(30):
+            i, j = rng.choice(ids, 2, replace=False)
+            rows.append(X[i] + X[j])
+            labs.append("Multiplet")
+            smps.append(s)
+    b = anndata.AnnData(X=np.vstack([X, rows]).astype("float32"))
+    b.layers["counts"] = b.X.copy()
+    b.obs_names = [f"c{i}" for i in range(b.n_obs)]
+    b.var_names = a.var_names
+    b.obs["cell_type"] = list(a.obs["cell_type"]) + labs
+    b.obs["sample"] = list(smp) + smps
+    out = _isc(b)
+    ev = out["regime_evidence"]["Multiplet"]
+    assert ev["iscg_calibrated"] < 0.25 and ev["signature_auc"] < 0.65, ev
+    assert out["regime"]["Multiplet"] == "remove"
+
+
+def test_iscg_calibrated_excluded_labels_leave_no_reference():
+    """With every other label excluded from the median (a dataset of one over-split type and one more label),
+    there is no typical label to calibrate against: g is None, never a ratio against the floor itself."""
+    from spatial_anno_metrics import isc as em
+
+    rng = np.random.default_rng(0)
+    P = np.vstack([rng.normal(0, 1, 20) + c for c in (0, 0, 0, 3, 3, 3, 6, 6, 6)])
+    lab = np.array(["A"] * 3 + ["A.b"] * 3 + ["C"] * 3)
+    F = rng.normal(1, 1, (3, 20))
+    _, g = em._iscg_calibrated(P, lab, F, None, 30, 0.1)
+    assert all(v is not None for v in g.values())                          # positive control: calibrated
+    _, g = em._iscg_calibrated(P, lab, F, None, 30, 0.1, exclude={"A", "A.b"})
+    assert g["A"] is not None and g["A.b"] is not None                     # C is their reference
+    assert g["C"] is None                                                  # no reference left for C
+
+
+def test_heldout_auc_scores_are_depth_normalised():
+    """The held-out score is a cell's counts per its own total projected on the direction: two groups with
+    the same composition at 1x and 2x depth tie (AUC 0.5) whatever the direction, so depth alone never tells a
+    label apart. Leave-one-out: with 2 samples each is scored by the other's direction; with 1, None."""
+    import scipy.sparse as sp
+
+    from spatial_anno_metrics import isc as em
+
+    base = np.tile(np.arange(1.0, 6.0), (8, 1))
+    M = sp.csr_matrix(np.vstack([base, 2 * base, base, 2 * base]))
+    lib = np.asarray(M.sum(1)).ravel()
+    groups = {"s1": (np.arange(0, 16), np.arange(16) < 8), "s2": (np.arange(16, 32), np.arange(16) < 8)}
+    diffs = {"s1": np.ones(5), "s2": np.arange(5.0)}
+    assert em._heldout_auc(M, lib, diffs, groups.__getitem__) == 0.5
+    assert em._heldout_auc(M, np.ones(32), diffs, groups.__getitem__) == 0.0      # positive control: raw depth
+    assert em._heldout_auc(M, lib, {"s1": np.ones(5)}, groups.__getitem__) is None
+
+    # the same through _separation on counts: label A = label B at twice the depth, direction all ones
+    a = anndata.AnnData(X=np.vstack([2 * base[:4], base[:4]] * 3).astype("float32"))
+    a.layers["counts"] = a.X.copy()
+    a.obs["cell_type"] = (["A"] * 4 + ["B"] * 4) * 3
+    a.obs["sample"] = [s for s in ("s1", "s2", "s3") for _ in range(8)]
+    P = np.ones((6, 5))
+    plab, psmp = np.array(["A", "B"] * 3), np.repeat(["s1", "s2", "s3"], 2)
+    none = {"A": {"partner": None}, "B": {"partner": None}}
+    sig, pair = em._separation(a, "cell_type", "sample", "counts", P, plab, psmp, np.zeros((3, 5)), none)
+    assert sig == {"A": 0.5, "B": 0.5} and pair == {"A": None, "B": None}

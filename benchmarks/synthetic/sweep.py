@@ -409,7 +409,8 @@ def isc_regimes(seeds):
                 rows.append(dict(case=name, seed=seed, type=t, regime=reg, quadrant=r["quadrant"][t],
                                  iscg=r["per_type_iscg"][t], iscl=r["per_type_iscl"][t],
                                  iscg_calibrated=ev["iscg_calibrated"], partner=ev["partner"],
-                                 partner_rate=ev["partner_rate"], iscg_floor=r["iscg_floor"]))
+                                 partner_rate=ev["partner_rate"], partner_auc=ev["partner_auc"],
+                                 signature_auc=ev["signature_auc"], iscg_floor=r["iscg_floor"]))
     return pd.DataFrame(rows)
 
 

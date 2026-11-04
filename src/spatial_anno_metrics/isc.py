@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
-from ._validate import _all_finite, check_labels, get_counts, skip
+from ._validate import _all_finite, check_labels, get_counts, matrix_name, skip
 from .thresholds import value as _thr
 
 __all__ = ["inter_sample_consistency", "isc_regime"]
@@ -109,13 +109,14 @@ def _embed(P, reduction, n_pcs):
     return U[:, :k] * S[:k], k
 
 
-def _iscg_calibrated(P, plabels, F, reduction, n_pcs, min_gap):
+def _iscg_calibrated(P, plabels, F, reduction, n_pcs, min_gap, exclude=()):
     """Place each label's ISCG between a label of random cells (0) and this dataset's typical label (1).
 
     The per-sample all-cell profiles ``F`` are added to the pseudobulks as one more label, the floor; in that
-    space g = (ISCG_t - floor) / (median ISCG of the other labels - floor). Returns (floor, {t: g}); g is None
-    for every label when the median label is within ``min_gap`` of the floor (with identical composition in
-    every sample, random cells are as replicable as a real type and ISCG cannot flag one).
+    space g = (ISCG_t - floor) / (median ISCG of the other labels - floor), the median leaving out the labels in
+    ``exclude`` (the two halves of an over-split type would count that type twice). Returns (floor, {t: g}); g
+    is None when the median label is within ``min_gap`` of the floor (with identical composition in every
+    sample, random cells are as replicable as a real type and ISCG cannot flag one) or no other label is left.
     """
     from scipy.spatial.distance import cdist
 
@@ -127,21 +128,93 @@ def _iscg_calibrated(P, plabels, F, reduction, n_pcs, min_gap):
     types = np.unique(plabels)
     per = np.array([g[codes == k].mean() for k in range(len(types))])
     floor = float(g[codes == -1].mean())
+    ref = np.array([t not in exclude for t in types])
     out = {}
     for k, t in enumerate(types):
-        typical = float(np.median(np.delete(per, k)))
+        others = per[ref & (np.arange(len(types)) != k)]
+        typical = float(np.median(others)) if len(others) else floor
         ok = typical - floor >= min_gap
         out[t] = float((per[k] - floor) / (typical - floor)) if ok else None
     return floor, out
 
 
+def _mann_whitney(scores, is_a):
+    """Return (U of the ``is_a`` scores over the others, number of pairs); ties count half."""
+    from scipy.stats import rankdata
+
+    n_a = int(is_a.sum())
+    n_o = len(is_a) - n_a
+    return float(rankdata(scores)[is_a].sum() - n_a * (n_a + 1) / 2), n_a * n_o
+
+
+def _heldout_auc(M, lib, diffs, groups):
+    """Leave-one-sample-out AUC of one group of cells against another, pooled over samples.
+
+    ``diffs`` maps each sample to a log-pseudobulk difference (group a minus its reference). The cells of a
+    sample, ``groups(sample) -> (index, is_a)``, are scored by their counts (``M`` rows / ``lib``) projected on
+    the mean difference of the OTHER samples, so the direction never sees the scored cells; the Mann-Whitney U
+    of the ``is_a`` cells over the rest is summed over samples. Within a sample, cells whose labels are
+    exchangeable (random halves, random cells) give 0.5 whatever the direction. None with < 2 samples.
+    """
+    if len(diffs) < 2:
+        return None
+    D = np.array(list(diffs.values()))
+    tot = D.sum(0)
+    u = n = 0.0
+    for k, x in enumerate(diffs):
+        idx, is_a = groups(x)
+        if is_a.any() and not is_a.all():
+            sc = np.asarray(M[idx] @ ((tot - D[k]) / (len(D) - 1))).ravel() / lib[idx]
+            du, dn = _mann_whitney(sc, is_a)
+            u, n = u + du, n + dn
+    return float(u / n) if n else None
+
+
+def _separation(adata, label_key, sample_key, layer, P, plabels, psamples, F, partners):
+    """Held-out separability of each label from the rest of its sample, and from its reciprocal partner.
+
+    ``signature_auc``: the label's cells against all other cells of their sample, scored by the label's
+    pseudobulk minus the sample's all-cell profile on the other samples (random cells: 0.5; a real type: near
+    1, also under a batch effect, which shifts a whole sample). ``partner_auc``: the label's cells against its
+    partner's, scored by the difference of the two pseudobulks on the other samples holding both (random halves
+    of one type: 0.5; two distinct types: above). Both are None when fewer than 2 samples hold the profiles.
+    """
+    y, s = check_labels(adata, label_key), check_labels(adata, sample_key)
+    M = adata.X if matrix_name(adata, layer) == "X" else adata.layers[layer]
+    M = M.tocsr() if sp.issparse(M) else np.asarray(M)
+    lib = np.maximum(np.asarray(M.sum(1)).ravel(), 1.0) if layer else np.ones(M.shape[0])
+    samples = np.unique(psamples)
+    cells = {x: np.flatnonzero(s == x) for x in samples}
+    fpos = {x: i for i, x in enumerate(samples)}
+    rows = {t: dict(zip(psamples[plabels == t], np.flatnonzero(plabels == t))) for t in np.unique(plabels)}
+    sig, pair = {}, {}
+    for t, rt in rows.items():
+        sig[t] = _heldout_auc(M, lib, {x: P[i] - F[fpos[x]] for x, i in rt.items()},
+                              lambda x, t=t: (cells[x], y[cells[x]] == t))
+        u = partners[str(t)]["partner"]
+        if u is not None and (u, t) not in pair:
+            def grp(x, t=t, u=u):
+                idx = cells[x][np.isin(y[cells[x]], [t, u])]
+                return idx, y[idx] == t
+
+            pair[(t, u)] = _heldout_auc(M, lib, {x: P[i] - P[rows[u][x]] for x, i in rt.items() if x in rows[u]},
+                                        grp)
+    partner_auc = {t: None if partners[str(t)]["partner"] is None else
+                   pair.get((t, partners[str(t)]["partner"]), pair.get((partners[str(t)]["partner"], t)))
+                   for t in rows}
+    return sig, partner_auc
+
+
 def _merge_pairs(partners, thr):
     """Return the labels in an over-partitioned pair: mutual partners that match each other like themselves.
 
-    t and u qualify when each is the other's partner, the larger partner rate is >= ``regime_partner_rate``
-    and, on at least one side, the partner is hit >= ``regime_partner_ratio`` times as often as the label's
-    own profiles. Random halves of one type: the larger ratio is >= 0.70 (about 1 expected); two labels
-    that share a contaminant: <= 0.25 (benchmarks/isc_regimes_real.py).
+    t and u qualify when each is the other's partner, the larger partner rate is >= ``regime_partner_rate``,
+    on at least one side the partner is hit >= ``regime_partner_ratio`` times as often as the label's own
+    profiles, and their cells are not told apart on held-out samples (``partner_auc`` <
+    ``regime_pair_auc``; None, not computable, does not block). Random halves of one type: the larger ratio is
+    >= 0.70 (about 1 expected) and partner_auc 0.47-0.57; two labels that share a contaminant: ratio <= 0.25;
+    two distinct but similar types (T_CD4 / T_CD8 in the simulation worlds): partner_auc >= 0.70
+    (benchmarks/isc_regimes_real.py, benchmarks/worlds/README.md).
     """
     out = set()
     for t, ev in partners.items():
@@ -150,13 +223,14 @@ def _merge_pairs(partners, thr):
             continue
         pair = (ev, partners[u])
         ratio = max(e["partner_rate"] / e["self_match"] if e["self_match"] > 0 else np.inf for e in pair)
+        auc = ev.get("partner_auc")
         if max(e["partner_rate"] for e in pair) >= thr["regime_partner_rate"] and \
-                ratio >= thr["regime_partner_ratio"]:
+                ratio >= thr["regime_partner_ratio"] and (auc is None or auc < thr["regime_pair_auc"]):
             out |= {t, u}
     return out
 
 
-def _calibrated_regime(iscl, g_cal, merge_pair, thr) -> str:
+def _calibrated_regime(iscl, g_cal, merge_pair, thr, sig_auc=None) -> str:
     """Return the benchmarked refinement call of one label (see :func:`inter_sample_consistency`, Notes)."""
     if iscl is None or not np.isfinite(iscl):
         return "not_computable"
@@ -165,7 +239,8 @@ def _calibrated_regime(iscl, g_cal, merge_pair, thr) -> str:
     low_l = iscl < thr["iscl"]
     if g_cal is not None and np.isfinite(g_cal):
         if g_cal < thr["regime_remove"] or (low_l and g_cal < thr["regime_low"]):
-            return "remove"
+            real = sig_auc is not None and sig_auc >= thr["regime_signature_auc"]
+            return "inconclusive" if real else "remove"
         if g_cal < thr["regime_low"]:
             return "inconclusive"
     return "inconclusive" if low_l else "consistent"
@@ -267,8 +342,9 @@ def _rcm_dissimilarity(P, samples, labels, genes=None):
 
 # Garnica, Andreatta & Carmona 2026 (Fig. 5c): median - 1 IQR over a 9-atlas meta-study. Guides, not cut-offs.
 ISC_THRESHOLDS = {"iscg": _thr("isc", "iscg"), "iscl": _thr("isc", "iscl")}
-_REGIME_THRESHOLDS = {k: _thr("isc", k) for k in ("regime_partner_rate", "regime_partner_ratio", "regime_remove",
-                                                  "regime_low", "regime_floor_gap")}
+_REGIME_THRESHOLDS = {k: _thr("isc", k) for k in ("regime_partner_rate", "regime_partner_ratio", "regime_pair_auc",
+                                                  "regime_remove", "regime_low", "regime_floor_gap",
+                                                  "regime_signature_auc")}
 _SCALE = _thr("isc", "pseudobulk_scale")
 _MARKER_N = _thr("isc", "rcm_marker_n")
 
@@ -333,8 +409,9 @@ def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str
         log-normalised HVGs. Aggregation is ``indicator.T @ X``: a sparse matrix is never densified.
     thresholds : dict, optional
         Overrides for the regime calls: ``iscg`` / ``iscl`` (paper guides 0.74 / 0.45), ``regime_partner_rate``
-        (0.05), ``regime_partner_ratio`` (1/3), ``regime_remove`` (0.25), ``regime_low`` (0.5),
-        ``regime_floor_gap`` (0.1); see Notes and :data:`~spatial_anno_metrics.thresholds.THRESHOLDS`.
+        (0.05), ``regime_partner_ratio`` (1/3), ``regime_pair_auc`` (0.65), ``regime_remove`` (0.25),
+        ``regime_low`` (0.5), ``regime_floor_gap`` (0.1), ``regime_signature_auc`` (0.85); see Notes and
+        :data:`~spatial_anno_metrics.thresholds.THRESHOLDS`.
     reduction : {"pca", None}
         Space of the ISCG cosine. ``"pca"`` (default, scTypeEval's ``reduction = TRUE``): the first ``n_pcs``
         principal components of the centred, unscaled pseudobulk matrix (exact SVD; scTypeEval uses irlba, which
@@ -361,7 +438,9 @@ def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str
         ``not_computable`` (Notes; never ``split``), ``regime_status`` = ``"benchmarked"``, ``regime_evidence``
         per type (``iscg_calibrated``: 0 = a label of random cells, 1 = the median other label, None when the
         two cannot be told apart; ``self_match``, ``partner``, ``partner_rate``: reciprocal best hits across
-        samples), ``quadrant`` per type (the paper's fixed-threshold call, :func:`isc_regime`), ``iscg_floor``
+        samples; ``partner_auc``: held-out AUC of the label's cells against its partner's, None without a
+        partner; ``signature_auc``: held-out AUC of the label's cells against the rest of their sample),
+        ``quadrant`` per type (the paper's fixed-threshold call, :func:`isc_regime`), ``iscg_floor``
         (ISCG of the per-sample all-cell profile) and ``low_global_signal`` (median label ISCG < 0.74: batch
         effect, label noise or weak signal; the per-label calls are relative to this dataset);
         ``consistency`` / ``per_type`` - silhouette on pseudobulk ``metric`` distance in the raw space (the
@@ -373,20 +452,32 @@ def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str
     -----
     **Regime calls** (``regime``), benchmarked on real cohorts with planted errors
     (``benchmarks/isc_regimes_real.py``: Yerly 2022, Ganier 2024 with two label sets, Joanito 2022 held out;
-    1,945 label scorings). The paper's quadrant (``quadrant``: fixed 0.74 / 0.45 guides) misreads three cases,
-    because ISCG falls for every label under batch effects and label noise while ISCL stays near 1: it calls
-    ``split`` for 164 / 980 untouched labels (all 81 at batch log-sd 1.0), for 59 / 163 labels under label
-    noise and for 47 / 63 planted bad labels (development sets). The rules here, in order:
+    1,945 label scorings) and checked in three realistic simulation worlds (``benchmarks/worlds/README.md``, ISC
+    regime calls). The paper's quadrant (``quadrant``: fixed 0.74 / 0.45 guides) misreads three cases, because
+    ISCG falls for every label under batch effects and label noise while ISCL stays near 1: it calls ``split``
+    for 164 / 980 untouched labels (all 81 at batch log-sd 1.0), for 59 / 163 labels under label noise and for
+    47 / 63 planted bad labels (development sets). Two held-out AUCs back the calls; each scores the cells of
+    one sample by a pseudobulk difference learned on the OTHER samples (leave one sample out), so labels whose
+    cells are exchangeable within a sample (random halves, random cells) read 0.5 whatever the data:
+    ``partner_auc`` (the label's cells against its partner's) and ``signature_auc`` (against the rest of their
+    sample; a batch effect shifts the whole sample and cancels). The rules, in order:
 
     1. ``merge``: two labels are each other's reciprocal partner (the other label they share most mutual best
-       hits with across samples), at a rate >= ``regime_partner_rate`` (0.05) of comparisons, and on one side
-       the partner is hit >= ``regime_partner_ratio`` (1/3) as often as the label's own profiles. Random halves
-       of one type: rate 0.095-0.38, larger ratio >= 0.70; labels that share a contaminant (22 of 1,849 other
-       scorings reach rate 0.05): ratio <= 0.25.
+       hits with across samples), at a rate >= ``regime_partner_rate`` (0.05) of comparisons, on one side the
+       partner is hit >= ``regime_partner_ratio`` (1/3) as often as the label's own profiles, and their cells
+       are not told apart on held-out samples (``partner_auc`` < ``regime_pair_auc``, 0.65). Random halves of
+       one type: rate 0.095-0.38, larger ratio >= 0.70, partner_auc 0.47-0.54 (real) and 0.47-0.57 (worlds);
+       labels that share a contaminant (22 of 1,849 other scorings reach rate 0.05): ratio <= 0.25; the
+       worlds' T_CD4 / T_CD8, whose markers differ 1.5-1.6-fold and which become reciprocal partners under
+       label noise or batch: partner_auc 0.70-0.93.
     2. ``iscg_calibrated`` g places ISCG between a label of random cells (0: the per-sample all-cell profile
-       added as one more label, ``iscg_floor``) and the median other label (1). g < ``regime_remove`` (0.25),
-       or g < ``regime_low`` (0.5) with ISCL < 0.45 -> ``remove``; g < 0.5 otherwise -> ``inconclusive``.
-       A batch effect lowers the floor with the labels, so g stays near 1.
+       added as one more label, ``iscg_floor``) and the median other label (1), the median leaving out the
+       labels of a ``merge`` pair (two halves count one type twice and lifted it, so weak correct labels landed
+       near 0). g < ``regime_remove`` (0.25), or g < ``regime_low`` (0.5) with ISCL < 0.45 -> ``remove``,
+       unless the label's cells are told apart from the rest of their sample (``signature_auc`` >=
+       ``regime_signature_auc``, 0.85): then ``inconclusive``, a real population that is no more compact than
+       random cells. g < 0.5 otherwise -> ``inconclusive``. A batch effect lowers the floor with the labels,
+       so g stays near 1 on the real cohorts.
     3. ISCL < 0.45 without a partner -> ``inconclusive``; else ``consistent``.
 
     Accuracy (development sets / held-out Joanito 2022, 189 samples): untouched labels ``consistent``
@@ -395,7 +486,10 @@ def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str
     24); planted bad labels ``remove`` 39 / 63 and 15 / 21 (quadrant 10, 15), the rest ``inconclusive``
     (16, 3) or missed (8, 3), never another action. The misses: randomising a large label (13-30 % of cells)
     spreads it over the other labels, so little is clean to calibrate against; half-contaminated large types
-    (g 0.26-0.49) read ``inconclusive``.
+    (g 0.26-0.49) read ``inconclusive``. Planted bad labels reach signature_auc <= 0.75 (half of a label
+    replaced by random cells; 0.47-0.60 for labels of random cells), correct labels >= 0.88, so rules 1 and 2's
+    held-out checks change no real call. In the worlds they remove every wrong call but one (64 -> 1 over 9
+    variants; the one is an over-split half whose twin was not scored).
 
     **Not identifiable from ISC: under-partitioning.** Two distinct types pooled under one label read
     ``consistent`` in 16 / 16 real merge scorings (14 distinct pairs; ISCG 0.64-0.92, ISCL 0.71-1.00), including
@@ -404,22 +498,20 @@ def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str
     ISC robust to coarser labels. ``split`` is therefore never returned; test a suspected mixture with
     cell-level markers or subclustering.
 
-    **The simulation worlds contradict the real cohorts on two points** (``benchmarks/worlds/README.md``, ISC
-    regime calls: scDesign3, SRTsim and scCube, 3 seeds each). Clean labels read ``consistent`` in 14-18 of 16-18
-    per world (quadrant: 3-6 in the two worlds fitted to a Xenium section) and over-split halves ``merge`` in
-    30 / 31, but (1) the sibling labels T_CD4 and T_CD8, whose markers differ 1.5-1.6-fold, read ``merge`` under
-    20 % label noise (2-6 of 18 labels per world), under batch (up to 4 / 18) and in one clean seed (2 / 16); and
-    (2) correct labels read ``remove`` under batch (scCube B in every seed, SRTsim Fibro in one crop set) and
-    beside an over-split label (scDesign3, 9 of 50), where their ISCG is at or below the random-cell floor. The
-    real cohorts showed neither (no degraded label ``merge``, 0 / 257; 81 / 81 labels under batch and 372 / 372
-    beside a planted split or merge ``consistent``).
+    **What the worlds still show** (scDesign3, SRTsim and scCube, 3 seeds each): a correct but weak label
+    under batch (scCube B, SRTsim Fibro) is no more compact than random cells and reads ``inconclusive``, not
+    ``consistent``; sibling labels confused by label noise read ``inconclusive`` or ``remove`` (a degraded
+    label, not a wrong call), and in one scDesign3 Dirichlet seed the clean T_CD4 / T_CD8 (ISCL 0.20-0.31)
+    read ``inconclusive``.
 
     **Identical composition in every sample** (the synthetic world) makes random cells as compact as a type
     (floor 0.99): ``iscg_calibrated`` is None (``regime_floor_gap``) and only rules 1 and 3 apply, so a label
     of random cells can read ``consistent``. ``low_global_signal`` flags a dataset whose median label ISCG is
     under 0.74 (batch, label noise, weak signal). The thresholds were set on the development sets; one held-out
     cohort confirmed them after one fix (partner rates counted over the samples that hold the label: rare
-    Neutrophil halves, scorable in 14 of 189 samples, read ``inconclusive`` before).
+    Neutrophil halves, scorable in 14 of 189 samples, read ``inconclusive`` before). ``regime_pair_auc`` and
+    ``regime_signature_auc`` were set on the development sets and the worlds, then the held-out cohort was
+    scored once: no call moved.
 
     ISCL on a toy fixture of flat, low-noise background genes is not informative: with Spearman ranks a single
     foreign cell in a pseudobulk lifts its type's genes above the flat background, so two pseudobulks that hold
@@ -469,16 +561,18 @@ def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str
     per_g, per_l = _per_type(glob), _per_type(loc)
     per_int = {t: per_g[t] * per_l[t] for t in types}
     F = _sample_profiles(adata, sample_key, np.unique(psamples), layer=layer)
-    floor, g_cal = _iscg_calibrated(P, plabels, F, reduction, n_pcs, thr["regime_floor_gap"])
-    evidence = {t: {"iscg_calibrated": g_cal[t], **partners[str(t)]} for t in types}
-    merge = _merge_pairs(partners, thr)
+    sig_auc, pair_auc = _separation(adata, label_key, sample_key, layer, P, plabels, psamples, F, partners)
+    merge = _merge_pairs({str(t): {**partners[str(t)], "partner_auc": pair_auc[t]} for t in types}, thr)
+    floor, g_cal = _iscg_calibrated(P, plabels, F, reduction, n_pcs, thr["regime_floor_gap"], exclude=merge)
+    evidence = {t: {"iscg_calibrated": g_cal[t], **partners[str(t)], "partner_auc": pair_auc[t],
+                    "signature_auc": sig_auc[t]} for t in types}
     return {
         "status": "ok", "consistency": float(sil.mean()), "per_type": _per_type(sil),
         "iscg": float(np.mean(list(per_g.values()))), "iscl": float(np.mean(list(per_l.values()))),
         "integrated": float(np.mean(list(per_int.values()))),
         "per_type_iscg": per_g, "per_type_iscl": per_l, "per_type_integrated": per_int,
         "iscg_profile_mean": float(glob.mean()), "iscl_profile_mean": float(loc.mean()),
-        "regime": {t: _calibrated_regime(per_l[t], g_cal[t], str(t) in merge, thr) for t in types},
+        "regime": {t: _calibrated_regime(per_l[t], g_cal[t], str(t) in merge, thr, sig_auc[t]) for t in types},
         "regime_status": "benchmarked", "regime_evidence": evidence,
         "quadrant": {t: isc_regime(per_g[t], per_l[t], thr["iscg"], thr["iscl"]) for t in types},
         "iscg_floor": floor, "low_global_signal": bool(np.median(list(per_g.values())) < thr["iscg"]),

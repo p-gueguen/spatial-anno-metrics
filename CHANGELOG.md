@@ -144,9 +144,11 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   paper's fixed-threshold quadrant (roadmap 8d). Values: `consistent` / `merge` / `remove` / `inconclusive` /
   `not_computable`; `split` is never returned (`split` -> `consistent` or `inconclusive`): ISC cannot see two
   types pooled under one label (16 / 16 real merge scorings read compact and replicable). `merge` needs two
-  labels that are each other's reciprocal partner across samples; `remove` / `inconclusive` come from ISCG
-  calibrated between a label of random cells (0) and the dataset's median label (1), so batch effects and label
-  noise no longer read `split`. `regime_status`: `"experimental"` -> `"benchmarked"`. The old call is kept as
+  labels that are each other's reciprocal partner across samples and whose cells are not told apart on
+  held-out samples; `remove` / `inconclusive` come from ISCG calibrated between a label of random cells (0) and
+  the dataset's median label (1, leaving out `merge` pairs), so batch effects and label noise no longer read
+  `split`, and a label whose held-out cells are told apart from the rest of their sample reads `inconclusive`,
+  not `remove`. `regime_status`: `"experimental"` -> `"benchmarked"`. The old call is kept as
   `quadrant` (`isc_regime` is unchanged). On `benchmarks/isc_regimes_real.py` (Yerly 2022, Ganier 2024 and,
   held out, Joanito 2022): untouched labels `consistent` 980 / 980 and 417 / 417 (quadrant 816, 398), no
   `merge` / `split` under 20-40 % label noise (quadrant: `split` for 59 / 163 and 32 / 66), over-split halves `merge`
@@ -155,8 +157,18 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   -> `consistent` 30 / 30, 20 % label noise `split` 21 / 30 -> `consistent` 30 / 30. ISCG / ISCL are unchanged
   (goldens to 1e-12). In the realistic simulation worlds (`benchmarks/worlds/README.md`, ISC regime calls) clean
   labels read `consistent` 14-18 of 16-18 per world (quadrant: 3-6 in the two worlds fitted to the Xenium
-  section) and over-split halves `merge` 30 / 31, but the sibling labels T_CD4 / T_CD8 read `merge` under label
-  noise and batch, and some correct labels `remove` under batch, which the real cohorts did not show (roadmap 8d).
+  section), over-split halves `merge` 30 / 31, and wrong calls fall from 64 to 1 over 9 world variants: the two
+  held-out checks below stop `merge` for the sibling labels T_CD4 / T_CD8 under label noise and batch, and
+  `remove` for correct labels under batch or beside an over-split label (roadmap 8d).
+- `inter_sample_consistency(...)["regime"]`, two held-out checks (roadmap 8d). Each scores the cells of one
+  sample by a pseudobulk difference learned on the other samples, so exchangeable labels read 0.5:
+  (1) `merge` also needs `partner_auc` (the label's cells against its partner's) < `regime_pair_auc` = 0.65:
+  random halves 0.47-0.54 on the real cohorts, 0.47-0.57 in the worlds, T_CD4 / T_CD8 0.70-0.93;
+  (2) `remove` -> `inconclusive` when `signature_auc` (the label's cells against the rest of their sample)
+  >= `regime_signature_auc` = 0.85: planted bad labels <= 0.75, correct labels >= 0.88; and the median label
+  that calibrates ISCG leaves out `merge` pairs (two halves counted one type twice). The real benchmark tables
+  are unchanged, development and held-out (no call moved); in the worlds (9 variants) wrong `merge` 40 -> 0
+  and wrong `remove` 23 -> 0 (`inconclusive` instead, or `consistent` beside an over-split label).
 - `internal_validity`: Ward-PropMatch runs on the `subsample` (as the silhouettes, Davies-Bouldin and
   Calinski-Harabasz already did), not on every cell: O(N^2) memory made it unusable at 1e5 cells (1.64e5 Xenium
   cells: 2,951 s / 211 GB -> 20 s / 0.74 GB). When `n_obs > subsample`, `ward_propmatch` and `integrated` move
@@ -270,7 +282,8 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
 - `inter_sample_consistency(..., reduction="pca" | None, n_pcs=30, rcm_genes=None | "markers" | <gene list>)`:
   `rcm_genes="markers"` runs the reciprocal classifier on SingleR's classic marker union of each training sample;
   a gene list (e.g. HVGs) restricts it. Result keys `iscg_profile_mean`, `iscl_profile_mean`, `regime_status`,
-  `regime_evidence` (per label: `iscg_calibrated`, `self_match`, `partner`, `partner_rate`), `quadrant`,
+  `regime_evidence` (per label: `iscg_calibrated`, `self_match`, `partner`, `partner_rate`, `partner_auc`,
+  `signature_auc`), `quadrant`,
   `iscg_floor`, `low_global_signal`, `reduction`, `n_pcs`, `rcm_genes`. `thresholds=` accepts the regime keys
   below and rejects unknown ones.
 - `crisp_purity` and `mecr` report a detection-matched null (each marker's detections reassigned to random cells,
@@ -318,8 +331,8 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
 - `panel_resolvability` per-type keys `f1_null` (the type's share of the scored cells) and `f1_adjusted`, and
   keyword-only `f1_resolvable`, `f1_weak`, `null_adjusted`.
 - `THRESHOLDS` entries for the new defaults: `internal` (`clisi_n_neighbors`, `isolated_f1_cuts_per_label`), `isc`
-  (`n_pcs`, `rcm_marker_n`, `regime_partner_rate`, `regime_partner_ratio`, `regime_remove`, `regime_low`,
-  `regime_floor_gap`), `purity` (`null_draws`, `nmp_salas_max_share`, `nmp_salas_min_cells`,
+  (`n_pcs`, `rcm_marker_n`, `regime_partner_rate`, `regime_partner_ratio`, `regime_pair_auc`, `regime_remove`,
+  `regime_low`, `regime_floor_gap`, `regime_signature_auc`), `purity` (`null_draws`, `nmp_salas_max_share`, `nmp_salas_min_cells`,
   `nmp_n_permutations`, `coexpr_min_cells`, `coexpr_target_sum`, `ncp_moldia_threshold`), `spatial`
   (`contamination_n_perm`), `external` (`spari_alpha`, `spari_max_cells`), `signal_qc` (`spatialqm_moran_n_neighs`,
   `spatialqm_pseudocount`), `conformal` (`ece_n_bins`, `clustered_quantiles`, `novelty_fdr`, `novelty_frac_train`,

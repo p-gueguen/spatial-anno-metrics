@@ -133,13 +133,19 @@ reproduces all 570 shared cells exactly.
    - Correctly labelled infiltrating cells lower coherence (0.920 → 0.734) and raise PAS (0.022 → 0.159) and
      CHAOS (0.036 → 0.044).
    - Random noise is caught early: PAS 0.022 → 0.077 at 5 % label noise, CHAOS 0.036 → 0.052.
-3. **ISC regime calls are right for over-splitting only.**
-   - Over-split: the split halves get `merge` in 5/5 seeds (ISCL −0.01 on average over the halves). Correct.
-   - Merge: merged labels get `consistent` in 5/5, and ISCG *rises* (0.938 → 0.978). It should say `split`.
-   - 20 % random label noise reads `split` for 21 of 30 type-seeds, and a batch effect (log-sd 1.0) for
-     30 of 30.
-   - ISCL stays ≥ 0.90 under 40 % label noise and at 1.000 under every batch strength; on this fixture it
-     only reacts to over-splitting.
+3. **ISC regime calls: the paper's quadrant is right for over-splitting only; the calibrated `regime` is
+   never wrong here, but cannot see merges** (`check_isc_regimes.csv`, both calls side by side).
+   - Over-split: the halves get `merge` in 10/10 under both (each other's reciprocal partner, partner rate
+     0.23-0.43).
+   - Merge: merged labels read `consistent` in 20/20 under both, and ISCG *rises* (0.938 → 0.978). Pooled
+     types are compact and replicable, so ISC cannot ask for a `split` (the same holds on real data,
+     `benchmarks/isc_regimes_real.py`).
+   - 20 % random label noise: the quadrant reads `split` for 21 of 30 type-seeds, the regime `consistent`
+     30/30. A batch effect (log-sd 1.0): quadrant `split` 30/30, regime `consistent` 30/30.
+   - In this world every sample has the same composition, so a label of random cells is as compact as a real
+     type (ISCG floor 0.99 vs 0.93): the calibrated ISCG is undefined and the regime rests on ISCL and the
+     reciprocal partners alone. ISCL stays ≥ 0.87 under 20 % label noise and at 1.000 under every batch
+     strength.
 4. **Real co-expression is flagged as contamination** by every reference-free purity metric:
    - `crisp_purity` 0.81 → 0.70 and `mecr` 0.042 → 0.064, already at 5 % co-expression;
    - `pmp` 0.996 → 0.950;

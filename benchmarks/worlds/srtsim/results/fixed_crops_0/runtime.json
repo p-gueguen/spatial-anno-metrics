@@ -1,0 +1,23 @@
+{
+ "sweep_seconds": 116.1,
+ "seeds": 3,
+ "workers": 16,
+ "scenarios": [
+  "label_noise",
+  "sibling_confusion",
+  "type_swap",
+  "patch_error",
+  "over_split",
+  "merge",
+  "spillover",
+  "depth_loss",
+  "ambient",
+  "batch",
+  "coord_shuffle",
+  "coexpression",
+  "rare_type",
+  "infiltration",
+  "panel_growth"
+ ],
+ "fixed_crops": 0
+}

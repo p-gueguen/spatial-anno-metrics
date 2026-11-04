@@ -165,8 +165,10 @@ other changes. Only 3 of the 133 also differ between the toy at 5 and at 3 seeds
 **Read this first: the move rule is much stricter here.** A move must exceed 3 × the seed SD at strength 0. In
 this world each seed is a different set of tissue crops, so that SD is between-section variability, not
 draw-to-draw noise. The SD sets the threshold in 71 % of cells, against 22 % in the toy, and the median 3·SD is
-8.9 % of the metric's range, against 0.6 %. Several "lost" detections are real moves just under the bar. Rerunning
-with fixed crops and only the SRTsim draw varying would separate the two sources; that run has not been done.
+8.9 % of the metric's range, against 0.6 %. Several "lost" detections are real moves just under the bar. The fixed-crop control
+(`sweep.py --world srtsim --fixed-crops 0`, [`fixed_crops_0/`](fixed_crops_0/)) keeps one crop set and varies only
+the SRTsim draw: 9 of the 30 lost toy detections come back, and 21 (all the sibling-confusion ones but the
+isolated-label scores) stay lost. See [`../../README.md`](../../README.md#srtsim-control-fixed-crops).
 
 **Null scenarios.**
 - **The toy's false alarms under `coexpression` disappear**, because the real baseline already mixes lineages.

@@ -27,7 +27,6 @@ QC (SpatialQM), conformal (scConform), `neighbor_contamination` and decompositio
 | # | Item | Why it is open | Evidence |
 |---|---|---|---|
 | 5 | **AQI validation and tuning** | Tracked outside this repo. | - |
-| 28 | **Realistic simulation worlds** for the synthetic sweep: scDesign3 (fitted to the Xenium breast section, plus a multi-sample world with varying composition), SRTsim (reference-based spatial), scCube (controllable spatial patterns). Same 15 scenarios and scoring as the toy world in `benchmarks/synthetic/sim.py`. | In progress (2026-11-04). The toy world uses Poisson counts, stripes and markers 1,000x off-target, so its detection thresholds are optimistic, and constant cell-type composition across samples hides merges from ISC (8d). | `benchmarks/worlds/<tool>/` on branches `sim/scdesign3`, `sim/srtsim`, `sim/sccube` |
 | 8d | **ISC regime calls** are still wrong in 3 of 4 synthetic cases: merge reads `consistent`, 20 % label noise `split` (21/30 labels), a batch effect `split` (30/30); only over-split is right. | Flagged, not fixed: results carry `regime_status="experimental"`. The headline ISCG/ISCL now match scTypeEval (#7), so the calls, not the scores, are the problem; they need real multi-sample data with a known answer before they can be trusted. | `isc.py` (Notes, with the numbers); `tests/test_isc.py::test_regime_calls_flagged_experimental`; `benchmarks/synthetic/results/check_isc_regimes.csv` |
 
 ## P2 - later (external PRs & publication)
@@ -69,6 +68,16 @@ Details, with the `old -> new` call for every breaking change, are in [CHANGELOG
   breast crop) + 5-seed synthetic sweep (`benchmarks/synthetic/sweep.py`), #25 ontology consistency (`distance="path"`
   and `distance="rwr"` Random Walk with Restart after `scGraph-OntoRWR`, tested on Yerly 2022 BCC data),
   #26 deconvolution AUPR (`aupr_method="sklearn" | "precrec"` + `aupr_precrec`) / SSIM / rank score, #27 spARI.
+- **#28 realistic simulation worlds** (2026-11-04): scDesign3 (fitted to the Xenium breast section; bands, plus
+  six Dirichlet-composition pieces), SRTsim (reference-based, a crop set per seed, plus a fixed-crop control) and
+  scCube (VAE on Yerly 2022 BCC scRNA-seq, four spatial patterns) run the unchanged 15-scenario sweep through
+  `sweep.py --world` (toy default byte-identical). Evidence: `benchmarks/worlds/README.md` (cross-world verdict
+  table, clean baselines, findings), `benchmarks/worlds/<world>/results/`, `benchmarks/worlds/results/cross_world_*`.
+  The catalog now cites them: merges look better to neighbourhood metrics in every realistic world, conformal
+  novelty flags no novel cell in any, NMP catches spillover in some worlds only, sibling confusion is invisible
+  without ground truth on real T-subtype markers, and the toy's co-expression and infiltration false alarms vanish
+  only in already mixed tissue. For 8d: under varying composition (scDesign3 Dirichlet) a merged Fibro+Epi label
+  still reads `consistent` (ISCG 0.93).
 - **Catalog §8**: the label-trained-embedding circularity rule (and `embedding_label_trained=True`), the
   dataset-difficulty variance rule (Wardhana, Zeng & Lu 2026), and the single-preprint caveat on the ISC 0.74 / 0.45
   guide thresholds.

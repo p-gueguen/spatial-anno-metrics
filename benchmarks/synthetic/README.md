@@ -11,7 +11,11 @@ checks.
 ```bash
 pip install -e ".[spatial,dev]"
 python benchmarks/synthetic/sweep.py --seeds 5 --workers 32     # ~1 min on 32 cores
+python benchmarks/synthetic/sweep.py --world srtsim              # a realistic world: scdesign3, srtsim, sccube
 ```
+
+The same sweep runs on three realistic simulated worlds (scDesign3, SRTsim, scCube): see
+[`../worlds/README.md`](../worlds/README.md) for the cross-world verdict table and which toy findings hold there.
 
 **Results (0.7.0, 5 seeds):**
 - [`results/matrix.md`](results/matrix.md): the verdict per metric and scenario.
@@ -292,6 +296,8 @@ Values are means over 5 seeds, baseline → maximum strength; "threshold" is the
 - A metric that fails here fails a case it should handle. One that passes has only cleared the easy
   version. `onto.rho` is not exercised here at all (see above).
 - Real-data checks (#7 and the P2 validation harness in `docs/ROADMAP.md`) are still needed.
-- Realistic simulated worlds are being added under `benchmarks/worlds/` (scDesign3, SRTsim, scCube; ROADMAP
-  #28). They plug into this sweep through the same `simulate` / `reference` contract, so the 15 scenarios and the
-  scoring stay identical and verdicts can be compared world by world.
+- Realistic simulated worlds (scDesign3, SRTsim, scCube; ROADMAP #28) run this same sweep through the same
+  `simulate` / `reference` contract: `sweep.py --world {scdesign3,srtsim,sccube}`. Several toy verdicts do not
+  survive them: sibling confusion on real T-cell markers, NMP under spillover, conformal novelty, and the
+  co-expression and infiltration false alarms. The cross-world table and findings are in
+  [`../worlds/README.md`](../worlds/README.md).

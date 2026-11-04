@@ -319,6 +319,16 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
 - Synthetic and real-data perturbation benchmarks: `benchmarks/synthetic/sweep.py` (5 seeds across all scenarios,
   recording `onto.rwr_rho`, `ncp.moldia`, and `aupr_precrec`) and `benchmarks/real_perturbation.py` (controlled
   perturbations on the committed Yerly 2022 human BCC cohort and 10x Xenium human breast cancer crop).
+- Realistic simulation worlds for the synthetic sweep (`benchmarks/worlds/`), each behind the `simulate` /
+  `reference` contract of `benchmarks/synthetic/sim.py`, so the 15 scenarios and the scoring are unchanged:
+  scDesign3 fitted to the 10x Xenium breast section (one crop, as bands or as six Dirichlet-composition pieces),
+  SRTsim fitted to random crops of the same section (one crop set per seed), and scCube (VAE on Yerly 2022 BCC
+  scRNA-seq, Xenium breast panel) in four spatial patterns. `sweep.py --world {toy,scdesign3,srtsim,sccube}` (with
+  `--pattern`, `--sample-mode`, `--alpha0`, `--fixed-crops`) installs a world through one helper
+  (`benchmarks/worlds/__init__.py`); the per-world `run.py` scripts are thin wrappers around it. The default
+  `--world toy` writes the same files byte for byte. `benchmarks/worlds/README.md` compares the verdicts across
+  worlds (`compare_worlds.py`), and the catalog's caveats on spatial metrics, purity under co-expression and
+  spillover, conformal novelty and sibling confusion now cite them.
 
 ### Changed
 

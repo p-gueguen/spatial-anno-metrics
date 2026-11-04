@@ -45,6 +45,21 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
                     False),
         "rcm_marker_n": _e(500, "SingleR classic markers (Aran et al. 2019; scTypeEval's RCM classifier): "
                                 "de.n = round(500 * (2/3)^log2(N labels)) per label pair", False),
+        "regime_partner_rate": _e(0.05, f"{_PKG}: share of a label's (profile, other sample) comparisons ending in "
+                                        "a reciprocal best hit with one other label that calls 'merge'. "
+                                        "benchmarks/isc_regimes_real.py: random halves 0.095-0.38; 22 of 1,849 "
+                                        "other label scorings reach 0.05 (shared contaminant, stopped by "
+                                        "regime_partner_ratio)"),
+        "regime_partner_ratio": _e(1 / 3, f"{_PKG}: in a 'merge' pair one label hits its partner at least this "
+                                          "often relative to its own profiles. benchmarks/isc_regimes_real.py: "
+                                          "random halves >= 0.70, labels sharing a contaminant <= 0.25"),
+        "regime_remove": _e(0.25, f"{_PKG}: calibrated ISCG (0 = the per-sample average profile, a label of "
+                                  "random cells; 1 = the median other label) below which a label is 'remove'"),
+        "regime_low": _e(0.5, f"{_PKG}: calibrated ISCG below which a label is closer to random cells than to "
+                              "a typical label: 'remove' with low ISCL, else 'inconclusive'"),
+        "regime_floor_gap": _e(0.1, f"{_PKG}: the median label ISCG must exceed the random-cell floor by this "
+                                    "much for the calibrated ISCG to be used (identical composition in every "
+                                    "sample makes random cells replicable)"),
     },
     "fidelity": {
         "overlap_n_top": _e(25, f"{_PKG}: top DE genes per label in marker_gene_overlap"),

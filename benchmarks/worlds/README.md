@@ -218,59 +218,75 @@ markers are cleaner than real ones.
 ## ISC regime calls
 
 Each world's `check_isc_regimes.csv` (the sweep's `isc_regimes` check, 3 seeds; toy 5) records the calibrated
-`regime` and the paper's fixed-threshold `quadrant` (ISCG 0.74 / ISCL 0.45) for every label in six cases.
+`regime`, the paper's fixed-threshold `quadrant` (ISCG 0.74 / ISCL 0.45) and the regime evidence (including
+`partner_auc` and `signature_auc`) for every label in six cases.
 [`results/cross_world_isc_regimes.csv`](results/cross_world_isc_regimes.csv) tallies them (`compare_worlds.py`).
-Each cell is **regime / quadrant**. Wrong calls are graded as in
-[`../isc_regimes_real.py`](../isc_regimes_real.py): `merge`, `remove` or `split` on a correct label, `merge` or
-`split` under label noise. `inconclusive` is not counted as wrong. "Untouched" labels are the other labels of the
-`merge` and `over_split` cases.
+Each cell is **regime / quadrant**; "(was n)" is the regime count before the two held-out checks of 2026-11-04
+(below). Wrong calls are graded as in [`../isc_regimes_real.py`](../isc_regimes_real.py): `merge`, `remove` or
+`split` on a correct label, `merge` or `split` under label noise. `inconclusive` is not counted as wrong.
+"Untouched" labels are the other labels of the `merge` and `over_split` cases.
 
 | world | clean labels read `consistent` | over-split halves read `merge` | merged labels | wrong calls, untouched labels | label noise 20 %: wrong | batch log-sd 1.0: wrong |
 |---|---|---|---|---|---|---|
 | real cohorts, development sets ([summary](../isc_regimes_real/results/summary.md)) | 980 / 816 of 980 | 72 / 61 of 72 | 12 `consistent` / 10 `consistent`, 2 `split` | 0 of 372 | 0 / 104 of 257 | 0 / 81 of 81 |
 | toy (5 seeds) | 30 / 30 of 30 | 10 / 10 of 10 | 20 `consistent` / 20 `consistent` | 0 / 0 of 45 | 0 / 21 of 30 | 0 / 30 of 30 |
-| scDesign3 bands | 16 / 6 of 18 | 4 / 3 of 5 | 12 `consistent` / 6 `consistent`, 6 `split` | 6 / 24 of 27 | 0 / 11 of 18 | 0 / 15 of 18 |
-| scDesign3 Dirichlet | 14 / 6 of 16 | 6 / 6 of 6 | 9 `consistent`, 3 `remove` / 7 `consistent`, 5 `split` | 7 / 20 of 23 | 4 / 6 of 18 | 2 / 14 of 16 |
-| SRTsim, crops vary | 17 / 3 of 17 | 2 / 2 of 2 | 12 `consistent` / 2 `consistent`, 10 `split` | 0 / 26 of 27 | 4 / 8 of 18 | 1 / 16 of 17 |
-| SRTsim, fixed crops | 18 / 4 of 18 | 6 / 6 of 6 | 12 `consistent` / 6 `consistent`, 6 `split` | 0 / 24 of 27 | 2 / 8 of 18 | 5 / 15 of 18 |
-| scCube `stripes` | 18 / 15 of 18 | 6 / 5 of 6 | 12 `consistent` / 12 `consistent` | 0 / 6 of 27 | 0 / 12 of 18 | 3 / 3 of 18 |
-| scCube `domains`, `fine`, `mixed` (same expression) | 18 / 15 of 18 | 6 / 5 of 6 | 12 `consistent` / 12 `consistent` | 0 / 6 of 27 | 6 / 8 of 18 | 3 / 3 of 18 |
+| scDesign3 bands | 16 / 6 of 18 | 4 / 3 of 5 | 12 `consistent` / 6 `consistent`, 6 `split` | 0 (was 6) / 24 of 27 | 0 / 11 of 18 | 0 / 15 of 18 |
+| scDesign3 Dirichlet | 14 / 6 of 16 | 6 / 6 of 6 | 9 `consistent`, 3 `inconclusive` (was `remove`) / 7 `consistent`, 5 `split` | 0 (was 7) / 20 of 23 | 0 (was 4) / 6 of 18 | 0 (was 2) / 14 of 16 |
+| SRTsim, crops vary | 17 / 3 of 17 | 2 / 2 of 2 | 12 `consistent` / 2 `consistent`, 10 `split` | 0 / 26 of 27 | 0 (was 4) / 8 of 18 | 0 (was 1) / 16 of 17 |
+| SRTsim, fixed crops | 18 / 4 of 18 | 6 / 6 of 6 | 12 `consistent` / 6 `consistent`, 6 `split` | 0 / 24 of 27 | 0 (was 2) / 8 of 18 | 0 (was 5) / 15 of 18 |
+| scCube `stripes` | 18 / 15 of 18 | 6 / 5 of 6 | 12 `consistent` / 12 `consistent` | 0 / 6 of 27 | 0 / 12 of 18 | 0 (was 3) / 3 of 18 |
+| scCube `domains`, `fine`, `mixed` (same expression) | 18 / 15 of 18 | 6 / 5 of 6 | 12 `consistent` / 12 `consistent` | 0 / 6 of 27 | 0 (was 6) / 8 of 18 | 0 (was 3) / 3 of 18 |
 
 The real-cohort row counts labels, not seeds: its "untouched" column is the 288 + 84 labels left alone by planted
 splits and merges, its label-noise column the 257 degraded labels (20-40 % label noise, or left < 90 % pure by a
 contamination), its batch column the 81 labels at log-sd 1.0 (the quadrant reads `split` for all 81), and its
 merged labels the 12 merge scorings of the development sets. Fewer than 18 labels means a label was not scored in
-some seeds (under 5 samples × 10 cells); SRTsim's Epi halves were scorable in one crop set only.
+some seeds (under 5 samples × 10 cells); SRTsim's Epi halves were scorable in one crop set only. The two
+held-out checks moved no call on the real cohorts (development and held-out tables unchanged).
 
 - **Clean labels.** The calibrated call reads `consistent` for 14-18 of 16-18 correct labels in every world.
-  The rest are 2 `inconclusive` T_CD4 in scDesign3 bands (ISCL 0.46) and one false `merge` pair in scDesign3
-  Dirichlet (below). The quadrant reads `consistent` for 3-6 of 16-18 in the two worlds fitted to the Xenium
-  section, where correct small immune labels sit at ISCG 0.36-0.60, under its 0.74 guide.
+  The rest are `inconclusive`: T_CD4 in two scDesign3 bands seeds (ISCL 0.39-0.40) and T_CD4 / T_CD8 in one
+  scDesign3 Dirichlet seed (ISCL 0.20-0.31; `merge` before). The quadrant reads `consistent` for 3-6 of 16-18 in
+  the two worlds fitted to the Xenium section, where correct small immune labels sit at ISCG 0.36-0.60, under its
+  0.74 guide.
 - **Over-split halves read `merge`** in every world: 30 of 31 halves, scCube `domains` / `fine` / `mixed` counted
-  once (the miss is a half whose twin was not scored in that seed); the quadrant reads `merge` for 27 of 31.
+  once (the miss is a half whose twin was not scored in that seed, the one wrong call left); the quadrant reads
+  `merge` for 27 of 31.
 - **Merged labels are not identifiable from ISC**, as on the real cohorts: the calibrated call reads them
   `consistent` (12/12 in every world but one). The exception is scDesign3 Dirichlet, where B+Myeloid reads
-  `remove` in 3/3 seeds (ISCG 0.52-0.55 against a random-cell floor of 0.51-0.73). The quadrant's `split` for
-  B+Myeloid and T_CD4+T_CD8 is not a detection: their unmerged parts mostly read `split` on clean data too.
-  scCube's B (naive B plus plasma cells, two real programmes) reads `consistent` (quadrant: `split` 3/3, ISCG
-  0.71).
-- **Batch and label noise: far fewer wrong calls than the quadrant, but two failure modes the real cohorts did
-  not show.**
-  1. **Sibling T labels read `merge`.** T_CD4 and T_CD8 become each other's reciprocal partner (partner rate
-     0.067-0.20) under 20 % label noise in SRTsim (4/18; fixed crops 2/18), scDesign3 Dirichlet (4/18) and
-     scCube `domains` / `fine` / `mixed` (6/18), under batch in SRTsim fixed crops (4/18) and scDesign3 Dirichlet
-     (2/16), and on clean labels in one scDesign3 Dirichlet seed (2/16; the same seed's pair also reads `merge`
-     in its `merge 1` and `over_split` sections, 4 of the 7 wrong untouched calls). Every false `merge` in the
-     worlds is this pair. In the two worlds fitted to the section their own markers are only 1.5-1.6× their level in the
-     other T type. On the real cohorts no degraded label read `merge` (0 / 257).
+  `inconclusive` in 3/3 seeds (`remove` before: ISCG 0.52-0.55 against a random-cell floor of 0.51-0.73, but
+  its held-out cells are told apart from the rest of their sample, signature AUC 0.95-0.96). The quadrant's
+  `split` for B+Myeloid and T_CD4+T_CD8 is not a detection: their unmerged parts mostly read `split` on clean
+  data too. scCube's B (naive B plus plasma cells, two real programmes) reads `consistent` (quadrant: `split`
+  3/3, ISCG 0.71).
+- **Batch and label noise: two failure modes the real cohorts did not show, fixed by two held-out checks.**
+  Before them the worlds had 64 wrong calls (40 `merge`, 23 `remove`, 1 missed half; 46 counting scCube
+  `domains` / `fine` / `mixed` once); now 1. Each check scores the cells of one sample by a pseudobulk difference
+  learned on the other samples, so labels whose cells are exchangeable within a sample read 0.5.
+  1. **Sibling T labels read `merge`.** T_CD4 and T_CD8 became each other's reciprocal partner (partner rate
+     0.067-0.20; random halves 0.20-0.43, so the rate cannot tell them apart) under 20 % label noise in SRTsim
+     (4/18; fixed crops 2/18), scDesign3 Dirichlet (4/18) and scCube `domains` / `fine` / `mixed` (6/18), under
+     batch in SRTsim fixed crops (4/18) and scDesign3 Dirichlet (2/16), and on clean labels in one
+     scDesign3 Dirichlet seed (2/16, also in that seed's `merge 1` and `over_split` sections). In the two worlds
+     fitted to the section their own markers are only 1.5-1.6× their level in the other T type. Their held-out
+     cells are told apart, though: `partner_auc` 0.70-0.93, against 0.47-0.57 for random halves (0.47-0.54 on
+     the real cohorts). `merge` now needs `partner_auc` < 0.65: 0 false `merge` left; the pair reads
+     `consistent`, `inconclusive` (low ISCL) or, under label noise, `remove` (a degraded label, not wrong).
   2. **`remove` for correct labels.** Under batch: scCube's B in 3/3 seeds of every pattern (its ISCG falls
      0.71 → 0.52-0.56, under the random-cell floor of 0.63-0.66: calibrated g −0.53 to −0.93) and SRTsim's
      Fibro in one crop set (g 0.08-0.10). Beside an over-split Epi in scDesign3: 6/27 (bands) and 3/23 (Dirichlet)
-     untouched immune labels. These labels are about as compact as random cells, or less (ISCG 0.50-0.67 against
-     a floor of 0.51-0.79). On clean data the median of the other labels is within 0.1 of the floor, so g is
-     undefined and the call is `consistent`; the two halves (ISCG 0.91-0.94) raise the median, g becomes
-     defined and lands at 0.04-0.23 or below 0. On the real cohorts 81/81 labels under batch and 372/372 labels beside a planted split or
-     merge read `consistent`.
+     untouched immune labels, about as compact as random cells (ISCG 0.50-0.67 against a floor of 0.51-0.79).
+     On clean data the median of the other labels is within 0.1 of the floor, so g is undefined and the call is
+     `consistent`; the two halves (ISCG 0.91-0.94) counted Epi twice, raised the median, and g landed at
+     0.04-0.23 or below 0. Two changes: the median label leaves out `merge` pairs (8 of these 9 labels read
+     `consistent` again, 1 `inconclusive`), and a label whose held-out cells are told apart from the rest of
+     their sample (`signature_auc` >= 0.85) reads `inconclusive` instead of `remove`. The worlds' wrongly removed
+     labels reach 0.91-0.99; on the real cohorts planted bad labels reach at most 0.75 (0.47-0.60 for labels
+     of random cells) and correct labels at least 0.88, so no real `remove` moved. 0 false `remove` left.
+- **What remains.** A correct but weak label under batch (scCube B, SRTsim Fibro) is no more compact than random
+  cells and reads `inconclusive`, not `consistent`; so does T_CD4 under batch in scDesign3 and SRTsim (low ISCL).
+  The two AUC thresholds were set on the real development sets and these worlds; the held-out cohort was scored
+  once afterwards.
 
 ## SRTsim control: fixed crops
 

@@ -74,8 +74,12 @@ def _spatial_graph(adata, n_neighs: int, graph: str | None = None):
         kw = {"n_neighs": int(min(n_neighs, adata.n_obs - 1))}
     target = (ad.AnnData(obs=pd.DataFrame(index=adata.obs_names), obsm={"spatial": adata.obsm["spatial"]})
               if have else adata)
+    import warnings
+
     try:
-        _squidpy().gr.spatial_neighbors(target, coord_type="generic", **kw)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            _squidpy().gr.spatial_neighbors(target, coord_type="generic", **kw)
     except Exception as e:
         return None, f"spatial_neighbors failed: {e}"
     if target is adata:
@@ -222,8 +226,12 @@ def neighborhood_sanity(adata, label_key: str = "cell_type", n_neighs: int = _th
            else col.astype("category"))
     tmp = ad.AnnData(obs=pd.DataFrame({label_key: col}))
     tmp.obsp["spatial_connectivities"] = A
-    z = np.asarray(sq.gr.nhood_enrichment(tmp, cluster_key=label_key, seed=seed, show_progress_bar=False,
-                                          copy=True)[0])
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        z = np.asarray(sq.gr.nhood_enrichment(tmp, cluster_key=label_key, seed=seed, show_progress_bar=False,
+                                              copy=True)[0])
     cats = list(col.cat.categories)
     diag = np.diag(z) if z.ndim == 2 and z.shape[0] == z.shape[1] else np.array([])
 

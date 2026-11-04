@@ -254,3 +254,38 @@ def test_panel_resolvability_edge_cases_cv_max_cells_and_negative_values():
     with pytest.warns(UserWarning, match="negative or non-integer"):
         res_neg = em.panel_resolvability(b, "cell_type", panel, layer=None)
     assert res_neg["status"] == "ok"
+
+
+def test_panel_resolvability_exact_boundaries():
+    """Pin exact boundaries: 24 vs 25 shared genes, 9 vs 10 cells per type, and 0.29 vs 0.30 confused_frac."""
+    from spatial_anno_metrics import panel as em
+
+    a30 = _panel_ref(n=30, n_genes=40)
+    r24 = em.panel_resolvability(a30, "cell_type", [f"g{i}" for i in range(24)], target_depth=40)
+    r25 = em.panel_resolvability(a30, "cell_type", [f"g{i}" for i in range(25)], target_depth=40)
+    assert r24["status"] == "skipped" and r24["n_shared_genes"] == 24
+    assert r25["status"] == "ok" and r25["n_shared_genes"] == 25
+
+    panel = [f"g{i}" for i in range(39)]
+    assert em.panel_resolvability(_panel_ref(n=9, n_genes=40), "cell_type", panel)["status"] == "skipped"
+    r10 = em.panel_resolvability(_panel_ref(n=10, n_genes=40), "cell_type", panel)
+    assert r10["status"] == "ok" and r10["n_types"] == 4
+
+    # Exact _CONF_NOT = 0.30 boundary when f1_adjusted > 0.80: 30/100 -> not_resolvable, 29/100 -> weak
+    n_genes = 30
+    A_cells = np.zeros((400, n_genes), dtype="float32")
+    A_cells[:, :5] = 50.0
+    C_cells = np.zeros((400, n_genes), dtype="float32")
+    C_cells[:, 10:15] = 50.0
+    for n_conf, expected_tier in [(30, "not_resolvable"), (29, "weak")]:
+        B_cells = np.zeros((100, n_genes), dtype="float32")
+        B_cells[: 100 - n_conf, 5:10] = 50.0
+        B_cells[100 - n_conf :, 10:15] = 50.0
+        ab = anndata.AnnData(X=np.vstack([A_cells, B_cells, C_cells]))
+        ab.var_names = [f"g{i}" for i in range(n_genes)]
+        ab.obs["cell_type"] = ["A"] * 400 + ["B"] * 100 + ["C"] * 400
+        rb = em.panel_resolvability(ab, "cell_type", list(ab.var_names), target_depth=250, max_cells_per_type=400)
+        B = rb["per_type"]["B"]
+        assert B["f1_adjusted"] > 0.80
+        assert B["confused_frac"] == pytest.approx(n_conf / 100)
+        assert B["tier"] == expected_tier

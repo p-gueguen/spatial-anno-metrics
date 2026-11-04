@@ -286,3 +286,13 @@ def test_isc_zero_pseudobulk_and_markers_mode_and_regime_boundaries():
     assert em.isc_regime(0.7399, 0.45) == "split"
     assert em.isc_regime(0.7399, 0.4499) == "remove"
     assert em.isc_regime(float("nan"), 0.5) == "not_computable"
+
+
+def test_isc_min_cells_exact_boundary():
+    """Pin exact min_cells=10 default boundary: 9 cells per (sample, type) skips, 10 succeeds."""
+    from spatial_anno_metrics import isc as em
+
+    r9 = em.inter_sample_consistency(_isc_adata(consistent=True, n_per=9), "cell_type", "sample")
+    r10 = em.inter_sample_consistency(_isc_adata(consistent=True, n_per=10), "cell_type", "sample")
+    assert r9["status"] == "skipped" and r9["n_profiles"] == 0
+    assert r10["status"] == "ok" and r10["n_profiles"] == 15

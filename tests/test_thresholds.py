@@ -102,3 +102,8 @@ def test_isc_thresholds_echo_the_table():
         thresholds_for("nonexistent")
     with pytest.raises(KeyError, match="unknown threshold"):
         thresholds_for("isc", bad_param=1)
+
+    from spatial_anno_metrics.thresholds import value
+
+    assert value("isc", "min_cells") == 10
+    assert THRESHOLDS["isc"]["min_cells"]["value"] == 10

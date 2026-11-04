@@ -84,6 +84,9 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
         confused_frac, tier}}, matrix}``. Fewer than 25 shared genes or 2 types with >= 10 cells -> a skip (with
         ``n_shared_genes``, ``per_type``).
     """
+    import warnings
+
+    from sklearn.exceptions import ConvergenceWarning
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import precision_recall_fscore_support
     from sklearn.model_selection import StratifiedKFold, cross_val_predict
@@ -126,9 +129,11 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
     lib[lib == 0] = 1.0
     X = np.log1p(Xn / lib * _SCALE)
     classes = np.unique(y)
-    proba = cross_val_predict(LogisticRegression(max_iter=_MAX_ITER, C=_C), X, y,
-                              cv=StratifiedKFold(cv, shuffle=True, random_state=seed),
-                              method="predict_proba")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ConvergenceWarning)
+        proba = cross_val_predict(LogisticRegression(max_iter=_MAX_ITER, C=_C), X, y,
+                                  cv=StratifiedKFold(cv, shuffle=True, random_state=seed),
+                                  method="predict_proba")
     pred = classes[np.argmax(proba, 1)]
     ext = external_scores(y_true=y, y_pred=pred)
     prec, rec, f1, _ = precision_recall_fscore_support(y, pred, labels=classes, zero_division=0)

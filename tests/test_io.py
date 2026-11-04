@@ -35,3 +35,16 @@ def test_segtraq_covariates_passthrough_and_summary():
     assert out["summary"]["border_admixture_score"]["mean"] == pytest.approx(0.2)
     assert out["summary"]["border_admixture_score"]["n_defined"] == 3
     assert out["summary"]["similarity_top_bottom"]["median"] == pytest.approx(0.75)
+
+    t.obs["rctd_contamination"] = [np.nan, np.nan, np.nan, np.nan]
+    out_nan = io.segtraq_covariates(t)
+    assert out_nan["summary"]["rctd_contamination"]["n_defined"] == 0
+    assert np.isnan(out_nan["summary"]["rctd_contamination"]["mean"])
+    assert np.isnan(out_nan["summary"]["rctd_contamination"]["median"])
+
+    spatialdata = pytest.importorskip("spatialdata")
+    from spatialdata.models import TableModel
+
+    sdata = spatialdata.SpatialData(tables={"cells": TableModel.parse(t)})
+    out_sd = io.segtraq_covariates(sdata, table_key="cells")
+    assert out_sd["status"] == "ok" and "border_admixture_score" in out_sd["columns"]

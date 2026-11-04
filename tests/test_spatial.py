@@ -552,3 +552,28 @@ def test_spatial_metrics_skip_when_no_coordinates_or_graph():
     for out in (sp.spatial_coherence(a), sp.neighborhood_sanity(a),
                 sp.neighbor_contamination(a, {"A": ["g0"], "B": ["g1"]})):
         assert out["status"] == "skipped" and "spatial" in out["reason"]
+
+
+def test_neighborhood_sanity_ignores_nan_from_isolated_type_and_zero_degree_skips():
+    from scipy.sparse import csr_matrix
+
+    from spatial_anno_metrics import spatial as sp
+
+    # Add 1 isolated cell of type 'C' (degree 0) to a clean two-block section: A and B must not be flagged suspicious
+    a = _blocks(n_side=6)
+    A_orig = sp._spatial_graph(a, 4)[0].tocsr()
+    n = a.n_obs
+    A_ext = csr_matrix((A_orig.data, A_orig.indices, np.append(A_orig.indptr, A_orig.indptr[-1])), shape=(n + 1, n + 1))
+    b = anndata.AnnData(X=np.zeros((n + 1, 2), dtype="float32"))
+    b.obs["cell_type"] = list(a.obs["cell_type"].astype(str)) + ["C"]
+    b.obsp["spatial_connectivities"] = A_ext
+    out = sp.neighborhood_sanity(b, graph="obsp")
+    assert out["status"] == "ok" and out["suspicious"] == []
+
+    # All-zero graph skips spatial_coherence instead of returning mean_coherence = NaN
+    b.obsp["spatial_connectivities"] = csr_matrix((n + 1, n + 1))
+    assert sp.spatial_coherence(b, graph="obsp")["status"] == "skipped"
+
+    # Small n_obs <= n_neighs clamps kNN instead of crashing
+    small = _blocks(n_side=2)
+    assert sp.spatial_coherence(small, n_neighs=20)["status"] == "ok"

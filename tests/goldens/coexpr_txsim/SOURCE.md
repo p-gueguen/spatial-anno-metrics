@@ -2,9 +2,8 @@
 
 Parity golden for the two reference-based co-expression scores of the spatial-QC literature: txsim's
 `coexpression_similarity` (correlation structure, section vs reference) and the negative co-expression
-purity (NCP) of Salas et al., from the authors' code. Generated 2026-11-03. We have no
-`coexpression_similarity` yet (roadmap item 1 adds it beside `ncp`); our `ncp` is a third definition, so
-this golden records the gap.
+purity (NCP) of Salas et al., from the authors' code. Generated 2026-11-03. Both are reproduced to 1e-12
+by `coexpression_similarity` and `ncp(..., score="moldia")` (see "Ours vs reference").
 
 ## Files
 

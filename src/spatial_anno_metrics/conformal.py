@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from ._hierarchy import validate_hierarchy
 from ._utils import _dense
 from ._validate import check_labels, skip
 from .thresholds import value as _thr
@@ -136,12 +137,32 @@ def conformal_prediction_sets(proba_query, classes, proba_cal, y_cal, alpha: flo
     """
     if class_conditional not in (False, True, "clustered"):
         raise ValueError(f"class_conditional must be False, True or 'clustered', got {class_conditional!r}")
+    if not 0.0 < alpha < 1.0:
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+    if frac_clustering is not None and not 0.0 < frac_clustering < 1.0:
+        raise ValueError(f"frac_clustering must be in (0, 1), got {frac_clustering}")
+    if n_clusters is not None and n_clusters < 1:
+        raise ValueError(f"n_clusters must be >= 1, got {n_clusters}")
+    validate_hierarchy(hierarchy)
     if len(y_cal) == 0:
         return skip("empty calibration set: conformal sets need calibration probabilities and true labels")
     proba_query = np.asarray(proba_query, dtype=float)
     proba_cal = np.asarray(proba_cal, dtype=float)
     classes = np.asarray([str(c) for c in classes])
+    if len(classes) == 0 or len(set(classes)) != len(classes):
+        raise ValueError("classes must be non-empty with unique names")
     y_cal = check_labels(y_cal)
+    if (proba_query.ndim != 2 or proba_cal.ndim != 2 or proba_query.shape[1] != len(classes)
+            or proba_cal.shape != (len(y_cal), len(classes))):
+        raise ValueError(f"proba_query {proba_query.shape} and proba_cal {proba_cal.shape} must match "
+                         f"len(y_cal)={len(y_cal)} and len(classes)={len(classes)}")
+    if not (np.all(np.isfinite(proba_query)) and np.all(np.isfinite(proba_cal))):
+        raise ValueError("proba_query and proba_cal must be finite (no NaN or infinite values)")
+    if (proba_query < 0).any() or (proba_cal < 0).any():
+        raise ValueError("proba_query and proba_cal must be non-negative")
+    missing_cal = sorted(set(y_cal) - set(classes))
+    if missing_cal:
+        raise ValueError(f"y_cal labels not in classes: {missing_cal[:5]}")
     cls_idx = {c: j for j, c in enumerate(classes)}
 
     true_col = np.array([cls_idx[c] for c in y_cal])
@@ -181,12 +202,15 @@ def conformal_prediction_sets(proba_query, classes, proba_cal, y_cal, alpha: flo
             sum(1 for i in range(len(sets)) if amb[i] and len(collapsed[i]) == 1) / max(1, amb.sum()))
     if y_query is not None:
         y_query = check_labels(y_query)
-        covered = np.array([y_query[i] in sets[i] for i in range(len(sets))])
-        out["coverage"] = float(covered.mean())
+        if len(y_query) != len(sets):
+            raise ValueError(f"y_query ({len(y_query)}) and proba_query ({len(sets)}) must have the same length")
+        covered = np.array([y_query[i] in sets[i] for i in range(len(sets))], dtype=bool)
+        out["coverage"] = float(covered.mean()) if covered.size else float("nan")
         out["per_type_coverage"] = {
             c: float(np.mean([y_query[i] in sets[i] for i in np.where(y_query == c)[0]]))
             for c in np.unique(y_query)}
-        out["covgap"] = float(np.mean([abs(v - (1 - alpha)) for v in out["per_type_coverage"].values()]))
+        out["covgap"] = (float(np.mean([abs(v - (1 - alpha)) for v in out["per_type_coverage"].values()]))
+                         if out["per_type_coverage"] else float("nan"))
     return out
 
 
@@ -230,14 +254,22 @@ def calibration_error(proba, classes, y_true, *, n_bins: int = _thr("conformal",
         ``{status, ece, classwise_ece, per_class_ece, accuracy, mean_confidence, n}``; no cells is a skip.
         Bins are (lo, hi], as in sklearn's ``calibration_curve``.
     """
+    if n_bins < 1:
+        raise ValueError(f"n_bins must be >= 1, got {n_bins}")
     if len(y_true) == 0:
         return skip("no cells: calibration error needs probabilities and true labels")
     y = check_labels(y_true)
     classes = np.asarray([str(c) for c in classes])
+    if len(classes) == 0 or len(set(classes)) != len(classes):
+        raise ValueError("classes must be non-empty with unique names")
     missing = sorted(set(y) - set(classes))
     if missing:
         raise ValueError(f"y_true labels not in classes: {missing[:5]}")
     P = np.asarray(proba, dtype=float)
+    if P.ndim != 2 or P.shape != (len(y), len(classes)):
+        raise ValueError(f"proba {P.shape} must have shape (len(y_true)={len(y)}, len(classes)={len(classes)})")
+    if not np.all(np.isfinite(P)) or (P < 0).any() or (P > 1.0 + 1e-6).any():
+        raise ValueError("proba must be finite and in [0, 1]")
     top = P.argmax(1)
     conf = P[np.arange(len(y)), top]
     hit = (classes[top] == y).astype(float)
@@ -312,6 +344,12 @@ def conformal_novelty(X_query, X_ref, *, method: str = "pca", fdr: float = _thr(
     """
     if method not in ("pca", "iforest"):
         raise ValueError(f"method must be 'pca' or 'iforest', got {method!r}")
+    if not 0.0 < frac_train < 1.0:
+        raise ValueError(f"frac_train must be in (0, 1), got {frac_train}")
+    if not 0.0 < fdr < 1.0:
+        raise ValueError(f"fdr must be in (0, 1), got {fdr}")
+    if n_components < 1:
+        raise ValueError(f"n_components must be >= 1, got {n_components}")
     import scipy.sparse as sp
 
     from ._validate import _all_finite
@@ -320,6 +358,8 @@ def conformal_novelty(X_query, X_ref, *, method: str = "pca", fdr: float = _thr(
         raise ValueError("X_query and X_ref must be finite (no NaN or infinite values)")
     Xq = X_query.tocsr().astype(float) if sp.issparse(X_query) else np.asarray(X_query, dtype=float)
     Xr = X_ref.tocsr().astype(float) if sp.issparse(X_ref) else np.asarray(X_ref, dtype=float)
+    if Xq.ndim != 2 or Xr.ndim != 2 or Xr.shape[1] < 1:
+        raise ValueError(f"X_query {Xq.shape} and X_ref {Xr.shape} must be 2D matrices with >= 1 feature")
     if Xq.shape[1] != Xr.shape[1]:
         raise ValueError(f"X_query has {Xq.shape[1]} features, X_ref {Xr.shape[1]}: use the same features")
     n_ref = Xr.shape[0]
@@ -343,6 +383,8 @@ def conformal_novelty(X_query, X_ref, *, method: str = "pca", fdr: float = _thr(
         mu_sq = float(np.dot(mu, mu))
 
         def score(X):
+            if X.shape[0] == 0:
+                return np.empty(0, dtype=float)
             if sp.issparse(X):
                 row_sq = np.asarray(X.multiply(X).sum(axis=1), dtype=float).ravel()
                 x_mu = np.asarray(X @ mu, dtype=float).ravel()
@@ -355,6 +397,8 @@ def conformal_novelty(X_query, X_ref, *, method: str = "pca", fdr: float = _thr(
         forest = IsolationForest(random_state=seed).fit(tr)
 
         def score(X):
+            if X.shape[0] == 0:
+                return np.empty(0, dtype=float)
             return -forest.score_samples(X)
     s_q = score(Xq)
     p = _conformal_pvalues(score(cal), s_q)

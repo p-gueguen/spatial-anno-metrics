@@ -292,3 +292,25 @@ def test_conformal_novelty_sparse_inputs_do_not_densify(monkeypatch, method):
     if method == "pca":
         np.testing.assert_allclose(sparse_res["score"], dense_res["score"], rtol=1e-7, atol=1e-9)
         np.testing.assert_allclose(sparse_res["pvalues"], dense_res["pvalues"], rtol=0, atol=1e-12)
+
+
+def test_conformal_parameter_and_input_validations():
+    from spatial_anno_metrics import conformal as em
+
+    P = np.array([[0.8, 0.2], [0.3, 0.7], [0.9, 0.1], [0.1, 0.9]])
+    cls = ["A", "B"]
+    y = np.array(["A", "B", "A", "B"])
+    with pytest.raises(ValueError, match="alpha"):
+        em.conformal_prediction_sets(P, cls, P, y, alpha=0.0)
+    with pytest.raises(ValueError, match="not in classes"):
+        em.conformal_prediction_sets(P, cls, P, np.array(["A", "C", "A", "B"]))
+    with pytest.raises(ValueError, match="y_query"):
+        em.conformal_prediction_sets(P, cls, P, y, y_query=np.array(["A"]))
+    with pytest.raises(ValueError, match="n_bins"):
+        em.calibration_error(P, cls, y, n_bins=0)
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        em.calibration_error(P * 2.0, cls, y)
+    # Empty query to conformal_novelty returns 0-length arrays cleanly
+    ref = np.random.default_rng(0).normal(size=(30, 4))
+    empty_q = em.conformal_novelty(np.empty((0, 4)), ref)
+    assert empty_q["status"] == "ok" and len(empty_q["pvalues"]) == 0 and empty_q["summary"]["n_novel"] == 0

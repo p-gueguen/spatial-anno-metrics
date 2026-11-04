@@ -416,3 +416,54 @@ def test_deconvolution_matches_openproblems_golden():
     with pytest.raises(ValueError, match="aupr_method"):
         em.deconvolution_metrics(true_prop=true_tied, pred_prop=pred_tied, aupr_method="bad")
 
+
+def test_external_edge_case_validations_and_skips():
+    import pandas as pd
+
+    from spatial_anno_metrics import external as em
+
+    # avg_bio skips when every cell is its own singleton label (n_labels == n_samples)
+    a = anndata.AnnData(X=np.ones((6, 3), dtype="float32"))
+    a.obsm["X_pca"] = np.arange(18, dtype=float).reshape(6, 3)
+    a.obs["truth"] = [f"t{i}" for i in range(6)]
+    a.obs["pred"] = ["A", "A", "B", "B", "C", "C"]
+    assert em.avg_bio(a, label_key="pred", truth_key="truth")["status"] == "skipped"
+
+    # Length mismatch and empty array guards
+    for fn in (lambda y1, y2: em.external_scores(y_true=y1, y_pred=y2),
+               em.element_centric_similarity,
+               lambda y1, y2: em.hierarchical_accuracy(y_true=y1, y_pred=y2, hierarchy={"A": "R"}),
+               lambda y1, y2: em.composition_accuracy(y_true=y1, y_pred=y2)):
+        with pytest.raises(ValueError, match="same length"):
+            fn(["A", "B"], ["A"])
+        with pytest.raises(ValueError, match="0 distinct"):
+            fn([], [])
+
+    with pytest.raises(ValueError, match="alpha"):
+        em.element_centric_similarity(["A", "B"], ["A", "B"], alpha=1.0)
+    with pytest.raises(ValueError, match="partial"):
+        em.hierarchical_accuracy(y_true=["A"], y_pred=["A"], hierarchy={"A": "R"}, partial=1.5)
+    with pytest.raises(ValueError, match="cycle"):
+        em.hierarchical_accuracy(y_true=["A"], y_pred=["A"], hierarchy={"x": "y", "y": "x"})
+
+    # spatial_ari finiteness and max_cells validation
+    xy_bad = np.array([[0.0, 1.0], [np.nan, 2.0], [1.0, 0.0]])
+    with pytest.raises(ValueError, match="finite"):
+        em.spatial_ari(y_true=["A", "B", "A"], y_pred=["A", "B", "A"], coords=xy_bad)
+    with pytest.raises(ValueError, match="max_cells"):
+        em.spatial_ari(y_true=["A", "B", "A"], y_pred=["A", "B", "A"], coords=np.zeros((3, 2)), max_cells=1)
+
+    # deconvolution_metrics column mismatch, negative values, < 2 spots
+    df1 = pd.DataFrame([[0.5, 0.5], [0.2, 0.8]], columns=["A", "B"])
+    df2 = pd.DataFrame([[0.5, 0.5], [0.2, 0.8]], columns=["B", "A"])
+    with pytest.raises(ValueError, match="columns"):
+        em.deconvolution_metrics(true_prop=df1, pred_prop=df2)
+    with pytest.raises(ValueError, match="non-negative"):
+        em.deconvolution_metrics(true_prop=[[0.5, 0.5], [0.2, 0.8]], pred_prop=[[-0.1, 1.1], [0.2, 0.8]])
+    assert em.deconvolution_metrics(true_prop=[[0.5, 0.5]], pred_prop=[[0.5, 0.5]])["status"] == "skipped"
+
+    # deconvolution_rank_score empty metrics and missing metric key
+    with pytest.raises(ValueError, match="metrics"):
+        em.deconvolution_rank_score({"a": {"rmse": 0.1}, "b": {"rmse": 0.2}}, metrics=())
+    assert em.deconvolution_rank_score({"a": {"rmse": 0.1}, "b": {}}, metrics=("rmse",))["status"] == "skipped"
+

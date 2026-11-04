@@ -210,3 +210,9 @@ def test_ontology_rwr_distance_resolves_multi_parent_ties_and_flags_swaps():
         sam.ontology_consistency(_section(), "cell_type", OBO, CL, distance="bad")
     with pytest.raises(ValueError, match="rwr_restart"):
         sam.ontology_consistency(_section(), "cell_type", OBO, CL, distance="rwr", rwr_restart=1.0)
+    with pytest.raises(ValueError, match="rwr_restart"):
+        sam.ontology_consistency(_section(), "cell_type", OBO, CL, distance="path", rwr_restart=0.0)
+    # Disconnected ontology terms get finite fallback distance > max connected distance
+    d_disc = _ontology_distances(["CL:0000084", "CL:0000236", "CL:9999998"],
+                                 {**parents, "CL:9999998": []})
+    assert np.all(np.isfinite(d_disc)) and d_disc[0, 2] == d_disc[0, 1] + 1.0

@@ -648,3 +648,20 @@ def test_nmp_salas_share_cut_is_strict(b_count, negative):
     r = p._nmp_salas_reads(data(2, 198), labels, ["g", "h"], data(1, b_count), labels, ["g", "h"])
     assert ("g" in r["per_gene"]) is negative and "h" in r["per_gene"]
     assert r["n_negative_pairs"] == 1 + negative
+
+
+def test_purity_edge_cases_nested_crisp_and_single_gene_coexpr():
+    from spatial_anno_metrics import purity as p
+
+    a = _section(0.0)
+    # Nested marker sets have no private pair -> crisp_purity skips (never returns 1.0 purity)
+    nested = {"T": ["CD3D"], "CD4 T": ["CD3D", "CD3E"]}
+    rc = p.crisp_purity(a, nested)
+    assert rc["status"] == "skipped" and "no pair" in rc["reason"] and rc["matrix"] == "X"
+
+    # Only 1 shared gene passing min_cells -> coexpression_similarity skips instead of returning NaN
+    ref = _section(0.0, seed=5)
+    sub_sec = a[:, ["CD3D", "MLANA"]].copy()
+    sub_ref = ref[:, ["CD3D", "MLANA"]].copy()
+    sub_sec.X[:, 1] = 0
+    assert p.coexpression_similarity(sub_sec, sub_ref, min_cells=5)["status"] == "skipped"

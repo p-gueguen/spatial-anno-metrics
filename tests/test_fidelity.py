@@ -151,3 +151,19 @@ def test_sparse_column_moments_equal_dense():
     X = np.random.default_rng(0).poisson(1.5, size=(50, 7)).astype(float)
     for got, want in zip(_mean_var(sparse.csr_matrix(X)), _mean_var(X)):
         np.testing.assert_allclose(got, want, rtol=1e-12, atol=1e-12)
+
+
+def test_fidelity_singleton_type_and_duplicate_markers():
+    from spatial_anno_metrics import fidelity as fd
+
+    a = _marker_adata()
+    # Make 'Mel' a 1-cell singleton; both types have dof = n_pos + n_neg - 2 = 118 > 0 so cohens_d is finite
+    sub = a[:61].copy()
+    ms = {"T cell": ["CD3D", "CD3E", "TRAC"], "Mel": ["MLANA", "SOX10", "DCT"]}
+    out = fd.marker_program_fidelity(sub, "cell_type", ms)
+    assert out["status"] == "ok" and np.isfinite(out["mean_cohens_d"])
+    assert out["per_type"]["T cell"]["cohens_d"] is not None and out["per_type"]["Mel"]["cohens_d"] is not None
+    # Duplicate genes in marker_sets are deduplicated so each gene weighs once
+    dup = {"T cell": ["CD3D", "CD3D", "CD3E", "TRAC"], "Mel": ["MLANA", "SOX10", "DCT"]}
+    assert fd.marker_program_fidelity(a, "cell_type", dup) == fd.marker_program_fidelity(a, "cell_type", ms)
+    assert fd.marker_gene_overlap(a, "cell_type", dup) == fd.marker_gene_overlap(a, "cell_type", ms)

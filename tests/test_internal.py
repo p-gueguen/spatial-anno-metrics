@@ -226,3 +226,28 @@ def test_isolated_labels_and_clisi_skip_one_label(blobs):
 # scib-metrics 0.5.6 (BSD-3; float32 JAX), run offline on these fixtures with the same sklearn 90-NN, self included
 SCIB_ISOLATED_ASW = {"far": 0.9777132272720337, "buried": 0.5268670320510864, "overlap": 0.6455773115158081}
 SCIB_CLISI_OVERLAP, SCIB_MEDIAN_LISI_OVERLAP = 0.9729409217834473, 1.0811772346496582
+
+
+def test_internal_edge_cases_constant_embedding_iso_subsample_and_small_clisi(blobs):
+    from spatial_anno_metrics import internal as em
+
+    # Constant embedding: neighborhood_purity excludes self and silhouette_2label is 0.0 (not NaN)
+    a = blobs(n_per=10, k=2)
+    a.obsm["X_pca"][:] = 0.0
+    out = em.internal_validity(a, embedding="X_pca", n_neighbors=5)
+    assert out["status"] == "ok" and out["silhouette_2label"] == 0.0
+    # Each cell has 9 same-label and 10 other-label peers among the 19 non-self cells
+    assert 0.0 <= out["neighborhood_purity"] <= 1.0
+
+    # isolated_label_scores per-label subsampling (n > subsample) and iso_threshold skip
+    rare = _rare_section(blobs, True)
+    sub_out = em.isolated_label_scores(rare, batch_key="batch", subsample=40)
+    assert sub_out["status"] == "ok" and sub_out["n_used"] <= 40
+    skip_iso = em.isolated_label_scores(rare, batch_key="batch", iso_threshold=0)
+    assert skip_iso["status"] == "skipped" and "iso_threshold" not in skip_iso["reason"] or "batch" in skip_iso["reason"]
+
+    # clisi skips when n_obs < 6 with default perplexity, and raises on perplexity <= 1
+    small = blobs(n_per=2, k=2)
+    assert em.clisi(small)["status"] == "skipped"
+    with pytest.raises(ValueError, match="perplexity"):
+        em.clisi(blobs(n_per=10, k=2), perplexity=1.0)

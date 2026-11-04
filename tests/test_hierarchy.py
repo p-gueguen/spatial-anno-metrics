@@ -9,13 +9,17 @@ PARENT = {"CD4 T": "T", "CD8 T": "T", "T": "Lymphoid", "B": "Lymphoid", "Epi": "
 
 
 def test_ancestors_nearest_first():
-    from spatial_anno_metrics._hierarchy import ancestors
+    from spatial_anno_metrics._hierarchy import ancestors, validate_hierarchy
 
     assert ancestors("CD4 T", PARENT) == ["T", "Lymphoid"]
     assert ancestors("Lymphoid", PARENT) == []                   # a root
     assert ancestors("Epi", PARENT) == [] and ancestors("unknown", PARENT) == []
+    assert ancestors("root_none", {"root_none": None, "child": "root_none"}) == []
+    assert ancestors("child", {"root_none": None, "child": "root_none"}) == ["root_none"]
     with pytest.raises(ValueError, match="cycle"):
         ancestors("x", {"x": "y", "y": "x"})
+    with pytest.raises(ValueError, match="cycle"):
+        validate_hierarchy({"ok": "root", "x": "y", "y": "x"})
 
 
 def test_lca_depth():

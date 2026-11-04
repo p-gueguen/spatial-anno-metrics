@@ -114,8 +114,8 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   `negative_marker_purity_reads` computes it (`nmp`, higher = cleaner, scaled so 0 = the mean of 20 label
   permutations; writes nothing to `adata`). `score="moldia"` computes the older Moldia `Xenium_benchmarking`
   reads criterion (`x_sc < max_share / n_types`, relative to the mean across types; matched to 1e-12 on the
-  golden), and `score="cells"` computes txsim's cell-based variant (`negative_marker_purity_cells`, with
-  `moldia_cells=True` for Moldia's cell-based variant; matched to 1e-12 on the golden). The 0.6 score is
+  golden), and `score="cells"` computes the cell-based variant (`negative_marker_purity_cells` in txsim and
+  Moldia `Xenium_benchmarking`; matched to 1e-12 on the golden). The 0.6 score is
   `score="raw"` (`mean_nmp`, lower = cleaner, writes
   `obs['sam_nmp']`); on the golden it reproduces 0.001030 / 0.004628 exactly.
 - `nmp(score="raw")`: cells of a type absent from the reference, of a type with no negative gene, or with no counts
@@ -219,7 +219,7 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
 - `decomposition_purity(adata, weights_key, *, key_added="sam_decomposition_purity")`: 1 - the largest normalised
   deconvolution weight per cell, as in Spatial Touchstone; ported from SegTraQ `sp.rctd_contamination` (MIT,
   attributed). Rows with a non-finite or negative weight, or a non-positive total, are NaN.
-- `tx_per_cell(adata, *, layer, key_added="sam_tx_per_cell")`: transcripts per cell, mean (= SpatialQM
+- `tx_per_cell(adata, *, layer="counts", key_added="sam_tx_per_cell")`: transcripts per cell, mean (= SpatialQM
   `getTxPerCell`) and median; `run_signal_qc` adds a `tx_per_cell` entry.
 - `transcript_qc(transcripts, negative_features, *, feature_key="feature_name", cell_key="cell_id")`, from a
   transcripts DataFrame (no spatialdata dependency): `frac_tx_in_cells` (= `getCellTxFraction`; Xenium <= 1.2 `-1`
@@ -241,9 +241,10 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
 - `ontology_consistency(adata, label_key, obo_path, label_to_cl, *, embedding="X_pca", distance="path",
   rwr_restart=0.5, n_perm=999, min_cells=10, seed=0)`: do the label centroids sit in the embedding the way the
   Cell Ontology relates the labels? Spearman `rho` between centroid distances and `is_a` path lengths (`distance="path"`)
-  or Random Walk with Restart stationary L1 distances (`distance="rwr"`, `scGraph-OntoRWR`, Wang et al. *Genome Biol*
-  2025, 10.1186/s13059-025-03781-6) over label pairs, a one-sided Mantel permutation `p_value`, per-label
-  leave-one-out `loo_delta` and `most_inconsistent`. The OBO file is read with the standard library.
+  or Random Walk with Restart stationary-distribution Jensen-Shannon distances (`distance="rwr"`, `scGraph-OntoRWR`,
+  Wang et al. *Genome Biol* 2025, 10.1186/s13059-025-03781-6) over label pairs, a one-sided Mantel permutation
+  `p_value`, per-label leave-one-out `loo_delta` and `most_inconsistent`. The OBO file is read with the standard
+  library.
 
 **New options and result keys**
 
@@ -304,7 +305,7 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   `spatialqm_pseudocount`), `conformal` (`ece_n_bins`, `clustered_quantiles`, `novelty_fdr`, `novelty_frac_train`,
   `novelty_n_components`), and the new blocks `consensus` (`min_share`) and `ontology` (`min_labels`, `min_cells`,
   `n_perm`, `rwr_restart`); `panel` gains `f1_adjusted_resolvable` and `f1_adjusted_weak`.
-- `sam.__all__` gains the 12 new metrics above (45 names).
+- `sam.__all__` gains the 12 new metrics and helpers above (41 names).
 
 **Goldens and tests**
 

@@ -263,3 +263,26 @@ def test_regime_calls_flagged_experimental():
 
     out = em.inter_sample_consistency(_isc_adata(consistent=True), "cell_type", "sample")
     assert out["regime_status"] == "experimental"
+
+
+def test_isc_zero_pseudobulk_and_markers_mode_and_regime_boundaries():
+    from spatial_anno_metrics import isc as em
+
+    # Zero-norm pseudobulk does not poison iscg or regime calls to NaN
+    a = _isc_adata(consistent=True)
+    a.X[:40] = 0.0
+    out_raw = em.inter_sample_consistency(a, "cell_type", "sample", reduction=None)
+    out_pca = em.inter_sample_consistency(a, "cell_type", "sample", reduction="pca")
+    assert np.isfinite(out_raw["iscg"]) and np.isfinite(out_pca["iscg"])
+    assert "not_computable" not in set(out_raw["regime"].values())
+
+    # rcm_genes="markers" end-to-end
+    out_mk = em.inter_sample_consistency(_isc_adata(consistent=True), "cell_type", "sample", rcm_genes="markers")
+    assert out_mk["status"] == "ok" and out_mk["rcm_genes"] == "markers" and out_mk["iscl"] > 0.9
+
+    # Exact boundary equality for isc_regime (0.74, 0.45) and NaN handling
+    assert em.isc_regime(0.74, 0.45) == "consistent"
+    assert em.isc_regime(0.74, 0.4499) == "merge"
+    assert em.isc_regime(0.7399, 0.45) == "split"
+    assert em.isc_regime(0.7399, 0.4499) == "remove"
+    assert em.isc_regime(float("nan"), 0.5) == "not_computable"

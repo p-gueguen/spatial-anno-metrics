@@ -1,6 +1,6 @@
 """Sphinx configuration for the spatial-anno-metrics docs (ReadTheDocs builds it from .readthedocs.yaml)."""
 import sys
-from importlib.metadata import version as _version
+from importlib.metadata import PackageNotFoundError, version as _version
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -8,7 +8,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 project = "spatial-anno-metrics"
 author = "Paul Gueguen"
 copyright = "2025-2026, Paul Gueguen"
-release = _version("spatial-anno-metrics")
+try:
+    release = _version("spatial-anno-metrics")
+except PackageNotFoundError:
+    release = "0.7.0"
 version = ".".join(release.split(".")[:2])
 
 extensions = [

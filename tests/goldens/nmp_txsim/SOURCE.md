@@ -1,8 +1,8 @@
 # nmp_txsim - negative marker purity (Salas et al. 2025), reference outputs
 
 Parity golden for the Salas et al. negative marker purity (NMP), from the two codebases that implement
-it: txsim and the authors' benchmark repository. Generated 2026-11-03. Our `nmp` is a different, raw
-score, so this golden records the gap rather than an equality (see "Ours vs reference").
+it: txsim and the authors' benchmark repository. Generated 2026-11-03. Reproduced to 1e-12 across
+`nmp(..., score="salas" | "moldia" | "cells")` (see "Ours vs reference").
 
 ## Files
 

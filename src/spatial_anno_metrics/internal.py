@@ -89,7 +89,11 @@ def internal_validity(adata, label_key: str = "cell_type", embedding: str | None
 
     # neighborhood purity - fraction of k neighbors (excluding self) sharing the label; all cells.
     kk = int(min(n_neighbors, n - 1))
-    idx = NearestNeighbors(n_neighbors=kk + 1).fit(E).kneighbors(E, return_distance=False)[:, 1:]  # drop self
+    full = NearestNeighbors(n_neighbors=kk + 1).fit(E).kneighbors(E, return_distance=False)
+    hit = full == np.arange(n)[:, None]
+    pos = np.where(hit.any(1), hit.argmax(1), kk)
+    col = np.broadcast_to(np.arange(kk), (n, kk))
+    idx = np.take_along_axis(full, col + (col >= pos[:, None]), axis=1)
     purity = float(np.mean((code[idx] == code[:, None]).mean(1)))
 
     # orbital-medoid - fraction of cells whose nearest type-medoid is their own type; (n, K) memory.
@@ -130,7 +134,8 @@ def internal_validity(adata, label_key: str = "cell_type", embedding: str | None
             continue
         a_in = np.nanmean(D[np.ix_(own, own)], axis=1)             # mean within-type distance
         b_out = D[np.ix_(own, ~own)].mean(1)                       # mean distance to all others
-        s2.extend((b_out - a_in) / np.maximum(a_in, b_out))
+        denom = np.maximum(a_in, b_out)
+        s2.extend(np.divide(b_out - a_in, denom, out=np.zeros_like(denom), where=denom > 0))
     sil_2label = float(np.mean(s2)) if s2 else nan
     if not s2:
         reasons["silhouette_2label"] = (f"no label has 2 cells next to another label in the {len(ys)}-cell "
@@ -217,6 +222,8 @@ def isolated_label_scores(adata, label_key: str = "cell_type", *, batch_key: str
         b = check_labels(adata, batch_key)
         n_batches = np.array([len(np.unique(b[code == j])) for j in range(K)])
     iso = np.flatnonzero(n_batches <= (n_batches.min() if iso_threshold is None else iso_threshold))
+    if len(iso) == 0:
+        return skip(f"no label occurs in <= {iso_threshold} batch(es); min is {int(n_batches.min())}")
     E = _embedding(adata, embedding, seed=seed)
 
     if n <= subsample:
@@ -322,15 +329,19 @@ def clisi(adata, label_key: str = "cell_type", *, embedding: str | None = "X_pca
     """
     from sklearn.neighbors import NearestNeighbors
 
+    if perplexity is not None and perplexity <= 1.0:
+        raise ValueError(f"perplexity must be > 1, got {perplexity}")
     y = check_labels(adata, label_key)
     types, code = np.unique(y, return_inverse=True)
     K = len(types)
     if K < 2:
         return skip(f"need >= 2 labels in adata.obs[{label_key!r}], found {K}")
-    E = _embedding(adata, embedding)
     k = int(min(n_neighbors, len(y)))
-    D, Idx = NearestNeighbors(n_neighbors=k).fit(E).kneighbors(E)
     perp = float(np.floor(k / 3)) if perplexity is None else float(perplexity)
+    if perp <= 1.0 or k <= perp:
+        return skip(f"need n_neighbors > perplexity > 1 (got n_neighbors={k}, perplexity={perp})")
+    E = _embedding(adata, embedding)
+    D, Idx = NearestNeighbors(n_neighbors=k).fit(E).kneighbors(E)
     med = float(np.nanmedian(1.0 / _simpson(D, Idx, code, K, perp)))
     return {"status": "ok", "clisi": (K - med) / (K - 1), "median_lisi": med, "n_neighbors": k,
             "perplexity": perp}

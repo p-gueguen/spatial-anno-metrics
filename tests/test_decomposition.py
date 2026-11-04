@@ -35,9 +35,15 @@ def test_decomposition_purity_values():
 
 
 def test_decomposition_purity_skips():
+    import scipy.sparse as sp
+
     from spatial_anno_metrics.decomposition import decomposition_purity
 
     a = _adata([[0, 0], [np.nan, 1]])
     out = decomposition_purity(a, "rctd_weights")
     assert out["status"] == "skipped" and "sam_decomposition_purity" not in a.obs   # all undefined
     assert decomposition_purity(a, "missing")["status"] == "skipped"
+    # Sparse CSR weights in obsm work identically to dense
+    a.obsm["sparse_w"] = sp.csr_matrix([[3.0, 1.0], [1.0, 1.0]])
+    res_sp = decomposition_purity(a, "sparse_w")
+    assert res_sp["status"] == "ok" and np.allclose(a.obs["sam_decomposition_purity"], [0.25, 0.5])

@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
-from ._validate import check_labels, get_counts, skip
+from ._validate import _all_finite, check_labels, get_counts, skip
 from .thresholds import value as _thr
 
 __all__ = ["inter_sample_consistency", "isc_regime"]
@@ -27,13 +27,18 @@ def _pseudobulk_profiles(adata, label_key, sample_key, *, min_cells, min_samples
     """
     y = check_labels(adata, label_key)
     s = check_labels(adata, sample_key)
-    mat, matrix = get_counts(adata, layer) if layer else (adata.X, "X")
+    if layer:
+        mat, matrix = get_counts(adata, layer)
+    else:
+        if adata.X is None or not _all_finite(adata.X):
+            raise ValueError("adata.X contains NaN or inf")
+        mat, matrix = adata.X, "X"
     types, ti = np.unique(y, return_inverse=True)
     samps, si = np.unique(s, return_inverse=True)
     group = ti * len(samps) + si                                     # type-major, as the profiles are ordered
     n_groups = len(types) * len(samps)
     n_cells = np.bincount(group, minlength=n_groups)
-    ok = (n_cells >= min_cells).reshape(len(types), len(samps))
+    ok = (n_cells >= max(1, min_cells)).reshape(len(types), len(samps))
     keep_type = ok.sum(1) >= min_samples
     dropped = {t: int(k) for t, k, kt in zip(types, ok.sum(1), keep_type) if not kt}
     sel = np.flatnonzero((ok & keep_type[:, None]).ravel())
@@ -54,14 +59,17 @@ def _two_label_silhouette(D, labels):
     (not the nearest other cluster).
     """
     n = len(labels)
+    D_clean = np.nan_to_num(D, nan=1.0)
     same = labels[:, None] == labels[None, :]
     np.fill_diagonal(same, False)
     other = labels[:, None] != labels[None, :]
     n_same, n_other = same.sum(1), other.sum(1)
-    a = np.divide((D * same).sum(1), n_same, out=np.zeros(n), where=n_same > 0)
-    b = np.divide((D * other).sum(1), n_other, out=np.zeros(n), where=n_other > 0)
+    a = np.divide(np.where(same, D_clean, 0.0).sum(1), n_same, out=np.zeros(n), where=n_same > 0)
+    b = np.divide(np.where(other, D_clean, 0.0).sum(1), n_other, out=np.zeros(n), where=n_other > 0)
     denom = np.maximum(a, b)
-    return np.divide(b - a, denom, out=np.zeros(n), where=denom > 0)
+    out = np.divide(b - a, denom, out=np.zeros(n), where=denom > 0)
+    out[n_same == 0] = 0.0
+    return out
 
 
 def _classic_marker_n(n_labels):
@@ -116,9 +124,12 @@ def _rcm_dissimilarity(P, samples, labels, genes=None):
     best = np.empty((n, len(uniq)), dtype=int)  # best hit of observation i inside each sample
     for k in range(len(uniq)):
         cols = np.flatnonzero(sidx == k)
+        if len(cols) < 2:
+            best[:, k] = cols[0] if len(cols) else 0
+            continue
         if C is None:
             m = _classic_markers(P[cols])
-            Ck = _spearman(P[:, m], P[cols][:, m])
+            Ck = _spearman(P[:, m], P[cols][:, m]) if len(m) >= 2 else _spearman(P, P[cols])
         else:
             Ck = C[:, cols]
         best[:, k] = cols[np.argmax(Ck, axis=1)]
@@ -230,10 +241,10 @@ def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str
     Notes
     -----
     Regime calls are experimental (``regime_status``). On the synthetic sweep (``benchmarks/synthetic``,
-    ``check_isc_regimes.csv``, 3 seeds, 0.7.0 defaults) only over-splitting reads right (Epi halves: ``merge``
-    6 / 6). Merged labels read ``consistent`` (Fibro+Epi: ISCG 0.984, ISCL 1.000; three merges: 9 / 9
-    ``consistent``), 20 % random relabelling reads ``split`` for 13 / 18 labels (ISCG 0.690, ISCL 0.978) and a
-    per-sample batch effect (log-sd 1.0) ``split`` for 18 / 18 (ISCG 0.618, ISCL 1.000): ISCG falls under 0.74
+    ``check_isc_regimes.csv``, 5 seeds, 0.7.0 defaults) only over-splitting reads right (Epi halves: ``merge``
+    10 / 10). Merged labels read ``consistent`` (Fibro+Epi: ISCG 0.985, ISCL 1.000; three merges: 15 / 15
+    ``consistent``), 20 % random relabelling reads ``split`` for 21 / 30 labels (ISCG 0.688, ISCL 0.980) and a
+    per-sample batch effect (log-sd 1.0) ``split`` for 30 / 30 (ISCG 0.617, ISCL 1.000): ISCG falls under 0.74
     while ISCL stays high (0.84 at 40 % noise). The 0.74 / 0.45 guides rest on one preprint's meta-study.
 
     ISCL on a toy fixture of flat, low-noise background genes is not informative: with Spearman ranks a single
@@ -251,9 +262,12 @@ def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str
         adata, label_key, sample_key, min_cells=min_cells, min_samples=min_samples, layer=layer)
     genes = rcm_genes
     if rcm_genes is not None and not isinstance(rcm_genes, str):
-        genes = adata.var_names.get_indexer(list(rcm_genes))
+        rcm_list = list(rcm_genes)
+        if len(rcm_list) < 2:
+            raise ValueError(f"rcm_genes must contain >= 2 genes, got {len(rcm_list)}")
+        genes = adata.var_names.get_indexer(rcm_list)
         if (genes < 0).any():
-            raise KeyError(f"rcm_genes not in adata.var_names: {[g for g, i in zip(rcm_genes, genes) if i < 0][:5]}")
+            raise KeyError(f"rcm_genes not in adata.var_names: {[g for g, i in zip(rcm_list, genes) if i < 0][:5]}")
     elif rcm_genes not in (None, "markers"):
         raise ValueError(f"rcm_genes must be None, 'markers' or a list of genes, got {rcm_genes!r}")
     thr = {**ISC_THRESHOLDS, **(thresholds or {})}
@@ -269,10 +283,10 @@ def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str
     sil = silhouette_samples(P, plabels, metric=metric)
     E, k = P, None
     if reduction == "pca":
-        k = int(min(n_pcs, min(P.shape) - 1))
+        k = int(min(n_pcs, max(1, min(P.shape) - 1)))
         U, S, _ = np.linalg.svd(P - P.mean(0), full_matrices=False)
         E = U[:, :k] * S[:k]
-    D_cos = cdist(E, E, metric="cosine")
+    D_cos = np.nan_to_num(cdist(E, E, metric="cosine"), nan=1.0)
     np.fill_diagonal(D_cos, 0.0)
     glob = _two_label_silhouette(D_cos, plabels)
     D_rcm = _rcm_dissimilarity(P, psamples, plabels, genes)

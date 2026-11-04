@@ -61,10 +61,23 @@ def _spatial_graph(adata, n_neighs: int, graph: str | None = None):
         return csr_matrix(adata.obsp["spatial_connectivities"]), want
     if "spatial" not in adata.obsm:
         return None, "no obsm['spatial'] or reusable obsp['spatial_connectivities']"
-    kw = {"delaunay": True} if graph == "delaunay" else {"n_neighs": n_neighs}
+    xy = np.asarray(adata.obsm["spatial"], dtype=float)
+    if xy.ndim != 2 or xy.shape[0] != adata.n_obs or xy.shape[1] < 1 or not np.all(np.isfinite(xy)):
+        return None, "obsm['spatial'] must be a finite 2D coordinate matrix"
+    if graph == "delaunay":
+        if adata.n_obs < 4 or xy.shape[1] < 2:
+            return None, "delaunay graph needs >= 4 cells in >= 2D coordinates"
+        kw = {"delaunay": True}
+    else:
+        if adata.n_obs < 2 or n_neighs < 1:
+            return None, "knn graph needs >= 2 cells and n_neighs >= 1"
+        kw = {"n_neighs": int(min(n_neighs, adata.n_obs - 1))}
     target = (ad.AnnData(obs=pd.DataFrame(index=adata.obs_names), obsm={"spatial": adata.obsm["spatial"]})
               if have else adata)
-    _squidpy().gr.spatial_neighbors(target, coord_type="generic", **kw)
+    try:
+        _squidpy().gr.spatial_neighbors(target, coord_type="generic", **kw)
+    except Exception as e:
+        return None, f"spatial_neighbors failed: {e}"
     if target is adata:
         adata.uns["spatial_neighbors"][_GRAPH_TAG] = want
     return csr_matrix(target.obsp["spatial_connectivities"]), want
@@ -82,6 +95,8 @@ def _chaos(adata, labels: np.ndarray) -> float:
     if "spatial" not in adata.obsm:
         return float("nan")
     xy = np.asarray(adata.obsm["spatial"], dtype=float)
+    if xy.ndim != 2 or xy.shape[0] != len(labels) or xy.shape[1] < 1 or not np.all(np.isfinite(xy)):
+        return float("nan")
     sd = xy.std(axis=0, ddof=1)
     z = (xy - xy.mean(axis=0)) / np.where(sd > 0, sd, 1.0)
     tot = 0.0
@@ -148,6 +163,8 @@ def spatial_coherence(adata, label_key: str = "cell_type", n_neighs: int = _thr(
                         shape=(adata.n_obs, len(cats)))
     same = np.asarray((A @ onehot)[np.arange(adata.n_obs), lab_idx]).ravel()
     deg = np.asarray(A.sum(1)).ravel()
+    if not (deg > 0).any():
+        return skip("spatial graph has no edges (all cells have degree 0)")
     with np.errstate(divide="ignore", invalid="ignore"):
         frac = np.where(deg > 0, same / deg, np.nan)
     adata.obs[key_added] = frac
@@ -213,8 +230,10 @@ def neighborhood_sanity(adata, label_key: str = "cell_type", n_neighs: int = _th
     suspicious = []
     if z.ndim == 2 and z.shape[0] > 1:
         for i, c in enumerate(cats):
-            j = int(np.argmax(z[i]))
-            if j != i:
+            if not np.isfinite(z[i][i]):
+                continue
+            j = int(np.nanargmax(z[i]))
+            if j != i and z[i][j] > z[i][i]:
                 suspicious.append({"type": str(c), "stronger_with": str(cats[j]),
                                    "self_z": float(z[i][i]), "cross_z": float(z[i][j])})
     return {"status": "ok", "categories": [str(c) for c in cats],
@@ -353,11 +372,10 @@ def neighbor_contamination(adata, marker_sets: dict, label_key: str = "cell_type
     col = {g: j for j, g in enumerate(genes)}
     Xm = sps.csr_matrix(mat[:, [panel[g] for g in genes]])          # cells x contaminant genes, sparse
     total = np.asarray(mat.sum(axis=1)).ravel().astype(float)
-    Ac = A.tocsc()
     A_bin = (A > 0).astype(float).tocsc()
     deg = np.asarray(A_bin.sum(axis=1)).ravel()
     xy = np.asarray(adata.obsm["spatial"], dtype=float) if "spatial" in adata.obsm else None
-    if xy is not None and not np.all(np.isfinite(xy)):
+    if xy is not None and (xy.ndim != 2 or xy.shape[0] != adata.n_obs or xy.shape[1] < 1 or not np.all(np.isfinite(xy))):
         xy = None
     rng = np.random.default_rng(seed)
 
@@ -368,9 +386,9 @@ def neighbor_contamination(adata, marker_sets: dict, label_key: str = "cell_type
     rows, cols = [], []                                # (cell, gene) local contaminants, OR-ed over sources
     for s in types:
         src = np.flatnonzero(labels == s)
-        As = Ac[:, src]
-        adj = np.asarray(As.sum(axis=1)).ravel() > 0   # touches an s cell
-        s_nb_all = np.asarray(A_bin[:, src].sum(axis=1)).ravel()
+        As = A_bin[:, src]
+        s_nb_all = np.asarray(As.sum(axis=1)).ravel()
+        adj = s_nb_all > 0                             # touches an s cell
         tree_s = cKDTree(xy[src]) if xy is not None and len(src) > 0 else None
         nb = (As @ (Xm[src] > 0).astype(float)).tocsr() if require_neighbor_expression else None
         for t in types:

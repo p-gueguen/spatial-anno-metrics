@@ -4,7 +4,7 @@
 Fibro | Epi), 2,400 cells, 150 counts per cell. Each type has private markers, and the two T subtypes
 share two lineage markers. There are 60 background genes and 20 negative-control probes, and six samples
 as horizontal bands. A matched dissociated reference comes from the same world. `sweep.py` damages that
-section along 15 axes at 4-5 strengths × 5 seeds, runs every public metric (49 values from 19 adapters), and
+section along 15 axes at 4-5 strengths × 5 seeds, runs every public metric (51 values from 19 adapters), and
 scores each trajectory against what the metric should do. It also runs 18 edge cases and four dedicated
 checks.
 
@@ -53,10 +53,11 @@ local paths and are not committed.
   annotator checks (`cal.ece`, `nov.frac_novel`).
 
 **Adapters added in 0.7.0:** `isolated_label_scores` (`iso.asw`, `iso.f1`), `clisi`, `ontology_consistency`
-(`onto.rho`, on a 10-term toy ontology that mirrors the sim hierarchy: split halves map to their type's term,
-a merged pair to its lowest common ancestor), `coexpression_similarity` (`coex.global`, and `coex.by_type`
-with `label_key`), `spatial_ari` (`ext.spari`), CHAOS (`sc.chaos`, from `spatial_coherence`), PMP's
-dictionary coverage (`pmp.no_dict_frac`), and `calibration_novelty`: a logistic classifier trained on the
+(`onto.rho` and `onto.rwr_rho`, on a 10-term toy ontology that mirrors the sim hierarchy: split halves map to
+their type's term, a merged pair to its lowest common ancestor), `coexpression_similarity` (`coex.global`, and
+`coex.by_type` with `label_key`), `ncp.moldia` (`ncp(..., score="moldia")`), `spatial_ari` (`ext.spari`),
+CHAOS (`sc.chaos`, from `spatial_coherence`), PMP's dictionary coverage (`pmp.no_dict_frac`), and
+`calibration_novelty`: a logistic classifier trained on the
 reference annotates the section, scored by `calibration_error` against the truth (`cal.ece`) and by the
 share of section cells `conformal_novelty` flags (`nov.frac_novel`, reference thinned to the section's
 per-cell depths). Neither of the last two reads `obs['label']`, and no main scenario holds a novel type,
@@ -80,14 +81,14 @@ the metric's range across the whole sweep.
 
 Counted over the cells that carry a claim (expectation "down" or "flat"):
 
-| | 0.6.0 (38 metrics) | 0.7.0, same 38 metrics | 0.7.0, 11 new metrics | 0.7.0, all 49 |
+| | 0.6.0 (38 metrics) | 0.7.0, same 38 metrics | 0.7.0, 13 new metrics | 0.7.0, all 51 |
 |---|---|---|---|---|
-| ✅ detects | 106 | 108 | 25 | 133 |
+| ✅ detects | 106 | 108 | 26 | 134 |
 | ❌ blind | 44 | 40 | 18 | 58 |
-| ⚠️ false alarm | 13 | 13 | 8 | 21 |
+| ⚠️ false alarm | 13 | 13 | 9 | 22 |
 | ⛔ wrong way | 3 | 3 | 0 | 3 |
-| 〰️ erratic | 22 | 24 | 8 | 32 |
-| 💥 edge-case raises | 13 (9 deep `TypeError` / `ValueError`) | 24 (0 deep) | 6 (0 deep) | 30 (0 deep) |
+| 〰️ erratic | 22 | 24 | 11 | 35 |
+| 💥 edge-case raises | 13 (9 deep `TypeError` / `ValueError`) | 20 (0 deep) | 6 (0 deep) | 26 (0 deep) |
 
 Six cells of the 38 shared metrics changed verdict; the other 564 did not. A rerun of the same commit
 reproduces all 570 shared cells exactly.
@@ -272,7 +273,8 @@ Values are means over 5 seeds, baseline → maximum strength; "threshold" is the
   - Log-normalised `X` with no `counts` layer: the 12 count-based adapters raise `ValueError` asking for
     `layer=`. In 0.6.0 ISC, fidelity, PMP, NMP, `neighbor_contamination`, confidence and signal QC returned
     different numbers with no warning.
-  - Missing coordinates: the four spatial adapters raise squidpy's `KeyError`.
+  - Missing coordinates: the four spatial adapters return `status="skipped"` (`NaN`), instead of raising
+    squidpy's `KeyError`.
 - **Skips instead of made-up values:** a single label (`neighborhood_sanity` crashed in 0.6.0), markers off
   the panel (`crisp_purity` 1.0, `mecr` 0.0, confidence margin 0 / entropy 1 in 0.6.0), and a label vocabulary the
   reference does not share (integer codes, renamed or merged labels: `nmp` was 0) now return NaN with a reason.

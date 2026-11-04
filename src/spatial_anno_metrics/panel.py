@@ -88,13 +88,22 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
     from sklearn.metrics import precision_recall_fscore_support
     from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
+    if cv < 2:
+        raise ValueError(f"cv must be >= 2, got {cv}")
+    if max_cells_per_type < cv:
+        raise ValueError(f"max_cells_per_type ({max_cells_per_type}) must be >= cv ({cv})")
+    if not np.isfinite(target_depth) or target_depth < 0:
+        raise ValueError(f"target_depth must be finite and >= 0, got {target_depth}")
     panel = {str(g) for g in panel_genes}
-    shared = [g for g in reference.var_names if str(g) in panel]
+    shared = list(dict.fromkeys(str(g) for g in reference.var_names if str(g) in panel))
     if len(shared) < _MIN_SHARED:
         return {**skip(f"{len(shared)} genes shared with the panel, need >= {_MIN_SHARED}"),
                 "n_shared_genes": len(shared), "per_type": {}}
     y = check_labels(reference, label_key)
-    mat, matrix = get_counts(reference[:, shared], layer)
+    min_req = max(_MIN_CELLS, cv)
+    keep = {ct for ct, n in zip(*np.unique(y, return_counts=True)) if n >= min_req}
+    var_idx = {str(g): i for i, g in enumerate(reference.var_names)}
+    mat, matrix = get_counts(reference[:, [var_idx[g] for g in shared]], layer)
     rng = np.random.default_rng(seed)
     idx: list = []
     for ct in np.unique(y):
@@ -103,13 +112,12 @@ def panel_resolvability(reference, label_key: str, panel_genes, target_depth: fl
                    else rng.choice(pos, max_cells_per_type, replace=False))
     idx = np.array(sorted(idx))
     y = y[idx]
-    keep = {ct for ct, n in zip(*np.unique(y, return_counts=True)) if n >= _MIN_CELLS}
     m = np.isin(y, list(keep))
     idx, y = idx[m], y[m]
     if len(np.unique(y)) < 2:
-        return {**skip(f"fewer than 2 reference types with >= {_MIN_CELLS} cells"),
+        return {**skip(f"fewer than 2 reference types with >= {min_req} cells"),
                 "n_shared_genes": len(shared), "per_type": {}}
-    A = np.rint(_dense(mat[idx])).astype(np.int64)                 # thin to the panel's real depth
+    A = np.clip(np.rint(_dense(mat[idx])), 0, None).astype(np.int64)  # thin to the panel's real depth
     tot = A.sum(1, keepdims=True)
     p = np.clip(target_depth / np.maximum(tot, 1), 0.0, 1.0)
     Xn = rng.binomial(A, np.broadcast_to(p, A.shape)).astype("float32").astype(float)

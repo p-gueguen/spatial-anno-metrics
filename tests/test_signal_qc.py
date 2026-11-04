@@ -359,3 +359,37 @@ def test_transcript_qc_reads_bytes_and_string_ids():
         out = sq.transcript_qc(tx, ["NEG1", "NEG2"])
         assert out["n_unassigned"] == 2 and out["n_negative_tx"] == 2
         assert out["fdr"] == pytest.approx(want["fdr"]) and out["fdr"] == pytest.approx(2 / 8 * 3 / 2)
+
+
+def test_signal_qc_stored_zeros_and_edge_skips():
+    import pandas as pd
+
+    from spatial_anno_metrics import signal_qc as sq
+
+    # Non-canonical CSR with explicit stored zeros (0.0 in X.data) must not produce NaN entropy or wrong zero_fraction
+    dense = np.array([[0.0, 2.0, 2.0], [1.0, 0.0, 3.0]], dtype="float32")
+    csr_canon = sp.csr_matrix(dense)
+    csr_zeros = sp.csr_matrix((np.array([0.0, 2.0, 2.0, 1.0, 0.0, 3.0], dtype="float32"),
+                               np.array([0, 1, 2, 0, 1, 2]), np.array([0, 3, 6])), shape=(2, 3))
+    assert csr_zeros.nnz == 6 and csr_canon.nnz == 4
+    a1, a2 = anndata.AnnData(X=csr_canon), anndata.AnnData(X=csr_zeros)
+    assert sq.sparsity(a1)["zero_fraction"] == pytest.approx(sq.sparsity(a2)["zero_fraction"]) == pytest.approx(2 / 6)
+    e1, e2 = sq.detection_entropy(a1), sq.detection_entropy(a2)
+    assert np.isfinite(e2["median_detection_entropy"])
+    assert e1["median_detection_entropy"] == pytest.approx(e2["median_detection_entropy"])
+
+    # All-control panel skips signal_to_noise and tx_per_cell
+    a_ctrl = anndata.AnnData(X=csr_canon.copy())
+    a_ctrl.var["control"] = True
+    assert sq.signal_to_noise(a_ctrl)["status"] == "skipped"
+    assert sq.tx_per_cell(a_ctrl)["status"] == "skipped"
+
+    # Non-positive cell_area skips tx_per_area
+    a_area = anndata.AnnData(X=csr_canon.copy())
+    a_area.obs["cell_area"] = [0.0, -1.0]
+    assert sq.tx_per_area(a_area)["status"] == "skipped"
+
+    # transcript_qc with leading None and bytes in subsequent rows
+    tx_na = pd.DataFrame({"feature_name": [None, b"A", b"NEG1"], "cell_id": [None, b"c1", b"UNASSIGNED"]})
+    out_na = sq.transcript_qc(tx_na, ["NEG1"])
+    assert out_na["n_unassigned"] == 2 and out_na["n_negative_tx"] == 1

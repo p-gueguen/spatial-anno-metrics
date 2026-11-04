@@ -9,7 +9,7 @@ from collections import Counter
 
 import numpy as np
 
-from ._hierarchy import ancestors
+from ._hierarchy import ancestors, validate_hierarchy
 from ._validate import check_labels, skip
 from .thresholds import value as _thr
 
@@ -64,6 +64,7 @@ def consensus_entropy(adata, label_keys, *, hierarchy: dict | None = None,
     L = np.column_stack([check_labels(adata, k) for k in label_keys]).astype(str)
     n_a = L.shape[1]
     hierarchy = hierarchy or {}
+    validate_hierarchy(hierarchy)
     paths: dict = {}
 
     def path(label):                                      # root-first: [root, ..., label]

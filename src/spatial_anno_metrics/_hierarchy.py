@@ -10,16 +10,24 @@ __all__ = []
 def ancestors(label, parent_map: dict) -> list:
     """Return ``label``'s ancestors, nearest first: ``[parent, grandparent, ..., root]``; ``[]`` for a root.
 
-    A cycle in ``parent_map`` raises ``ValueError``.
+    A cycle in ``parent_map`` raises ``ValueError``. A ``None`` parent is treated as a root.
     """
     out, seen, cur = [], {label}, label
-    while cur in parent_map and parent_map[cur] != cur:
+    while cur in parent_map and parent_map[cur] is not None and parent_map[cur] != cur:
         cur = parent_map[cur]
         if cur in seen:
             raise ValueError(f"cycle in parent_map through {cur!r}")
         seen.add(cur)
         out.append(cur)
     return out
+
+
+def validate_hierarchy(parent_map: dict | None) -> None:
+    """Verify that every key in ``parent_map`` has a cycle-free ancestor chain."""
+    if not parent_map:
+        return
+    for k in parent_map:
+        ancestors(k, parent_map)
 
 
 def lca_depth(a, b, parent_map: dict) -> int:

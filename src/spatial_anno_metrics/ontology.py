@@ -77,15 +77,17 @@ def _ontology_distances(ids, parents: dict) -> np.ndarray:
             common = up[i].keys() & up[j].keys()
             D[i, j] = D[j, i] = min((up[i][c] + up[j][c] for c in common), default=np.inf)
     if np.isinf(D).any():
-        D[np.isinf(D)] = D[np.isfinite(D)].max() + 1
+        fin = D[np.triu_indices(k, 1)]
+        fin = fin[np.isfinite(fin) & (fin > 0)]
+        D[np.isinf(D)] = (fin.max() + 1.0) if fin.size else 1.0
     return D
 
 
 def _ontology_rwr_distances(ids, parents: dict, restart: float = 0.5) -> np.ndarray:
     """Pairwise Jensen-Shannon distance between Random-Walk-with-Restart (RWR) distributions on the ontology.
 
-    Follows the ontology-graph RWR construction of Wang et al. (*Nat Commun* 2024,
-    doi 10.1038/s41467-024-49280-7, ``scGraph-OntoRWR``): on the undirected ``is_a`` graph, a random walk
+    Follows the ontology-graph RWR construction of Wang et al. (*Genome Biol* 2025,
+    doi 10.1186/s13059-025-03781-6, ``scGraph-OntoRWR``): on the undirected ``is_a`` graph, a random walk
     starting at term ``u`` restarts at ``u`` with probability ``restart`` at each step, converging to the
     stationary distribution ``p_u = restart * (I - (1 - restart) W^T)^(-1) e_u``. Unlike shortest-path hop
     count, RWR integrates over multiple ``is_a`` inheritance paths and resolves ties between lineage branches.
@@ -162,7 +164,7 @@ def ontology_consistency(adata, label_key: str, obo_path, label_to_cl: dict, *, 
     distance between their embedding centroids is compared with the Cell Ontology distance between their terms
     (``distance="path"``: shortest ``is_a`` walk up to a common ancestor; ``distance="rwr"``: Jensen-Shannon
     distance between Random-Walk-with-Restart stationary distributions on the ``is_a`` graph, after Wang et al.
-    *Nat Commun* 2024 ``scGraph-OntoRWR``); ``rho`` is the Spearman correlation over the pairs,
+    *Genome Biol* 2025 ``scGraph-OntoRWR``); ``rho`` is the Spearman correlation over the pairs,
     and ``p_value`` a one-sided Mantel test that permutes which label holds which ontology term
     (``(1 + #{rho_perm >= rho}) / (1 + n_perm)``; with ``K`` labels there are only ``K!`` distinct permutations,
     so with 4 labels the p cannot go below ~1/24). ``loo_delta`` is how much ``rho`` rises when that label is
@@ -208,7 +210,7 @@ def ontology_consistency(adata, label_key: str, obo_path, label_to_cl: dict, *, 
     """
     if distance not in ("path", "rwr"):
         raise ValueError(f"distance must be 'path' or 'rwr', got {distance!r}")
-    if distance == "rwr" and not 0.0 < rwr_restart < 1.0:
+    if not 0.0 < rwr_restart < 1.0:
         raise ValueError(f"rwr_restart must be in (0, 1), got {rwr_restart}")
     y = check_labels(adata, label_key)
     parents = _read_obo(obo_path)
@@ -231,6 +233,8 @@ def ontology_consistency(adata, label_key: str, obo_path, label_to_cl: dict, *, 
     Do = (_ontology_distances(ids, parents) if distance == "path"
           else _ontology_rwr_distances(ids, parents, restart=rwr_restart))
     E = _embedding(adata, embedding, seed=seed)
+    if not np.all(np.isfinite(E)):
+        raise ValueError("embedding contains NaN or infinite values")
     C = np.vstack([E[y == lab].mean(0) for lab in keep])
     De = np.sqrt(((C[:, None, :] - C[None, :, :]) ** 2).sum(-1))
     k = len(keep)

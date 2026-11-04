@@ -32,19 +32,30 @@ def _embedding(adata, embedding: str | None, seed: int = 0) -> np.ndarray:
     (arpack, scikit-learn >= 1.4), the same components as the dense PCA up to sign and solver tolerance.
     It densifies as before when arpack cannot run (scikit-learn < 1.4, or ``n_components >= min(X.shape)``).
     """
+    from ._validate import _all_finite
+
     if embedding and embedding in adata.obsm:
-        return np.asarray(adata.obsm[embedding], dtype=float)
+        E = np.asarray(_dense(adata.obsm[embedding]), dtype=float)
+        if E.ndim != 2 or E.shape[0] != adata.n_obs or E.shape[1] < 1:
+            raise ValueError(f"adata.obsm[{embedding!r}] must have shape (n_obs, >=1), got {E.shape}")
+        if not np.all(np.isfinite(E)):
+            raise ValueError(f"adata.obsm[{embedding!r}] contains NaN or inf")
+        return E
     import scipy.sparse as sp
     from sklearn.decomposition import PCA
 
     X = adata.X
+    if X is None or X.ndim != 2 or X.shape[0] == 0 or X.shape[1] == 0:
+        raise ValueError("adata.X is empty")
+    if not _all_finite(X):
+        raise ValueError("adata.X contains NaN or inf")
     n_comp = int(min(_PCA_N, X.shape[1], max(2, X.shape[0] - 1)))
     if sp.issparse(X) and n_comp < min(X.shape):
         try:
             return PCA(n_components=n_comp, svd_solver="arpack", random_state=seed).fit_transform(X.astype(float))
-        except TypeError:                                    # scikit-learn < 1.4: no sparse PCA
+        except (TypeError, ValueError, sp.linalg.ArpackError):  # scikit-learn < 1.4 or rank-deficient matrix
             pass
-    return PCA(n_components=n_comp, random_state=seed).fit_transform(_dense(X).astype(float))
+    return PCA(n_components=min(n_comp, min(X.shape)), random_state=seed).fit_transform(_dense(X).astype(float))
 
 
 def _squidpy():
@@ -58,6 +69,8 @@ def _squidpy():
 
     with contextlib.suppress(Exception), warnings.catch_warnings():
         warnings.simplefilter("ignore")
+        import dask
+        dask.config.set({"dataframe.query-planning": True})
         import dask.dataframe  # noqa: F401 - prevent spatialdata<0.4 + dask>=2025.1 query-planning error
     try:
         import squidpy

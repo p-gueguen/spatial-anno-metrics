@@ -1,8 +1,16 @@
 """Shared fixtures: well-separated labelled blobs and a label shuffler, as factories so a test picks the size."""
 from __future__ import annotations
 
+import contextlib
 import sys
+import warnings
 from pathlib import Path
+
+with contextlib.suppress(Exception), warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    import dask
+    dask.config.set({"dataframe.query-planning": True})
+    import dask.dataframe  # noqa: F401 - prevent spatialdata<0.4 + dask>=2025.1 query-planning error
 
 import numpy as np
 import pandas as pd

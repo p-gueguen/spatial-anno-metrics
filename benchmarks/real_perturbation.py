@@ -4,11 +4,11 @@
 
 Evaluates the metric battery under controlled perturbations of two committed real datasets:
 1. **Yerly et al. 2022 human BCC scRNA-seq cohort** (``tests/goldens/isc_yerly2022/``, 2,620 cells x 2,000
-   HVGs across 7 patients and 9 cell types): ``label_noise`` (T1), ``over_split`` (T2), ``merge`` (T3),
+   HVGs across 7 patients and 10 cell types): ``label_noise`` (T1), ``over_split`` (T2), ``merge`` (T3),
    ``type_swap`` (T4), ``spillover`` (T5), ``depth_loss`` (T6), and ``nuisance_shuffle`` (T8 negative control).
 2. **10x Xenium human breast cancer crop** (``tests/goldens/signalqc_spatialqm/``, 2,000 cells x 541 features:
-   313 genes + 228 negative controls, with cell centroids and areas): ``ambient`` (T5), ``depth_loss`` (T6),
-   ``coord_shuffle`` (T7), and ``nuisance_shuffle`` (T8 negative control).
+   313 genes + 228 negative controls, with cell centroids and areas): ``ambient`` (T5), ``spillover`` (T5),
+   ``depth_loss`` (T6), ``coord_shuffle`` (T7), and ``nuisance_shuffle`` (T8 negative control).
 
 Writes ``values.csv``, ``verdicts.csv``, and ``matrix.md`` scored by monotonicity (Spearman rho), minimum
 detectable perturbation level, and constant-fit on negative controls (catalog section 7, roadmap #24).

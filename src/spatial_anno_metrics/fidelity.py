@@ -81,8 +81,9 @@ def marker_program_fidelity(adata, label_key: str, marker_sets: dict[str, list[s
         except Exception:
             auc = None
         pos, neg = score[y == 1], score[y == 0]
-        num = (len(pos) - 1) * pos.var(ddof=1) + (len(neg) - 1) * neg.var(ddof=1)
-        sd = np.sqrt(num / max(1, len(pos) + len(neg) - 2))
+        dof = len(pos) + len(neg) - 2
+        num = len(pos) * pos.var(ddof=0) + len(neg) * neg.var(ddof=0)
+        sd = np.sqrt(num / dof) if dof > 0 else 0.0
         d = float((pos.mean() - neg.mean()) / sd) if sd > 0 else None     # constant load: undefined
         per[t] = {"auc": auc, "cohens_d": d, "n": int(y.sum())}
         if auc is not None:

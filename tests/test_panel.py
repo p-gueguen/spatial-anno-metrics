@@ -236,3 +236,21 @@ def test_panel_resolvability_weak_confusion_cut_and_f1_weak_threshold():
     assert D["confused_frac"] == pytest.approx(0.20)
     assert D["f1_adjusted"] == pytest.approx(3 / 7, abs=1e-6)      # 0.4286 in [0.20, 0.50), confused_frac < 0.25
     assert D["tier"] == "not_resolvable"
+
+
+def test_panel_resolvability_edge_cases_cv_max_cells_and_negative_values():
+    from spatial_anno_metrics import panel as em
+
+    a = _panel_ref(n=12)
+    panel = [f"g{i}" for i in range(39)]
+    # cv=15 > n=12: skips cleanly instead of crashing StratifiedKFold
+    assert em.panel_resolvability(a, "cell_type", panel, cv=15)["status"] == "skipped"
+    # max_cells_per_type=8 (< 10) with cv=5: still scores types that had >= 10 cells in the reference
+    res_small_cap = em.panel_resolvability(_panel_ref(n=30), "cell_type", panel, max_cells_per_type=8, cv=5)
+    assert res_small_cap["status"] == "ok" and res_small_cap["n_types"] == 4
+    # Negative values with layer=None: warns and clips to 0 before binomial thinning
+    b = _panel_ref(n=20)
+    b.X[0, 0] = -2.0
+    with pytest.warns(UserWarning, match="negative or non-integer"):
+        res_neg = em.panel_resolvability(b, "cell_type", panel, layer=None)
+    assert res_neg["status"] == "ok"

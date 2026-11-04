@@ -27,7 +27,7 @@ QC (SpatialQM), conformal (scConform), `neighbor_contamination` and decompositio
 | # | Item | Why it is open | Evidence |
 |---|---|---|---|
 | 5 | **AQI validation and tuning** | Tracked outside this repo. | - |
-| 8d | **ISC regime calls** are still wrong in 3 of 4 synthetic cases: merge reads `consistent`, 20 % label noise `split` (13/18 labels), a batch effect `split` (18/18); only over-split is right. | Flagged, not fixed: results carry `regime_status="experimental"`. The headline ISCG/ISCL now match scTypeEval (#7), so the calls, not the scores, are the problem; they need real multi-sample data with a known answer before they can be trusted. | `isc.py:231-237` (Notes, with the numbers); `tests/test_isc.py::test_regime_calls_flagged_experimental`; `benchmarks/synthetic/results/check_isc_regimes.csv` |
+| 8d | **ISC regime calls** are still wrong in 3 of 4 synthetic cases: merge reads `consistent`, 20 % label noise `split` (21/30 labels), a batch effect `split` (30/30); only over-split is right. | Flagged, not fixed: results carry `regime_status="experimental"`. The headline ISCG/ISCL now match scTypeEval (#7), so the calls, not the scores, are the problem; they need real multi-sample data with a known answer before they can be trusted. | `isc.py` (Notes, with the numbers); `tests/test_isc.py::test_regime_calls_flagged_experimental`; `benchmarks/synthetic/results/check_isc_regimes.csv` |
 
 ## P2 - later (external PRs & publication)
 

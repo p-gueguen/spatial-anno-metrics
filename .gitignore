@@ -11,3 +11,5 @@ venv/
 htmlcov/
 docs/_build/
 docs/generated/
+benchmarks/synthetic/results/errors.csv
+benchmarks/synthetic/results/warnings.csv

@@ -41,3 +41,5 @@ def test_annotation_quality_leaves_obs_alone(blobs):
     out = em.annotation_quality(a, label_key="cell_type", embedding="X_pca",
                                 marker_sets={"T0": ["0", "1"], "T1": ["2", "3"]})
     assert out["aqi"]["components"]["C"] is not None and list(a.obs.columns) == cols
+    out_missing_smp = em.annotation_quality(a, label_key="cell_type", sample_key="no_such_col", compute_aqi=False)
+    assert out_missing_smp["inter_sample_consistency"]["status"] == "skipped"

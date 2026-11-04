@@ -69,7 +69,10 @@ def _control_mask(adata, probes_only: bool = False) -> np.ndarray:
     """Flag controls by the rule in the module docstring; ``probes_only`` keeps negative-control probes only."""
     ft = _feature_types(adata)
     if probes_only and ft is not None:
-        return ft == _PROBE_TYPE
+        mask = ft == _PROBE_TYPE
+        if "control" in adata.var.columns:
+            mask &= np.asarray(adata.var["control"], dtype=bool)
+        return mask
     if "control" in adata.var.columns:
         return np.asarray(adata.var["control"], dtype=bool)
     if ft is not None:
@@ -194,10 +197,10 @@ def moran_signal(adata, n_neighs: int = _thr("signal_qc", "moran_n_neighs"), gen
     gene = ~_control_mask(adata)
     extra: dict = {}
     if method == "squidpy":
+        if "spatial_connectivities" not in adata.obsp and "spatial" not in adata.obsm:
+            return skip("no obsm['spatial'] or obsp['spatial_connectivities']")
         sq = _squidpy()
         if "spatial_connectivities" not in adata.obsp:
-            if "spatial" not in adata.obsm:
-                return skip("no obsm['spatial'] or obsp['spatial_connectivities']")
             sq.gr.spatial_neighbors(adata, coord_type="generic", n_neighs=n_neighs)
         sq.gr.spatial_autocorr(adata, mode="moran", genes=list(names[use]), n_perms=n_perms, seed=seed,
                                layer=None if matrix == "X" else layer)
@@ -209,6 +212,7 @@ def moran_signal(adata, n_neighs: int = _thr("signal_qc", "moran_n_neighs"), gen
         ctrl = _control_mask(adata, probes_only=True)
         X, xy = _csr(mat), np.asarray(adata.obsm["spatial"], dtype=float)[:, :2]
         per = pd.Series(np.nan, index=names)
+        extra = {"n_cells_genes": 0, "n_cells_controls": 0}
         try:
             for key, grp in (("n_cells_genes", gene), ("n_cells_controls", ctrl)):
                 if (grp & use).any():
@@ -283,6 +287,8 @@ def signal_to_noise(adata, *, method: str = "cell", eps: float | None = None, la
     ctrl = _control_mask(adata)
     if ctrl.sum() == 0:
         return skip("no control features (var['control'] or var['feature_type'])")
+    if (~ctrl).sum() == 0:
+        return skip("no non-control gene features")
     mat, matrix = get_counts(adata, layer)
     X = _csr(mat).astype(float)
     Xg, Xc = X[:, ~ctrl], X[:, ctrl]
@@ -348,8 +354,10 @@ def sparsity(adata, *, layer: str | None = "counts", key_added: str = "sam_spars
     mat, matrix = get_counts(adata, layer)
     X = _csr(mat)
     n, g = X.shape
-    zero_frac = 1.0 - X.nnz / (n * g)
+    if n == 0 or g == 0:
+        return skip("empty count matrix")
     per_cell = 1.0 - np.asarray((X > 0).sum(1)).ravel() / g
+    zero_frac = float(per_cell.mean())
     adata.obs[key_added] = per_cell
     out = {"status": "ok", "zero_fraction": float(zero_frac), "median_cell_sparsity": float(np.median(per_cell)),
            "matrix": matrix}
@@ -385,9 +393,13 @@ def detection_entropy(adata, *, method: str = "cell", layer: str | None = "count
         ``"cell"``: ``status``, ``median_detection_entropy``, ``frac_cells_single_gene_dominated``, ``matrix``.
         ``"spatialqm"``: ``status``, ``entropy_bits``, ``n_distinct_values``, ``method``, ``matrix``.
     """
+    from scipy.special import xlogy
+
     _check_method(method, ("cell", "spatialqm"))
     mat, matrix = get_counts(adata, layer)
     X = _csr(mat).astype(float)
+    if X.shape[0] == 0 or X.shape[1] == 0:
+        return skip("empty count matrix")
     if method == "spatialqm":
         vals, cnt = np.unique(X.data, return_counts=True)
         n_zero = X.shape[0] * X.shape[1] - X.nnz
@@ -397,7 +409,7 @@ def detection_entropy(adata, *, method: str = "cell", layer: str | None = "count
                 "method": method, "matrix": matrix}
     total = np.asarray(X.sum(1)).ravel()
     M = X.copy()
-    M.data = X.data * np.log(X.data)
+    M.data = xlogy(X.data, X.data)
     sum_xlogx = np.asarray(M.sum(1)).ravel()
     safe_total = np.where(total > 0, total, 1.0)
     ent = np.log(safe_total) - sum_xlogx / safe_total          # Shannon entropy in nats
@@ -442,7 +454,10 @@ def tx_per_area(adata, *, layer: str | None = "counts", key_added: str = "sam_tx
         mat, matrix = get_counts(adata, layer)
         counts = np.asarray(_csr(mat).sum(1)).ravel().astype(float)
     area = np.asarray(adata.obs["cell_area"], dtype=float)
-    dens = np.divide(counts, area, out=np.full_like(counts, np.nan), where=area > 0)
+    ok = np.isfinite(area) & (area > 0) & np.isfinite(counts) & (counts >= 0)
+    if not ok.any():
+        return skip("no cell has a positive finite cell_area")
+    dens = np.divide(counts, area, out=np.full_like(counts, np.nan), where=ok)
     adata.obs[key_added] = dens
     out = {"status": "ok", "mean_tx_per_area": float(np.nanmean(dens)), "median_tx_per_area": float(np.nanmedian(dens)),
            "matrix": matrix}
@@ -469,6 +484,8 @@ def tx_per_cell(adata, *, layer: str | None = "counts", key_added: str = "sam_tx
     """
     mat, matrix = get_counts(adata, layer)
     gene = ~_control_mask(adata)
+    if adata.n_obs == 0 or gene.sum() == 0:
+        return skip("no cells or no non-control genes")
     per_cell = np.asarray(_csr(mat)[:, gene].sum(1)).ravel().astype(float)
     adata.obs[key_added] = per_cell
     out = {"status": "ok", "mean_tx_per_cell": float(per_cell.mean()), "median_tx_per_cell": float(np.median(per_cell)),
@@ -482,8 +499,9 @@ def tx_per_cell(adata, *, layer: str | None = "counts", key_added: str = "sam_tx
 # --------------------------------------------------------------------------- #
 def _decoded(col):
     """Decode a bytes column (Xenium stores ``feature_name`` as parquet binary) to str."""
-    if col.dtype == object and len(col) and isinstance(col.iloc[0], bytes):
-        return col.str.decode("utf-8")
+    non_na = col.dropna()
+    if col.dtype == object and len(non_na) and isinstance(non_na.iloc[0], bytes):
+        return col.map(lambda v: v.decode("utf-8") if isinstance(v, bytes) else v)
     return col
 
 
@@ -523,9 +541,9 @@ def transcript_qc(transcripts, negative_features, *, feature_key: str = "feature
         return skip("no transcripts")
     cid, feat = _decoded(transcripts[cell_key]), _decoded(transcripts[feature_key])
     if pd.api.types.is_numeric_dtype(cid):
-        unassigned = int((cid == -1).sum())
+        unassigned = int((cid.isna() | (cid == -1)).sum())
     else:
-        unassigned = int(cid.astype(str).isin(["UNASSIGNED", "-1"]).sum())
+        unassigned = int((cid.isna() | cid.astype(str).isin(["UNASSIGNED", "-1"])).sum())
     neg = feat.isin(set(map(str, negative_features))).to_numpy()
     n_neg = int(neg.sum())
     n_neg_det, n_gene_det = int(feat[neg].nunique()), int(feat[~neg].nunique())

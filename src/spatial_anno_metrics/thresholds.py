@@ -8,7 +8,7 @@ thresholds they used (``inter_sample_consistency``'s ``thresholds``) echo these 
 """
 from __future__ import annotations
 
-__all__ = ["THRESHOLDS"]
+__all__ = ["THRESHOLDS", "thresholds_for"]
 
 _PKG = "package default"
 
@@ -157,7 +157,7 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
         "min_labels": _e(4, f"{_PKG}: labels with a CL id needed by ontology_consistency (6 label pairs)"),
         "min_cells": _e(10, f"{_PKG}: cells a label needs for its embedding centroid to be used"),
         "n_perm": _e(999, f"{_PKG}: label permutations for the Mantel-style p-value (floor 0.001)"),
-        "rwr_restart": _e(0.5, "Wang et al. 2024 (Nat Commun, doi 10.1038/s41467-024-49280-7) scGraph-OntoRWR: "
+        "rwr_restart": _e(0.5, "Wang et al. 2025 (Genome Biol, doi 10.1186/s13059-025-03781-6) scGraph-OntoRWR: "
                                "random-walk-with-restart probability on the ontology graph", False),
     },
     # Recorded, not wired: aqi.py keeps these literals. tests/test_thresholds.py checks that its parameter

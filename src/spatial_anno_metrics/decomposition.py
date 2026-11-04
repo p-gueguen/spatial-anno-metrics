@@ -45,10 +45,13 @@ def decomposition_purity(adata, weights_key: str, *, key_added: str = "sam_decom
     """
     if weights_key not in adata.obsm:
         return skip(f"no obsm[{weights_key!r}]")
-    W = np.asarray(adata.obsm[weights_key], dtype=float)
-    with np.errstate(invalid="ignore"):
+    raw = adata.obsm[weights_key]
+    W = np.asarray(raw.toarray() if hasattr(raw, "toarray") else raw, dtype=float)
+    if W.ndim != 2 or W.shape[0] == 0 or W.shape[1] == 0:
+        return {**skip(f"obsm[{weights_key!r}] must be a non-empty 2D matrix"), "n_cells": int(len(W))}
+    with np.errstate(invalid="ignore", over="ignore"):
         total, top = W.sum(1), W.max(1)
-        ok = np.isfinite(W).all(1) & (W >= 0).all(1) & (total > 0)
+        ok = np.isfinite(W).all(1) & (W >= 0).all(1) & np.isfinite(total) & (total > 0)
     val = np.full(len(W), np.nan)
     val[ok] = 1.0 - top[ok] / total[ok]
     if not ok.any():

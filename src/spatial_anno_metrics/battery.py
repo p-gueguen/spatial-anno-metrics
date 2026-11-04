@@ -53,7 +53,7 @@ def annotation_quality(adata, label_key: str = "cell_type",
             out["marker_fidelity"] = marker_program_fidelity(adata, label_key, marker_sets)
         except Exception as e:
             out["marker_fidelity"] = skip(f"{type(e).__name__}: {e}")
-    if sample_key and sample_key in adata.obs.columns:
+    if sample_key:
         try:
             out["inter_sample_consistency"] = inter_sample_consistency(adata, label_key, sample_key)
         except Exception as e:  # pragma: no cover

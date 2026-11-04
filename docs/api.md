@@ -209,6 +209,7 @@ Input adapters: get the AnnData the metrics read out of other containers.
    :toctree: generated
 
    from_spatialdata
+   segtraq_covariates
 ```
 
 ## `thresholds`
@@ -220,5 +221,6 @@ Every hard-coded constant the metrics use, with where it comes from.
    :toctree: generated
 
    thresholds.THRESHOLDS
+   thresholds.thresholds_for
 ```
 

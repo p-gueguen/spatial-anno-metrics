@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ._hierarchy import ancestors, lca_depth
+from ._hierarchy import ancestors, lca_depth, validate_hierarchy
 from ._utils import _embedding
 from ._validate import check_labels, skip
 from .thresholds import value as _thr
@@ -42,8 +42,9 @@ def avg_bio(adata, label_key: str, truth_key: str, embedding: str | None = "X_pc
 
     pred = check_labels(adata, label_key)
     truth = check_labels(adata, truth_key)
-    if len(np.unique(truth)) < 2:
-        return skip(f"need >= 2 labels in adata.obs[{truth_key!r}], found {len(np.unique(truth))}")
+    n_u = len(np.unique(truth))
+    if n_u < 2 or n_u >= len(truth):
+        return skip(f"need 2..n_cells-1 labels in adata.obs[{truth_key!r}], found {n_u} in {len(truth)} cells")
     ari = float(adjusted_rand_score(truth, pred))
     nmi = float(normalized_mutual_info_score(truth, pred))
     E = _embedding(adata, embedding)
@@ -80,6 +81,10 @@ def external_scores(*, y_true, y_pred) -> dict:
 
     pred = check_labels(y_pred)
     truth = check_labels(y_true)
+    if len(truth) != len(pred):
+        raise ValueError(f"y_true ({len(truth)}) and y_pred ({len(pred)}) must have the same length")
+    if len(truth) == 0:
+        return skip("need >= 1 cell, found 0")
     labels = sorted(set(truth) | set(pred))
     per_class = f1_score(truth, pred, average=None, labels=labels, zero_division=0)
     return {
@@ -124,8 +129,14 @@ def element_centric_similarity(a, b, alpha: float = _thr("external", "ecs_alpha"
     """
     import pandas as pd
 
+    if not 0 < alpha < 1:
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
     a = pd.factorize(check_labels(a))[0]
     b = pd.factorize(check_labels(b))[0]
+    if len(a) != len(b):
+        raise ValueError(f"a ({len(a)}) and b ({len(b)}) must have the same length")
+    if len(a) == 0:
+        return skip("need >= 1 element, found 0")
     _, inva, ca = np.unique(a, return_inverse=True, return_counts=True)
     _, invb, cb = np.unique(b, return_inverse=True, return_counts=True)
     nA = ca[inva].astype(float)
@@ -182,11 +193,15 @@ def spatial_ari(*, y_true, y_pred, coords, alpha: float = _thr("external", "spar
 
     truth, pred = check_labels(y_true), check_labels(y_pred)
     xy = np.asarray(coords, dtype=float)
-    if xy.ndim != 2 or xy.shape[0] != len(truth) or len(pred) != len(truth):
+    if xy.ndim != 2 or xy.shape[1] < 1 or xy.shape[0] != len(truth) or len(pred) != len(truth):
         raise ValueError(f"coords {xy.shape}, y_true ({len(truth)}) and y_pred ({len(pred)}) must have one "
                          "row per cell")
+    if not np.all(np.isfinite(xy)):
+        raise ValueError("coords must be finite (no NaN or infinite values)")
     if not 0 <= alpha < 1:
         raise ValueError(f"alpha must be in [0, 1), got {alpha}")
+    if max_cells is not None and max_cells < 2:
+        raise ValueError(f"max_cells must be >= 2 or None, got {max_cells}")
     if len(truth) < 2:
         return skip(f"need >= 2 cells, found {len(truth)}")
     span = np.ptp(xy, axis=0)
@@ -272,8 +287,15 @@ def hierarchical_accuracy(*, y_true, y_pred, hierarchy: dict[str, str],
 
     if credit not in ("lca", "lineage"):
         raise ValueError(f"credit must be 'lca' or 'lineage', got {credit!r}")
+    if not 0.0 <= partial <= 1.0:
+        raise ValueError(f"partial must be in [0, 1], got {partial}")
+    validate_hierarchy(hierarchy)
     pred = check_labels(y_pred)
     truth = check_labels(y_true)
+    if len(truth) != len(pred):
+        raise ValueError(f"y_true ({len(truth)}) and y_pred ({len(pred)}) must have the same length")
+    if len(truth) == 0:
+        return skip("need >= 1 cell, found 0")
     codes, uniq = pd.factorize(pd.MultiIndex.from_arrays([truth, pred]))
     internal = {v for k, v in hierarchy.items() if k != v}
     rows = []
@@ -317,6 +339,10 @@ def composition_accuracy(*, y_true, y_pred) -> dict:
 
     pred = pd.Series(check_labels(y_pred))
     truth = pd.Series(check_labels(y_true))
+    if len(truth) != len(pred):
+        raise ValueError(f"y_true ({len(truth)}) and y_pred ({len(pred)}) must have the same length")
+    if len(truth) == 0:
+        return skip("need >= 1 cell, found 0")
     types = sorted(set(truth) | set(pred))
     p = pred.value_counts(normalize=True).reindex(types).fillna(0).to_numpy()
     q = truth.value_counts(normalize=True).reindex(types).fillna(0).to_numpy()
@@ -428,11 +454,21 @@ def deconvolution_metrics(*, true_prop, pred_prop, aupr_method: str = "sklearn")
 
     if aupr_method not in ("sklearn", "precrec"):
         raise ValueError(f"aupr_method must be 'sklearn' or 'precrec', got {aupr_method!r}")
-    names = list(getattr(true_prop, "columns", range(np.shape(true_prop)[1])))
+    if hasattr(true_prop, "columns") and hasattr(pred_prop, "columns"):
+        if list(true_prop.columns) != list(pred_prop.columns):
+            raise ValueError("true_prop and pred_prop DataFrames have different columns or column order")
     true = np.asarray(true_prop, dtype=float)
     pred = np.asarray(pred_prop, dtype=float)
-    if true.shape != pred.shape:
-        raise ValueError(f"proportion matrices differ in shape: {true.shape} vs {pred.shape}")
+    if true.ndim != 2 or pred.ndim != 2 or true.shape != pred.shape or true.shape[1] < 1:
+        raise ValueError(f"proportion matrices must be 2D of matching shape (n_spots, n_types >= 1): "
+                         f"{true.shape} vs {pred.shape}")
+    if not (np.all(np.isfinite(true)) and np.all(np.isfinite(pred))):
+        raise ValueError("proportion matrices must be finite (no NaN or infinite values)")
+    if (true < 0).any() or (pred < 0).any():
+        raise ValueError("proportion matrices must be non-negative")
+    names = list(getattr(true_prop, "columns", range(true.shape[1])))
+    if true.shape[0] < 2:
+        return skip(f"need >= 2 spots, found {true.shape[0]}")
     n_ct = true.shape[1]
 
     r2 = float(r2_score(true, pred, multioutput="uniform_average"))
@@ -472,8 +508,8 @@ def deconvolution_rank_score(results: dict, metrics=("rmse", "jsd_per_spot", "au
     results : dict
         ``{method: deconvolution_metrics(...) result}`` (any dict holding the metric keys).
     metrics : sequence of str
-        Keys to rank on; each must be one of r2, pearson, aupr, ssim (higher better) or rmse, jsd,
-        jsd_per_spot (lower better).
+        Keys to rank on; each must be one of r2, pearson, aupr, aupr_precrec, ssim (higher better) or rmse,
+        jsd, jsd_per_spot (lower better).
 
     Returns
     -------
@@ -485,12 +521,18 @@ def deconvolution_rank_score(results: dict, metrics=("rmse", "jsd_per_spot", "au
     from scipy.stats import rankdata
 
     metrics = list(metrics)
+    if not metrics:
+        raise ValueError("metrics must not be empty")
     unknown = [m for m in metrics if m not in _HIGHER_IS_BETTER]
     if unknown:
         raise ValueError(f"no known direction for {unknown}; use {sorted(_HIGHER_IS_BETTER)}")
     methods = list(results)
     if len(methods) < 2:
         return skip(f"need >= 2 methods to rank, found {len(methods)}")
+    missing = [(m, k) for m in methods for k in metrics
+               if not isinstance(results[m], dict) or k not in results[m] or results[m][k] is None]
+    if missing:
+        return skip(f"undefined metric values (method, metric): {missing}")
     vals = np.array([[float(results[m][k]) for k in metrics] for m in methods])
     bad = [(m, k) for i, m in enumerate(methods) for j, k in enumerate(metrics)
            if not np.isfinite(vals[i, j])]

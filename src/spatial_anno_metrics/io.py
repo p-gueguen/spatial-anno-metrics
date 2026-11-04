@@ -5,7 +5,7 @@ import numpy as np
 
 from ._validate import skip
 
-__all__ = ["from_spatialdata"]
+__all__ = ["from_spatialdata", "segtraq_covariates"]
 
 SEGTRAQ_OBS_COLUMNS: tuple[str, ...] = (
     "border_admixture_score",

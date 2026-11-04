@@ -51,7 +51,7 @@ def _str_keys(marker_sets: dict) -> dict[str, list[str]]:
     for k, genes in marker_sets.items():
         if str(k) in out:
             raise ValueError(f"marker_sets has both {k!r} and {str(k)!r} as keys; keys are compared as str")
-        out[str(k)] = [str(g) for g in genes]
+        out[str(k)] = list(dict.fromkeys(str(g) for g in genes))
     return out
 
 
@@ -186,10 +186,13 @@ def crisp_purity(adata, marker_sets: dict[str, list[str]], *, layer: str | None 
         cell -> a skip (nothing measured), not 1.0.
     """
     det, pair_cols, off_panel, matrix = _private_detection(adata, marker_sets, layer)
+    if not pair_cols:
+        return {**skip("no pair of lineages with private on-panel markers"),
+                "lineages_without_panel_markers": off_panel, "matrix": matrix}
     impure, n_pos = _crisp(det, pair_cols)
     if n_pos == 0:
         return {**skip("no cell detects an on-panel marker of any lineage"),
-                "lineages_without_panel_markers": off_panel}
+                "lineages_without_panel_markers": off_panel, "matrix": matrix}
 
     def stat(d):
         imp, n = _crisp(d, pair_cols)
@@ -393,9 +396,11 @@ def _nmp_salas_reads(X, labels, genes, ref_X, ref_labels, ref_genes, permutation
         x_sp = shares(Xs, lab)
         with np.errstate(invalid="ignore"):
             m = np.nanmean(x_sp[neg]) if np.isfinite(x_sp[neg]).any() else np.nan
-        return (1.0 - (m - base) if m > base else 1.0), x_sp
+        return (np.nan if not np.isfinite(m) else (1.0 - (m - base) if m > base else 1.0)), x_sp
 
     value, x_sp = overall(labels)
+    if not np.isfinite(value):
+        return {**info, "nmp": np.nan, "reason": "no negative (gene, type) pair has counts in the section"}
     excess = np.where(neg, np.clip(x_sp - x_sc, 0, None), np.nan)
     fin = np.isfinite(excess)
     per_type = {t: float(np.nanmean(excess[i])) for i, t in enumerate(types) if fin[i].any()}
@@ -478,7 +483,7 @@ def nmp(adata, reference=None, label_key: str = "cell_type", ref_label_key: str 
     labels = check_labels(adata, label_key)
     ref_labels = check_labels(reference, ref_label_key)
     ref_names = set(map(str, reference.var_names))
-    shared = [g for g in map(str, adata.var_names) if g in ref_names]
+    shared = list(dict.fromkeys(g for g in map(str, adata.var_names) if g in ref_names))
     if not shared:
         return skip("no shared genes with reference")
     mat, matrix = get_counts(adata, layer)
@@ -495,8 +500,8 @@ def nmp(adata, reference=None, label_key: str = "cell_type", ref_label_key: str 
         lists = {k: r[k] for k in ("types_scored", "types_absent_from_reference", "types_below_min_cells")}
         if not np.isfinite(r["nmp"]):
             return {**skip(r["reason"]), **lists}
-        b = float(np.mean(r["permuted"]))
-        scaled = (r["nmp"] - b) / (1.0 - b) if b < 1 else float("nan")
+        b = float(np.nanmean(r["permuted"])) if np.isfinite(r["permuted"]).any() else float("nan")
+        scaled = (r["nmp"] - b) / (1.0 - b) if (np.isfinite(b) and b < 1) else float("nan")
         return {"status": "ok", "score": score, "nmp": float(scaled), "nmp_unscaled": r["nmp"],
                 "nmp_null": b, "n_permutations": int(n_permutations), "per_type": r["per_type"],
                 "per_gene": r["per_gene"], "n_negative_pairs": r["n_negative_pairs"], **lists,
@@ -603,14 +608,14 @@ def ncp(adata, reference=None, coexpr_threshold: float = _thr("purity", "ncp_coe
     if reference is None:
         return skip("no reference")
     ref_names = set(map(str, reference.var_names))
-    shared = [g for g in map(str, adata.var_names) if g in ref_names]
+    shared = list(dict.fromkeys(g for g in map(str, adata.var_names) if g in ref_names))
     if len(shared) < 2:
         return skip("fewer than 2 shared genes with reference")
 
     ref_idx = {g: i for i, g in enumerate(map(str, reference.var_names))}
     var_idx = {g: i for i, g in enumerate(map(str, adata.var_names))}
     if score == "moldia":
-        genes = [g for g in map(str, reference.var_names) if g in var_idx]
+        genes = list(dict.fromkeys(g for g in map(str, reference.var_names) if g in var_idx))
         ref_mat, _ = get_counts(reference, layer)
         ref_sub = ref_mat[:, [ref_idx[g] for g in genes]]
         if len(genes) > max_genes:
@@ -679,11 +684,11 @@ def _corrcoef_cols(L):
     """Gene-by-gene Pearson correlation over rows of ``L`` without densifying sparse ``cells x genes``."""
     from scipy import sparse
 
-    if not sparse.issparse(L):
-        return np.atleast_2d(np.corrcoef(L, rowvar=False))
     n, g = L.shape
     if n < 2:
         return np.full((g, g), np.nan)
+    if not sparse.issparse(L):
+        return np.atleast_2d(np.corrcoef(L, rowvar=False))
     mu = np.asarray(L.mean(axis=0), dtype=np.float64).ravel()
     gram = (L.T @ L).toarray().astype(np.float64, copy=False)
     cov = gram - n * np.outer(mu, mu)
@@ -763,8 +768,8 @@ def coexpression_similarity(adata, reference=None, *, label_key: str | None = No
         return (na >= min_cells) & (nb >= min_cells)
 
     keep = expressed(L_sp, L_sc)
-    if not keep.any():
-        return skip(f"no shared gene is detected in >= {min_cells} cells of both datasets (min_cells)")
+    if int(keep.sum()) < 2:
+        return skip(f"fewer than 2 shared genes are detected in >= {min_cells} cells of both datasets (min_cells)")
     genes = [g for g, k in zip(shared, keep) if k]
     L_sp, L_sc = L_sp[:, keep], L_sc[:, keep]
     iu = np.triu_indices(len(genes), k=1)

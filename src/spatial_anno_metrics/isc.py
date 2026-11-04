@@ -400,9 +400,20 @@ def inter_sample_consistency(adata, label_key: str, sample_key: str, metric: str
     **Not identifiable from ISC: under-partitioning.** Two distinct types pooled under one label read
     ``consistent`` in 16 / 16 real merge scorings (14 distinct pairs; ISCG 0.64-0.92, ISCL 0.71-1.00), including
     Melanocyte+Tcell, whose ratio varies 1.1-13-fold between Yerly patients, and in the synthetic sweep (ISCG
-    rises 0.938 -> 0.978). The pooled label is compact and replicable when its parts are; the paper also finds
+    rises 0.937 -> 0.978). The pooled label is compact and replicable when its parts are; the paper also finds
     ISC robust to coarser labels. ``split`` is therefore never returned; test a suspected mixture with
     cell-level markers or subclustering.
+
+    **The simulation worlds contradict the real cohorts on two points** (``benchmarks/worlds/README.md``, ISC
+    regime calls: scDesign3, SRTsim and scCube, 3 seeds each). Clean labels read ``consistent`` in 14-18 of 16-18
+    per world (quadrant: 3-6 in the two worlds fitted to a Xenium section) and over-split halves ``merge`` in
+    30 / 31, but (1) the sibling labels T_CD4 and T_CD8, whose markers differ 1.5-1.6-fold, read ``merge`` under
+    20 % label noise (2-6 of 18 labels per world), under batch (up to 4 / 18) and in one clean seed (2 / 16); and
+    (2) correct labels read ``remove`` under batch (scCube B in every seed, SRTsim Fibro in one crop set) and
+    beside an over-split label (scDesign3, 9 of 50), where their ISCG is at or below the random-cell floor. The
+    real cohorts showed neither (no degraded label ``merge``, 0 / 257; 81 / 81 labels under batch and 372 / 372
+    beside a planted split or merge ``consistent``).
+
     **Identical composition in every sample** (the synthetic world) makes random cells as compact as a type
     (floor 0.99): ``iscg_calibrated`` is None (``regime_floor_gap``) and only rules 1 and 3 apply, so a label
     of random cells can read ``consistent``. ``low_global_signal`` flags a dataset whose median label ISCG is

@@ -6,7 +6,7 @@
 ``python benchmarks/synthetic/sweep.py --seeds 3 --workers 16 --out <dir>`` at the same commit). The
 committed 5-seed toy results (benchmarks/synthetic/results) are compared too, to show how many cells flip
 with the seed count alone. Writes ``results/verdict_changes.csv``, ``results/verdict_counts.csv`` and
-``results/isc_regimes.csv``.
+``results/isc_regimes.csv`` (the paper's fixed-threshold quadrant call, ``quadrant`` in the check files).
 """
 from __future__ import annotations
 
@@ -52,6 +52,10 @@ def main(argv=None):
         f = path / "check_isc_regimes.csv"
         if f.exists():
             d = pd.read_csv(f)
+            # the paper's quadrant: ``quadrant`` since the calibrated ``regime`` (older files: ``regime``);
+            # the calibrated call per world is in ../results/cross_world_isc_regimes.csv
+            if "quadrant" in d:
+                d = d.drop(columns="regime").rename(columns={"quadrant": "regime"})
             regs.append(d.assign(world=name))
     r = pd.concat(regs)
     # the labels a perturbation touched: merged pairs ("x+y"), split halves ("x_a" / "x_b"); else every label

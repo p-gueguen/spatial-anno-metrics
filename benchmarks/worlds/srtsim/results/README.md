@@ -234,9 +234,10 @@ isolated-label scores) stay lost. See [`../../README.md`](../../README.md#srtsim
 - **Novelty, with B held out.** Conformal novelty ranks B above known cells (AUC 0.83 at full depth, 0.60 at a
   quarter; toy 0.999) but flags none of them at BH 10 %. In the main scenarios `nov.frac_novel` is 0 except under
   ambient noise (0.31 at 0.05, 0.94 at 0.2), and it no longer reacts to batch (0 at log-sd 1.5; toy 0 → 0.998).
-- **ISC regimes.** On *correct* labels, 14 of 17 type-seeds are called `split` (ISCG 0.53 on average, ISCL 0.89);
-  the toy has 18/18 `consistent`. Crops from different tissue regions are not consistent replicates, so ISC's
-  regime call cannot be read as a label-quality verdict across regions.
+- **ISC regimes.** On *correct* labels the paper's quadrant calls 14 of 17 type-seeds `split` (ISCG 0.53 on
+  average, ISCL 0.89); the toy has 18/18 `consistent`. The calibrated `regime` reads all 17 `consistent` (fixed
+  crops: 18/18), but under 20 % label noise it calls T_CD4 and T_CD8 `merge` (4/18; fixed crops 2/18) and under
+  batch it calls Fibro `remove` in one crop set ([`../../README.md`](../../README.md#isc-regime-calls)).
 - **Panel resolvability.** Dropping the 20 private markers barely matters with 313 genes: macro-F1 at depth 50 is
   0.83 with none kept and 0.89 with all (toy 0.71 and 1.00).
 - **Deconvolution metrics** stay monotone: R² 1 → 0.41 at 50 % noise, AUPR 1 → 0.87, SSIM 1 → 0.64.

@@ -314,10 +314,13 @@ Expression effects (the same in all four patterns; `domains` values shown, toy i
 
 Dedicated checks (`results/<pattern>/check_*.csv`):
 
-- **ISC regimes:** the clean world calls `B` `split` in 3/3 seeds (ISCG 0.71). B lumps naive B and plasma
-  cells, which are two real programmes, so this is correct, and it is a case the toy could not contain. A
-  batch effect at log-sd 1.0 leaves the calls exactly as on the clean section (B `split`, the rest
-  `consistent`), where the toy read `split` for 18/18 type-seeds.
+- **ISC regimes:** the paper's quadrant calls `B` `split` in 3/3 seeds of the clean world (ISCG 0.71). B lumps
+  naive B and plasma cells, which are two real programmes, so this is correct, and it is a case the toy could
+  not contain. A batch effect at log-sd 1.0 leaves the quadrant exactly as on the clean section (B `split`, the
+  rest `consistent`), where the toy read `split` for 18/18 type-seeds. The calibrated `regime`, which never
+  returns `split`, reads B `consistent` on the clean world and `remove` under batch (3/3 seeds, every pattern),
+  and calls T_CD4 and T_CD8 `merge` under 20 % label noise in `domains`, `fine` and `mixed` (6/18)
+  ([`../README.md`](../README.md#isc-regime-calls)).
 - **Panel resolvability:** with every private marker removed, macro-F1 is still 0.94 at depth 50 (toy 0.71).
   A real 306-gene panel is redundant. T_CD4 is T_CD8's confuser in all 47 of the 48 runs that name one.
 - **Deconvolution:** monotone as in the toy (R² 1.00 → 0.63 at 50 % noise, → −0.47 at pure noise).

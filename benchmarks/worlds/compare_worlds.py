@@ -12,7 +12,9 @@ Reads only committed results (no sweep is run):
 
 Writes ``cross_world_verdicts.csv`` (one row per scenario x metric, a verdict and a clean value per world),
 ``cross_world_matrix.md`` (metric x scenario, claim cells only), ``cross_world_counts.csv`` (verdict counts per
-world) and ``cross_world_baselines.csv`` (clean values of every metric per world).
+world), ``cross_world_baselines.csv`` (clean values of every metric per world) and
+``cross_world_isc_regimes.csv`` (ISC ``regime`` and ``quadrant`` calls per world and case, from each world's
+``check_isc_regimes.csv``; the scDesign3 Dirichlet variant is included there).
 """
 from __future__ import annotations
 
@@ -110,6 +112,69 @@ def main(argv=None):
     base.to_csv(out / "cross_world_baselines.csv", float_format="%.4g")
     print(counts.to_string())
     print(tab.groupby("realistic_vs_toy").size().to_string())
+    isc = isc_regimes()
+    if not isc.empty:
+        isc.to_csv(out / "cross_world_isc_regimes.csv", index=False)
+        print(isc.to_string(index=False))
+
+
+ISC_SOURCES = {**SOURCES, "scdesign3_dirichlet": HERE / "scdesign3" / "results" / "dirichlet"}
+ISC_CASES = {"clean": "clean", "over_split": "over_split 1 (Epi halves)", "merge": "merge",
+             "untouched": "", "label_noise": "label_noise 20%", "batch": "batch sd 1.0"}
+
+
+def _calls(s: pd.Series) -> str:
+    return ", ".join(f"{k} {n}" for k, n in s.value_counts().items())
+
+
+def isc_regimes() -> pd.DataFrame:
+    """ISC regime calls per world from each ``check_isc_regimes.csv`` that records both calls.
+
+    ``regime`` is the calibrated call, ``quadrant`` the paper's fixed 0.74 / 0.45 guides. For ``over_split`` only
+    the two halves are counted, for ``merge`` only the merged labels (``merge 1`` and ``merge 3`` together),
+    for ``untouched`` the other labels of those two cases; otherwise every scored label. ``wrong_regime`` /
+    ``wrong_quadrant`` count definite wrong actions, graded as in ``benchmarks/isc_regimes_real.py``:
+    ``merge`` / ``remove`` / ``split`` on the clean and batch sections and for untouched labels (``inconclusive``
+    is not counted), ``merge`` / ``split`` under label noise (a degraded label may read ``inconclusive`` or
+    ``remove``), anything but ``merge`` for the halves; none for merged labels (not identifiable from ISC).
+    """
+    rows = []
+    for world, d in ISC_SOURCES.items():
+        f = d / "check_isc_regimes.csv"
+        if not f.exists():
+            continue
+        r = pd.read_csv(f)
+        if "quadrant" not in r:
+            continue
+        t = r["type"].astype(str)
+        made = t.str.endswith(("_a", "_b")) | t.str.contains("+", regex=False)
+        for key, case in ISC_CASES.items():
+            sel = r["case"].str.startswith(case) if key == "merge" else r["case"] == case
+            if key == "over_split":
+                sel &= t.str.endswith(("_a", "_b"))
+            elif key == "merge":
+                sel &= t.str.contains("+", regex=False)
+            elif key == "untouched":   # the labels an over_split or merge left as they were
+                sel = r["case"].str.startswith(("over_split", "merge")) & ~made
+            x = r[sel]
+            if x.empty:
+                continue
+            row = dict(world=world, case=key, seeds=x["seed"].nunique(), n=len(x),
+                       regime=_calls(x["regime"]), quadrant=_calls(x["quadrant"]),
+                       iscg=round(x["iscg"].mean(), 3), iscl=round(x["iscl"].mean(), 3))
+            for call in ("regime", "quadrant"):
+                c = x[call]
+                if key in ("clean", "batch", "untouched"):
+                    bad = c.isin(["merge", "remove", "split"])
+                elif key == "label_noise":
+                    bad = c.isin(["merge", "split"])
+                elif key == "over_split":
+                    bad = c != "merge"
+                else:
+                    bad = pd.Series(False, index=c.index)
+                row[f"wrong_{call}"] = int(bad.sum())
+            rows.append(row)
+    return pd.DataFrame(rows)
 
 
 if __name__ == "__main__":

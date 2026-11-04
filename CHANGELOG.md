@@ -153,7 +153,10 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   72 / 72 and 24 / 24 (quadrant 61, 24), planted bad labels `remove` 39 / 63 and 15 / 21 (quadrant 10, 15;
   the rest `inconclusive` or missed, never another action). Synthetic sweep: batch log-sd 1.0 `split` 30 / 30
   -> `consistent` 30 / 30, 20 % label noise `split` 21 / 30 -> `consistent` 30 / 30. ISCG / ISCL are unchanged
-  (goldens to 1e-12).
+  (goldens to 1e-12). In the realistic simulation worlds (`benchmarks/worlds/README.md`, ISC regime calls) clean
+  labels read `consistent` 14-18 of 16-18 per world (quadrant: 3-6 in the two worlds fitted to the Xenium
+  section) and over-split halves `merge` 30 / 31, but the sibling labels T_CD4 / T_CD8 read `merge` under label
+  noise and batch, and some correct labels `remove` under batch, which the real cohorts did not show (roadmap 8d).
 - `internal_validity`: Ward-PropMatch runs on the `subsample` (as the silhouettes, Davies-Bouldin and
   Calinski-Harabasz already did), not on every cell: O(N^2) memory made it unusable at 1e5 cells (1.64e5 Xenium
   cells: 2,951 s / 211 GB -> 20 s / 0.74 GB). When `n_obs > subsample`, `ward_propmatch` and `integrated` move
@@ -347,8 +350,8 @@ Calls written for 0.6.0 need the changes listed under "Changed (breaking)", each
   scRNA-seq, Xenium breast panel) in four spatial patterns. `sweep.py --world {toy,scdesign3,srtsim,sccube}` (with
   `--pattern`, `--sample-mode`, `--alpha0`, `--fixed-crops`) installs a world through one helper
   (`benchmarks/worlds/__init__.py`); the per-world `run.py` scripts are thin wrappers around it. The default
-  `--world toy` writes the same files byte for byte. `benchmarks/worlds/README.md` compares the verdicts across
-  worlds (`compare_worlds.py`), and the catalog's caveats on spatial metrics, purity under co-expression and
+  `--world toy` writes the same files byte for byte. `benchmarks/worlds/README.md` compares the verdicts and the
+  ISC `regime` / `quadrant` calls across worlds (`compare_worlds.py`), and the catalog's caveats on spatial metrics, purity under co-expression and
   spillover, conformal novelty and sibling confusion now cite them.
 
 ### Changed

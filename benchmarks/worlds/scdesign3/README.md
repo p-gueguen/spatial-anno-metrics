@@ -247,7 +247,11 @@ with a gap so no spatial neighbours cross pieces. Seed 0 gives T_CD8 1.5-21 % an
 pieces (`uns['world']['sample_composition']`). The `bands` world is a third regime, with strong natural
 variation (Epi 3-48 % across bands). The toy world has constant composition.
 
-Regime calls over 3 seeds. For `merge` and `over_split` only the labels the perturbation made are counted.
+The paper's fixed-threshold quadrant (`quadrant` in `check_isc_regimes.csv`; the call `regime` returned before
+it was calibrated) over 3 seeds. For `merge` and `over_split` only the labels the perturbation made are counted.
+The calibrated `regime` is compared across worlds in [`../README.md`](../README.md#isc-regime-calls): it reads
+`consistent` for 16/18 (bands) and 14/16 (Dirichlet) clean labels and `merge` for 10 of 11 halves, with false
+`remove` and `merge` calls described there.
 
 | case | toy | scDesign3 bands | scDesign3 Dirichlet |
 |---|---|---|---|
@@ -266,7 +270,7 @@ Regime calls over 3 seeds. For `merge` and `over_split` only the labels the pert
   (ISCG 0.48-0.55 < 0.74, ISCL ≥ 0.91). In the realistic worlds, a correct small immune label already sits
   in the `split` quadrant.
 - **Over-splitting still reads right**: `merge` for 6/6 halves under Dirichlet composition, 3/5 in bands.
-- So on realistic data the regime calls are less specific than on the toy: clean labels read
+- So on realistic data the quadrant is less specific than on the toy: clean labels read
   `consistent` for 6/18 (bands) and 6/16 (Dirichlet) against 18/18.
 
 ## Dedicated checks (results/bands/check_*.csv)

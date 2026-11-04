@@ -37,9 +37,11 @@ The caches are not in git: `SAM_SCDESIGN3_CACHE`, `SAM_SRTSIM_CACHE`, `SAM_SCCUB
 one (305a48f) under Python 3.12, all 10 output files are identical, apart from traceback line numbers in
 `errors.csv`. Under Python 3.10 `sig.moran_gap` varies between two runs of the same code by up to 5e-14, so
 byte identity cannot hold there. The three `run.py` wrappers also match the scripts on their original branches
-byte for byte (1 seed, `label_noise`, all edge cases and checks). The committed `../synthetic/results/` predate
-later `src/` changes: a rerun moves values by up to 4e-5 (Python 3.10, no verdict change) and changes 1 of 765
-verdicts under Python 3.12 (`batch` × `iso.f1`, ↓ → 〰️, a cell without a claim).
+byte for byte (1 seed, `label_noise`, all edge cases and checks). The committed `../synthetic/results/` were
+rerun on this branch (5 seeds, Python 3.12) after later `src/` changes. Against the previous commit 1 of 765
+verdicts changed (`batch` × `iso.f1`, ↓ → 〰️, a cell without a claim), 2 of 18,360 values moved by more than 5e-4
+(`iso.f1` 0.975 → 1.000 at `batch` 1.0 seed 3; `ns.n_suspicious` 3 → 2 at `coord_shuffle` 1.0 seed 3) and the
+rest by at most 4e-4.
 
 ## Verdicts, world by world
 
@@ -134,7 +136,7 @@ toy are not reached on correct labels in any realistic world:
 | PMP | 0.996 | 0.682 | 0.628 | 0.895 | 0.894 | 0.894 | 0.894 |
 | NMP (Salas) | 1.000 | 0.768 | 0.978 | 0.997 | 0.998 | 0.998 | 0.998 |
 | `neighbor_contamination` (lower = better) | 0.0003 | 0.022 | 0.023 | 0.009 | 0.008 | 0.012 | 0.012 |
-| ISCG / ISCL | 0.938 / 1.000 | 0.621 / 0.895 | 0.525 / 0.893 | 0.892 / 0.970 | 0.898 / 0.982 | 0.898 / 0.982 | 0.898 / 0.982 |
+| ISCG / ISCL | 0.937 / 1.000 | 0.621 / 0.895 | 0.525 / 0.893 | 0.892 / 0.970 | 0.898 / 0.982 | 0.898 / 0.982 | 0.898 / 0.982 |
 | silhouette | 0.404 | 0.188 | 0.153 | 0.302 | 0.297 | 0.297 | 0.297 |
 | kNN neighbourhood purity | 1.000 | 0.792 | 0.795 | 0.883 | 0.883 | 0.883 | 0.883 |
 | isolated-label F1 | 1.000 | 0.770 | 0.744 | 0.892 | 0.878 | 0.878 | 0.878 |
@@ -209,8 +211,66 @@ markers are cleaner than real ones.
   carry a mild per-type programme, and there ISCG stays put (0.621 → 0.642).
 - **`neighbor_contamination` false-alarms when only coordinates are shuffled** in all four scCube patterns
   (0.0085 → 0.018), and under co-expression in scDesign3 and three scCube patterns.
-- **ISC regime calls on correct labels**: toy 18/18 `consistent`; scDesign3 bands 6/18 `consistent` (immune types
-  read `split`); SRTsim 14 of 17 `split`; scCube only B (naive B plus plasma cells, two real programmes) `split`.
+- **ISC regime calls on correct labels**: the paper's quadrant reads `consistent` for 6/18 in scDesign3 bands
+  (immune types read `split`), 3/17 in SRTsim and 15/18 in scCube (only B, naive B plus plasma cells, reads
+  `split`); the calibrated `regime` reads `consistent` for 16/18, 17/17 and 18/18 (next section).
+
+## ISC regime calls
+
+Each world's `check_isc_regimes.csv` (the sweep's `isc_regimes` check, 3 seeds; toy 5) records the calibrated
+`regime` and the paper's fixed-threshold `quadrant` (ISCG 0.74 / ISCL 0.45) for every label in six cases.
+[`results/cross_world_isc_regimes.csv`](results/cross_world_isc_regimes.csv) tallies them (`compare_worlds.py`).
+Each cell is **regime / quadrant**. Wrong calls are graded as in
+[`../isc_regimes_real.py`](../isc_regimes_real.py): `merge`, `remove` or `split` on a correct label, `merge` or
+`split` under label noise. `inconclusive` is not counted as wrong. "Untouched" labels are the other labels of the
+`merge` and `over_split` cases.
+
+| world | clean labels read `consistent` | over-split halves read `merge` | merged labels | wrong calls, untouched labels | label noise 20 %: wrong | batch log-sd 1.0: wrong |
+|---|---|---|---|---|---|---|
+| real cohorts, development sets ([summary](../isc_regimes_real/results/summary.md)) | 980 / 816 of 980 | 72 / 61 of 72 | 12 `consistent` / 10 `consistent`, 2 `split` | 0 of 372 | 0 / 104 of 257 | 0 / 81 of 81 |
+| toy (5 seeds) | 30 / 30 of 30 | 10 / 10 of 10 | 20 `consistent` / 20 `consistent` | 0 / 0 of 45 | 0 / 21 of 30 | 0 / 30 of 30 |
+| scDesign3 bands | 16 / 6 of 18 | 4 / 3 of 5 | 12 `consistent` / 6 `consistent`, 6 `split` | 6 / 24 of 27 | 0 / 11 of 18 | 0 / 15 of 18 |
+| scDesign3 Dirichlet | 14 / 6 of 16 | 6 / 6 of 6 | 9 `consistent`, 3 `remove` / 7 `consistent`, 5 `split` | 7 / 20 of 23 | 4 / 6 of 18 | 2 / 14 of 16 |
+| SRTsim, crops vary | 17 / 3 of 17 | 2 / 2 of 2 | 12 `consistent` / 2 `consistent`, 10 `split` | 0 / 26 of 27 | 4 / 8 of 18 | 1 / 16 of 17 |
+| SRTsim, fixed crops | 18 / 4 of 18 | 6 / 6 of 6 | 12 `consistent` / 6 `consistent`, 6 `split` | 0 / 24 of 27 | 2 / 8 of 18 | 5 / 15 of 18 |
+| scCube `stripes` | 18 / 15 of 18 | 6 / 5 of 6 | 12 `consistent` / 12 `consistent` | 0 / 6 of 27 | 0 / 12 of 18 | 3 / 3 of 18 |
+| scCube `domains`, `fine`, `mixed` (same expression) | 18 / 15 of 18 | 6 / 5 of 6 | 12 `consistent` / 12 `consistent` | 0 / 6 of 27 | 6 / 8 of 18 | 3 / 3 of 18 |
+
+The real-cohort row counts labels, not seeds: its "untouched" column is the 288 + 84 labels left alone by planted
+splits and merges, its label-noise column the 257 degraded labels (20-40 % label noise, or left < 90 % pure by a
+contamination), its batch column the 81 labels at log-sd 1.0 (the quadrant reads `split` for all 81), and its
+merged labels the 12 merge scorings of the development sets. Fewer than 18 labels means a label was not scored in
+some seeds (under 5 samples × 10 cells); SRTsim's Epi halves were scorable in one crop set only.
+
+- **Clean labels.** The calibrated call reads `consistent` for 14-18 of 16-18 correct labels in every world.
+  The rest are 2 `inconclusive` T_CD4 in scDesign3 bands (ISCL 0.46) and one false `merge` pair in scDesign3
+  Dirichlet (below). The quadrant reads `consistent` for 3-6 of 16-18 in the two worlds fitted to the Xenium
+  section, where correct small immune labels sit at ISCG 0.36-0.60, under its 0.74 guide.
+- **Over-split halves read `merge`** in every world: 30 of 31 halves, scCube `domains` / `fine` / `mixed` counted
+  once (the miss is a half whose twin was not scored in that seed); the quadrant reads `merge` for 27 of 31.
+- **Merged labels are not identifiable from ISC**, as on the real cohorts: the calibrated call reads them
+  `consistent` (12/12 in every world but one). The exception is scDesign3 Dirichlet, where B+Myeloid reads
+  `remove` in 3/3 seeds (ISCG 0.52-0.55 against a random-cell floor of 0.51-0.73). The quadrant's `split` for
+  B+Myeloid and T_CD4+T_CD8 is not a detection: their unmerged parts mostly read `split` on clean data too.
+  scCube's B (naive B plus plasma cells, two real programmes) reads `consistent` (quadrant: `split` 3/3, ISCG
+  0.71).
+- **Batch and label noise: far fewer wrong calls than the quadrant, but two failure modes the real cohorts did
+  not show.**
+  1. **Sibling T labels read `merge`.** T_CD4 and T_CD8 become each other's reciprocal partner (partner rate
+     0.067-0.20) under 20 % label noise in SRTsim (4/18; fixed crops 2/18), scDesign3 Dirichlet (4/18) and
+     scCube `domains` / `fine` / `mixed` (6/18), under batch in SRTsim fixed crops (4/18) and scDesign3 Dirichlet
+     (2/16), and on clean labels in one scDesign3 Dirichlet seed (2/16; the same seed's pair also reads `merge`
+     in its `merge 1` and `over_split` sections, 4 of the 7 wrong untouched calls). Every false `merge` in the
+     worlds is this pair. In the two worlds fitted to the section their own markers are only 1.5-1.6× their level in the
+     other T type. On the real cohorts no degraded label read `merge` (0 / 257).
+  2. **`remove` for correct labels.** Under batch: scCube's B in 3/3 seeds of every pattern (its ISCG falls
+     0.71 → 0.52-0.56, under the random-cell floor of 0.63-0.66: calibrated g −0.53 to −0.93) and SRTsim's
+     Fibro in one crop set (g 0.08-0.10). Beside an over-split Epi in scDesign3: 6/27 (bands) and 3/23 (Dirichlet)
+     untouched immune labels. These labels are about as compact as random cells, or less (ISCG 0.50-0.67 against
+     a floor of 0.51-0.79). On clean data the median of the other labels is within 0.1 of the floor, so g is
+     undefined and the call is `consistent`; the two halves (ISCG 0.91-0.94) raise the median, g becomes
+     defined and lands at 0.04-0.23 or below 0. On the real cohorts 81/81 labels under batch and 372/372 labels beside a planted split or
+     merge read `consistent`.
 
 ## SRTsim control: fixed crops
 

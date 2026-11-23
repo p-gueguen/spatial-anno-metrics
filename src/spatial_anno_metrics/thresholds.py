@@ -28,6 +28,13 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
         "clisi_n_neighbors": _e(90, "scib-metrics benchmark kNN size for cLISI (perplexity 90 / 3 = 30)", False),
         "isolated_f1_cuts_per_label": _e(2, f"{_PKG}: isolated-label F1 sweeps Ward cuts into 2 .. this x n_labels "
                                             "clusters (scib sweeps Leiden resolutions 0.1-2)"),
+        "leiden_n_neighbors": _e(15, "scib-metrics 0.5.6 Benchmarker: nmi_ari_cluster_labels_leiden reads the "
+                                     "15-neighbour result (self included) and its UMAP connectivities", False),
+        "leiden_resolutions": _e((0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0),
+                                 "scib-metrics 0.5.6 nmi_ari_cluster_labels_leiden(optimize_resolution=True): "
+                                 "2 * x / 10 for x in 1..10; the resolution with the best NMI is kept", False),
+        "kmeans_n_init": _e(1, "scib-metrics 0.5.6 nmi_ari_cluster_labels_kmeans: KMeans(n_clusters=n_labels) "
+                               "with its defaults (k-means++, n_init=1, max_iter=300, tol=1e-4)", False),
     },
     "battery": {
         "n_neighbors": _e(30, f"{_PKG}: internal_validity kNN size inside annotation_quality"),

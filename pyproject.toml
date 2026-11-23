@@ -33,6 +33,7 @@ dependencies = [
 # spatialdata < 0.4 resolves to a dask or xarray-dataclasses release it cannot be imported with.
 spatial = ["squidpy>=1.4", "spatialdata>=0.4"]   # Moran's I, spatial neighbour graphs, neighbourhood enrichment
 spatialdata = ["spatialdata>=0.4"]               # SpatialData objects as input
+leiden = ["igraph>=0.10.3"]                      # leiden_label_agreement; 0.10.3: community_leiden(resolution=)
 docs = ["sphinx", "myst-nb", "furo", "sphinx-autodoc-typehints"]
 dev = ["pytest>=8", "ruff>=0.5", "build>=1.0"]
 

@@ -1,7 +1,7 @@
 """Private helpers shared by the metric modules.
 
 Dense conversion, [-1, 1] -> [0, 1] scaling, the cell embedding (``obsm`` or a quick PCA), the guarded squidpy
-import, and the ``uns['sam']`` summary.
+and igraph imports, and the ``uns['sam']`` summary.
 """
 from __future__ import annotations
 
@@ -77,6 +77,19 @@ def _squidpy():
     except Exception as e:  # noqa: BLE001 - deliberately broad, see docstring
         raise ImportError(f"squidpy failed to import: {e}") from e
     return squidpy
+
+
+def _igraph():
+    """Import igraph (the ``leiden`` extra), re-raising any failure as ImportError.
+
+    A broken install can fail with other errors (a missing shared library raises OSError), which would escape
+    ``except ImportError`` handlers.
+    """
+    try:
+        import igraph
+    except Exception as e:  # noqa: BLE001 - deliberately broad, see docstring
+        raise ImportError(f"igraph failed to import: {e}") from e
+    return igraph
 
 
 def _store(adata, name: str, result: dict, key_added) -> None:

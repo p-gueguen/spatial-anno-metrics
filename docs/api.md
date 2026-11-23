@@ -18,6 +18,8 @@ Reference-free internal validity of a labeling on an embedding.
    internal_validity
    isolated_label_scores
    clisi
+   leiden_label_agreement
+   kmeans_label_agreement
 ```
 
 ## `isc`

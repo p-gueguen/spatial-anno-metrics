@@ -16,23 +16,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install (with spatial extra)
+      - name: Install (with the spatial and leiden extras)
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[spatial,dev]"
+          pip install -e ".[spatial,leiden,dev]"
       - name: Ruff
         run: ruff check src tests benchmarks
       - name: Pytest
         run: pytest -q
 
   # Proves the floors in pyproject.toml: every direct dependency at its lowest allowed version,
-  # everything else at its newest. Two legs, because squidpy's dependencies need pandas and
-  # scikit-learn above the core floors.
+  # everything else at its newest. Separate legs, because squidpy's dependencies need pandas and
+  # scikit-learn above the core floors; the leiden leg tests the igraph floor with the core floors.
   lowest-direct:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        extras: ["dev", "dev,spatial"]
+        extras: ["dev", "dev,spatial", "dev,leiden"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

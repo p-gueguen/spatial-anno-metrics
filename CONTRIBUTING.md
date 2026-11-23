@@ -9,10 +9,11 @@ issue first, so the metric and its source are agreed on before code is written.
 git clone https://github.com/p-gueguen/spatial-anno-metrics
 cd spatial-anno-metrics
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,spatial]"
+pip install -e ".[dev,spatial,leiden]"
 ```
 
-`[spatial]` installs squidpy; without it the Moran's I and neighbourhood tests are skipped. Python 3.10
+`[spatial]` installs squidpy; without it the Moran's I and neighbourhood tests are skipped. `[leiden]` installs
+igraph; without it the Leiden NMI / ARI tests are skipped. Python 3.10
 is the oldest supported version. On 3.10, `import squidpy` reaches `pkg_resources` (through spatialdata
 and xarray-schema), which setuptools 82 and later no longer ship: `python -m venv` seeds an older
 setuptools, a uv venv does not, so there add `"setuptools<82"`.

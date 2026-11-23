@@ -181,6 +181,8 @@ _NAN_LABEL_CALLS = {
     "neighbor_contamination": lambda sam, a: sam.neighbor_contamination(a, _MARKERS, "cell_type"),
     "isolated_label_scores": lambda sam, a: sam.isolated_label_scores(a, "cell_type"),
     "clisi": lambda sam, a: sam.clisi(a, "cell_type"),
+    "leiden_label_agreement": lambda sam, a: sam.leiden_label_agreement(a, "cell_type"),
+    "kmeans_label_agreement": lambda sam, a: sam.kmeans_label_agreement(a, "cell_type"),
     "coexpression_similarity": lambda sam, a: sam.coexpression_similarity(a, a.copy(), label_key="cell_type",
                                                                           ref_label_key="truth"),
     "consensus_entropy": lambda sam, a: sam.consensus_entropy(a, ["cell_type", "cell_type"]),

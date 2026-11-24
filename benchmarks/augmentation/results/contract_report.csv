@@ -1,0 +1,76 @@
+dataset,metric,perturbation,role,verdict,v0,v_end,rho,threshold,first_level,detail
+xenium_breast_golden,ext.macro_f1,label_noise,must_detect,pass,1.0,0.44322640580863154,1.0,0.02,0.1,
+xenium_breast_golden,ext.macro_f1,merge,must_detect,pass,1.0,0.25,1.0,0.02,1.0,
+xenium_breast_golden,ext.macro_f1,type_swap,must_detect,pass,1.0,0.3333333333333333,1.0,0.02,1.0,
+xenium_breast_golden,ext.macro_f1,nuisance_shuffle,must_be_invariant,pass,1.0,1.0,0.0,0.02,,
+xenium_breast_golden,ext.macro_f1,coord_shuffle,must_be_invariant,pass,1.0,1.0,0.0,0.02,,
+xenium_breast_golden,fid.mean_auc,label_noise,must_detect,pass,0.9605322156756144,0.6615662270672866,1.0,0.019210644313512288,0.1,
+xenium_breast_golden,fid.mean_auc,nuisance_shuffle,must_be_invariant,pass,0.9605322156756144,0.9605322156756144,0.0,0.019210644313512288,,
+xenium_breast_golden,fid.mean_auc,coord_shuffle,must_be_invariant,pass,0.9605322156756144,0.9605322156756144,0.0,0.019210644313512288,,
+xenium_breast_golden,fid.mean_auc,over_split,known_caveat,caveat_observed,0.9605322156756144,0.9591981636652481,0.5,0.019210644313512288,,AUROC can remain flat when random halves keep markers.
+xenium_breast_golden,pmp,label_noise,must_detect,pass,0.670383348884386,0.36835355776959433,1.0,0.013407666977687721,0.1,
+xenium_breast_golden,pmp,nuisance_shuffle,must_be_invariant,pass,0.670383348884386,0.670383348884386,0.0,0.013407666977687721,,
+xenium_breast_golden,pmp,coord_shuffle,must_be_invariant,pass,0.670383348884386,0.670383348884386,0.0,0.013407666977687721,,
+xenium_breast_golden,pmp,spillover,known_caveat,caveat_observed,0.670383348884386,0.5787922141754565,1.0,0.013407666977687721,0.1,Drops only on marker-gene panels with high spillover.
+xenium_breast_golden,resid_moran.explained,label_noise,must_detect,pass,0.5006894754197757,0.09763882845425736,1.0,0.010013789508395514,0.1,
+xenium_breast_golden,resid_moran.explained,merge,must_detect,pass,0.5006894754197757,0.2704420463206031,1.0,0.010013789508395514,1.0,
+xenium_breast_golden,resid_moran.explained,nuisance_shuffle,must_be_invariant,pass,0.5006894754197757,0.5006894754197704,0.8660254037844387,0.010013789508395514,,
+xenium_breast_golden,resid_moran.explained,infiltration,known_caveat,caveat_observed,0.5006894754197757,0.5363889130844007,-0.39999999999999997,0.010013789508395514,0.25,Scattering a cluster lowers raw Moran so 1 - resid/raw can wobble slightly.
+xenium_breast_golden,resid_moran.explained,coord_shuffle,known_caveat,caveat_observed,0.5006894754197757,,0.0,0.010013789508395514,,Ratio 1 - resid/raw is unstable near raw <= 0; gate on raw_median_moran > 0.
+xenium_breast_golden,resid_moran.residual,label_noise,must_detect,pass,0.049556951051077325,0.08956003570379432,1.0,0.0009911390210215465,0.1,
+xenium_breast_golden,resid_moran.residual,merge,must_detect,pass,0.049556951051077325,0.0724091843043157,1.0,0.0009911390210215465,1.0,
+xenium_breast_golden,resid_moran.residual,spillover,must_detect,pass,0.049556951051077325,0.13344915878547967,1.0,0.0009911390210215465,0.1,
+xenium_breast_golden,resid_moran.residual,nuisance_shuffle,must_be_invariant,pass,0.049556951051077325,0.04955695105107727,-0.8660254037844387,0.0009911390210215465,,
+xenium_breast_golden,resid_moran.residual,infiltration,must_not_degrade,pass,0.049556951051077325,0.026760421154985663,-1.0,0.0009911390210215465,,
+xenium_breast_golden,resid_moran.residual,coord_shuffle,known_caveat,caveat_observed,0.049556951051077325,-0.0015145062096587033,-1.0,0.0009911390210215465,,Raw spatial signal vanishes on shuffle so residual Moran drops near 0.
+yerly2022_bcc_split,ext.macro_f1,label_noise,must_detect,pass,1.0,0.48045389399438376,1.0,0.02,0.1,
+yerly2022_bcc_split,ext.macro_f1,merge,must_detect,pass,1.0,0.45454545454545453,1.0,0.02,1.0,
+yerly2022_bcc_split,ext.macro_f1,type_swap,must_detect,pass,1.0,0.5555555555555556,1.0,0.02,1.0,
+yerly2022_bcc_split,ext.macro_f1,nuisance_shuffle,must_be_invariant,pass,1.0,1.0,0.0,0.02,,
+yerly2022_bcc_split,ext.macro_f1,coord_shuffle,must_be_invariant,skipped,,,,,,missing obsm['spatial']
+yerly2022_bcc_split,iv.integrated,label_noise,must_detect,pass,0.845279713808666,0.4625644880424182,1.0,0.01690559427617332,0.1,
+yerly2022_bcc_split,iv.integrated,over_split,must_detect,pass,0.845279713808666,0.7845481572910722,1.0,0.01690559427617332,1.0,
+yerly2022_bcc_split,iv.integrated,nuisance_shuffle,must_be_invariant,pass,0.845279713808666,0.8456449941046682,-0.8660254037844387,0.01690559427617332,,
+yerly2022_bcc_split,iv.integrated,coord_shuffle,must_be_invariant,skipped,,,,,,missing obsm['spatial']
+yerly2022_bcc_split,iv.integrated,infiltration,known_caveat,skipped,,,,,,missing obsm['spatial']
+yerly2022_bcc_split,fid.mean_auc,label_noise,must_detect,pass,0.9600083765254563,0.6971507492001651,1.0,0.019200167530509127,0.1,
+yerly2022_bcc_split,fid.mean_auc,nuisance_shuffle,must_be_invariant,pass,0.9600083765254563,0.9600083765254563,0.0,0.019200167530509127,,
+yerly2022_bcc_split,fid.mean_auc,coord_shuffle,must_be_invariant,skipped,,,,,,missing obsm['spatial']
+yerly2022_bcc_split,fid.mean_auc,over_split,known_caveat,caveat_observed,0.9600083765254563,0.9574149157937298,0.5,0.019200167530509127,,AUROC can remain flat when random halves keep markers.
+yerly2022_bcc_split,pmp,label_noise,must_detect,pass,0.8178561404316294,0.421926163511978,1.0,0.016357122808632586,0.1,
+yerly2022_bcc_split,pmp,nuisance_shuffle,must_be_invariant,pass,0.8178561404316294,0.8178561404316294,0.0,0.016357122808632586,,
+yerly2022_bcc_split,pmp,coord_shuffle,must_be_invariant,skipped,,,,,,missing obsm['spatial']
+yerly2022_bcc_split,pmp,spillover,known_caveat,skipped,,,,,,missing obsm['spatial']
+yerly2022_bcc_split,nmp,label_noise,must_detect,pass,0.948272464060442,0.3749968960323211,1.0,0.01896544928120884,0.1,
+yerly2022_bcc_split,nmp,type_swap,must_detect,pass,0.948272464060442,0.3527921310827445,1.0,0.01896544928120884,1.0,
+yerly2022_bcc_split,nmp,nuisance_shuffle,must_be_invariant,pass,0.948272464060442,0.9476506609219733,0.8660254037844387,0.01896544928120884,,
+yerly2022_bcc_split,nmp,coord_shuffle,must_be_invariant,skipped,,,,,,missing obsm['spatial']
+yerly2022_bcc_split,nmp,merge,known_caveat,caveat_observed,0.948272464060442,0.7302339011385506,1.0,0.01896544928120884,1.0,Skips merged types missing from the reference.
+yerly2022_bcc_split,rel_pw_ct,label_noise,must_detect,pass,0.8189834195421276,0.6986490002286743,1.0,0.016379668390842553,0.25,
+yerly2022_bcc_split,rel_pw_ct,type_swap,must_detect,pass,0.8189834195421276,0.44958598379255754,1.0,0.016379668390842553,1.0,
+yerly2022_bcc_split,rel_pw_ct,nuisance_shuffle,must_be_invariant,pass,0.8189834195421276,0.8189834195421276,0.0,0.016379668390842553,,
+yerly2022_bcc_split,rel_pw_ct,coord_shuffle,must_be_invariant,skipped,,,,,,missing obsm['spatial']
+yerly2022_bcc_split,rel_pw_ct,panel_growth,known_caveat,caveat_observed,0.8189834195421276,0.8190019278038128,-1.0,0.016379668390842553,,Unweighted per-gene L1 normalization drifts when adding pure-noise genes.
+merfish_bregma4_allen_proxy,ext.macro_f1,label_noise,must_detect,pass,1.0,0.4087107773062887,1.0,0.02,0.1,
+merfish_bregma4_allen_proxy,ext.macro_f1,merge,must_detect,pass,1.0,0.45454545454545453,1.0,0.02,1.0,
+merfish_bregma4_allen_proxy,ext.macro_f1,type_swap,must_detect,pass,1.0,0.5555555555555556,1.0,0.02,1.0,
+merfish_bregma4_allen_proxy,ext.macro_f1,nuisance_shuffle,must_be_invariant,pass,1.0,1.0,0.0,0.02,,
+merfish_bregma4_allen_proxy,ext.macro_f1,coord_shuffle,must_be_invariant,pass,1.0,1.0,0.0,0.02,,
+merfish_bregma4_allen_proxy,resid_moran.explained,label_noise,must_detect,pass,0.49938824070701937,0.11935775558825085,1.0,0.009987764814140388,0.1,
+merfish_bregma4_allen_proxy,resid_moran.explained,merge,must_detect,pass,0.49938824070701937,0.4160892456599815,1.0,0.009987764814140388,1.0,
+merfish_bregma4_allen_proxy,resid_moran.explained,nuisance_shuffle,must_be_invariant,pass,0.49938824070701937,0.5013385702127313,-0.8660254037844387,0.009987764814140388,,
+merfish_bregma4_allen_proxy,resid_moran.explained,infiltration,known_caveat,caveat_observed,0.49938824070701937,0.5456509091922576,-0.7999999999999999,0.009987764814140388,,Scattering a cluster lowers raw Moran so 1 - resid/raw can wobble slightly.
+merfish_bregma4_allen_proxy,resid_moran.explained,coord_shuffle,known_caveat,caveat_observed,0.49938824070701937,0.8092636708185487,-0.7999999999999999,0.009987764814140388,0.25,Ratio 1 - resid/raw is unstable near raw <= 0; gate on raw_median_moran > 0.
+merfish_bregma4_allen_proxy,resid_moran.residual,label_noise,must_detect,pass,0.0467431183077106,0.08222732257716536,1.0,0.000934862366154212,0.1,
+merfish_bregma4_allen_proxy,resid_moran.residual,merge,must_detect,pass,0.0467431183077106,0.0545209115938614,1.0,0.000934862366154212,1.0,
+merfish_bregma4_allen_proxy,resid_moran.residual,spillover,must_detect,pass,0.0467431183077106,0.5435094637723312,1.0,0.000934862366154212,0.1,
+merfish_bregma4_allen_proxy,resid_moran.residual,nuisance_shuffle,must_be_invariant,pass,0.0467431183077106,0.04667844290668424,-0.8660254037844387,0.000934862366154212,,
+merfish_bregma4_allen_proxy,resid_moran.residual,infiltration,must_not_degrade,pass,0.0467431183077106,0.02608806127966218,-1.0,0.000934862366154212,,
+merfish_bregma4_allen_proxy,resid_moran.residual,coord_shuffle,known_caveat,caveat_observed,0.0467431183077106,0.0003355349898831706,-1.0,0.000934862366154212,,Raw spatial signal vanishes on shuffle so residual Moran drops near 0.
+merfish_bregma4_allen_proxy,spatial_org.corr,coord_shuffle,must_detect,pass,0.8316072171626518,-0.06282444403304924,1.0,0.01663214434325304,0.5,
+merfish_bregma4_allen_proxy,spatial_org.corr,nuisance_shuffle,must_be_invariant,pass,0.8316072171626518,0.8316109685604021,-0.8660254037844387,0.01663214434325304,,
+merfish_bregma4_allen_proxy,spatial_org.corr,merge,known_caveat,caveat_observed,0.8316072171626518,0.838405830829002,-0.5,0.01663214434325304,,Diagonal self-enrichment can stay correlated across replicates under merges.
+merfish_bregma4_allen_proxy,spatial_org.offdiag,coord_shuffle,must_detect,pass,0.5944576590607197,-0.07212517437531518,1.0,0.011889153181214394,0.5,
+merfish_bregma4_allen_proxy,spatial_org.offdiag,label_noise,must_detect,pass,0.5944576590607197,0.534989418886892,1.0,0.011889153181214394,0.1,
+merfish_bregma4_allen_proxy,spatial_org.offdiag,nuisance_shuffle,must_be_invariant,pass,0.5944576590607197,0.5945141913525998,-0.8660254037844387,0.011889153181214394,,
+merfish_bregma4_allen_proxy,spatial_org.offdiag,merge,known_caveat,caveat_observed,0.5944576590607197,0.6878482280278183,-0.5,0.011889153181214394,,May shift either way when merged pairs dominate background neighbors.

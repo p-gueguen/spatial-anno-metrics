@@ -164,6 +164,39 @@ def _coex(a, ref):
                                                                                          np.nan)}
 
 
+@adapter("relative_pairwise_ct_expression", {"rel_pw_ct": (1, [L, PUR, REF])})
+def _rel_pw(a, ref):
+    r = sam.relative_pairwise_ct_expression(
+        a, ref, label_key="label", ref_label_key="cell_type", layer="counts"
+    )
+    return {"rel_pw_ct": r.get("relative_pairwise_ct_expression", np.nan)}
+
+
+@adapter("residual_spatial_autocorrelation", {
+    "resid_moran.explained": (1, [L, SP]),
+    "resid_moran.residual": (-1, [L, SP]),
+})
+def _resid_moran(a, ref):
+    _fresh_graph(a)
+    r = sam.residual_spatial_autocorrelation(a, label_key="label", layer="counts", graph=None)
+    return {
+        "resid_moran.explained": r.get("explained_fraction", np.nan),
+        "resid_moran.residual": r.get("residual_median_moran", np.nan),
+    }
+
+
+@adapter("spatial_organization_consistency", {
+    "spatial_org.corr": (1, [L, SP]),
+    "spatial_org.offdiag": (1, [L, SP]),
+})
+def _spatial_org(a, ref):
+    r = sam.spatial_organization_consistency(a, label_key="label", sample_key="sample")
+    return {
+        "spatial_org.corr": r.get("mean_corr", np.nan),
+        "spatial_org.offdiag": r.get("offdiag_mean_corr", np.nan),
+    }
+
+
 @adapter("ncp", {"ncp": (1, [PUR, REF]), "ncp.moldia": (1, [PUR, REF])})
 def _ncp(a, ref):
     return {"ncp": sam.ncp(a, ref).get("ncp", np.nan),
@@ -313,7 +346,7 @@ DATA_EXPECT = {   # data-side scenarios: families (or metric names) that should 
     "ambient": {"sig.snr", "sig.moran_gap", "sig.frac_above_ctrl"},
     "batch": {"isc"},
     "coord_shuffle": {"sc.mean_coherence", "sc.pas", "sc.chaos", "ns.n_suspicious", "sig.moran_gap",
-                      "sig.frac_above_ctrl"},
+                      "sig.frac_above_ctrl", "spatial_org.corr", "spatial_org.offdiag"},
 }
 
 

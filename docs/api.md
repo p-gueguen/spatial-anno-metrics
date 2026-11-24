@@ -229,3 +229,18 @@ Every hard-coded constant the metrics use, with where it comes from.
    thresholds.thresholds_for
 ```
 
+## `augment`
+
+Controlled AnnData data augmentation and behavioral contract verification.
+
+```{eval-rst}
+.. autosummary::
+   :toctree: generated
+
+   AUGMENTATIONS
+   METRIC_CONTRACTS
+   perturb_anndata
+   verify_metric_contracts
+```
+
+

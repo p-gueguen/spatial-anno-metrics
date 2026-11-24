@@ -68,6 +68,12 @@ DEFAULTS = {
     ("ontology", "ontology_consistency", "n_perm"): ("ontology", "n_perm"),
     ("ontology", "ontology_consistency", "min_cells"): ("ontology", "min_cells"),
     ("ontology", "ontology_consistency", "rwr_restart"): ("ontology", "rwr_restart"),
+    ("purity", "relative_pairwise_ct_expression", "min_cells"): ("purity", "rel_pairwise_min_cells"),
+    ("spatial", "residual_spatial_autocorrelation", "n_neighs"): ("spatial", "residual_moran_n_neighs"),
+    ("spatial", "residual_spatial_autocorrelation", "min_cells"): ("spatial", "residual_moran_min_cells"),
+    ("spatial", "spatial_organization_consistency", "n_neighs"): ("spatial", "org_consistency_n_neighs"),
+    ("spatial", "spatial_organization_consistency", "min_cells"): ("spatial", "org_consistency_min_cells"),
+    ("spatial", "spatial_organization_consistency", "min_samples"): ("spatial", "org_consistency_min_samples"),
 }
 
 

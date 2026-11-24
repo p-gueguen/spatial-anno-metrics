@@ -12,7 +12,10 @@ def _no_nan(token):
     raise ValueError(f"{token} in a golden: NaN must be stored as null")
 
 
-@pytest.mark.parametrize("name", ["nmp_txsim", "coexpr_txsim", "ecs_clusim", "deconv_openproblems"])
+@pytest.mark.parametrize(
+    "name",
+    ["nmp_txsim", "coexpr_txsim", "rel_pairwise_txsim", "ecs_clusim", "deconv_openproblems"],
+)
 def test_golden_files_parse(name):
     d = GOLDENS / name
     assert (d / "SOURCE.md").is_file()

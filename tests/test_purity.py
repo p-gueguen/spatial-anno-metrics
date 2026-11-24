@@ -650,6 +650,91 @@ def test_nmp_salas_share_cut_is_strict(b_count, negative):
     assert r["n_negative_pairs"] == 1 + negative
 
 
+# --------------------------------------------------------------------------- #
+# relative_pairwise_ct_expression: txsim parity golden + structural checks
+# --------------------------------------------------------------------------- #
+def test_relative_pairwise_ct_expression_matches_txsim_golden():
+    import json
+    from pathlib import Path
+
+    from scipy import sparse
+
+    from spatial_anno_metrics import purity as p
+
+    gdir = Path(__file__).parent / "goldens" / "rel_pairwise_txsim"
+    expected = json.loads((gdir / "expected.json").read_text())["results"]
+
+    def _load(npz_name):
+        with np.load(gdir / npz_name, allow_pickle=False) as z:
+            a = anndata.AnnData(X=z["counts"].astype(np.float64))
+            a.var_names = z["genes"].astype(str)
+            a.obs_names = z["cells"].astype(str)
+            a.obs["cell_type"] = z["labels"].astype(str)
+            a.layers["counts"] = a.X.copy()
+            return a
+
+    ref = _load("reference.npz")
+    for sec in ("clean", "spillover"):
+        a = _load(f"section_{sec}.npz")
+        got = p.relative_pairwise_ct_expression(a, ref)
+        want = expected[sec]["txsim_relative_pairwise_ct_expr"]
+        assert got["status"] == "ok"
+        assert got["relative_pairwise_ct_expression"] == pytest.approx(want["overall"], abs=1e-12)
+        for t, v in want["per_celltype"].items():
+            assert got["per_type"][t] == pytest.approx(v, abs=1e-12)
+        for g, v in want["per_gene"].items():
+            assert got["per_gene"][g] == pytest.approx(v, abs=1e-12)
+
+        # Sparse input matches dense to 1e-12
+        a_sp, ref_sp = a.copy(), ref.copy()
+        a_sp.X = sparse.csr_matrix(a_sp.X)
+        a_sp.layers["counts"] = sparse.csr_matrix(a_sp.layers["counts"])
+        ref_sp.X = sparse.csr_matrix(ref_sp.X)
+        ref_sp.layers["counts"] = sparse.csr_matrix(ref_sp.layers["counts"])
+        got_sp = p.relative_pairwise_ct_expression(a_sp, ref_sp)
+        assert got_sp["relative_pairwise_ct_expression"] == pytest.approx(
+            got["relative_pairwise_ct_expression"], abs=1e-12
+        )
+
+
+def test_relative_pairwise_ct_expression_skips_and_catches_swaps():
+    from spatial_anno_metrics import purity as p
+
+    rng = np.random.default_rng(7)
+    n = 150
+    labels = np.array(["A"] * 50 + ["B"] * 50 + ["C"] * 50)
+    X_sc = np.zeros((n, 6), dtype=np.float32)
+    X_sc[:50, 0:2] = rng.poisson(20, size=(50, 2))
+    X_sc[50:100, 2:4] = rng.poisson(20, size=(50, 2))
+    X_sc[100:, 4:6] = rng.poisson(20, size=(50, 2))
+    ref = anndata.AnnData(X=X_sc, obs={"cell_type": labels})
+    ref.var_names = [f"g{i}" for i in range(6)]
+
+    # Spatial section with strong per-gene capture-efficiency variation (g0..g5 scaled differently)
+    eff = np.array([1.0, 0.3, 2.5, 0.4, 3.0, 0.2], dtype=np.float32)
+    X_sp = rng.poisson(X_sc * eff[None, :]).astype(np.float32)
+    a = anndata.AnnData(X=X_sp, obs={"cell_type": labels})
+    a.var_names = ref.var_names
+
+    assert p.relative_pairwise_ct_expression(a, None)["status"] == "skipped"
+    assert p.relative_pairwise_ct_expression(a, ref, min_cells=10_000)["status"] == "skipped"
+
+    clean = p.relative_pairwise_ct_expression(a, ref)
+    assert clean["status"] == "ok"
+    assert clean["relative_pairwise_ct_expression"] > 0.85
+
+    swapped = a.copy()
+    lab = swapped.obs["cell_type"].astype(str).to_numpy().copy()
+    m1, m2 = lab == "A", lab == "B"
+    lab[m1], lab[m2] = "B", "A"
+    swapped.obs["cell_type"] = lab
+    bad = p.relative_pairwise_ct_expression(swapped, ref)
+    assert bad["relative_pairwise_ct_expression"] < clean["relative_pairwise_ct_expression"] - 0.3
+    assert bad["per_type"]["A"] < clean["per_type"]["A"] - 0.3
+    assert bad["per_type"]["B"] < clean["per_type"]["B"] - 0.3
+    assert bad["per_type"]["C"] > bad["per_type"]["A"] + 0.2
+
+
 def test_purity_edge_cases_nested_crisp_and_single_gene_coexpr():
     from spatial_anno_metrics import purity as p
 

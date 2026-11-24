@@ -158,6 +158,8 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
         "coexpr_target_sum": _e(1e4, f"{_PKG}: log1p(target_sum * counts / total) before the correlations "
                                      "(txsim reads a lognorm layer; OpenProblems normalises to the median "
                                      "total)"),
+        "rel_pairwise_min_cells": _e(1, "txsim relative_pairwise_celltype_expression: minimum cells per shared "
+                                        "cell type in both modalities (1 matches txsim exactly)", False),
     },
     "spatial": {
         "coherence_n_neighs": _e(10, "Shang & Zhou 2022 (10.1038/s41467-022-34879-1) PAS: the 10 nearest "
@@ -168,6 +170,13 @@ THRESHOLDS: dict[str, dict[str, dict]] = {
         "contamination_n_neighs": _e(6, f"{_PKG}: spatial kNN graph for neighbor_contamination"),
         "contamination_n_perm": _e(199, f"{_PKG}: permutations for neighbor_contamination's p_value "
                                         "(smallest p = 1/200)"),
+        "residual_moran_n_neighs": _e(6, f"{_PKG}: spatial kNN graph for residual_spatial_autocorrelation"),
+        "residual_moran_min_cells": _e(30, f"{_PKG}: minimum cells per cell type for per-type residual Moran's I"),
+        "org_consistency_n_neighs": _e(10, f"{_PKG}: spatial kNN graph for spatial_organization_consistency"),
+        "org_consistency_min_cells": _e(10, f"{_PKG}: minimum cells per (sample, type) for "
+                                            "spatial_organization_consistency"),
+        "org_consistency_min_samples": _e(2, f"{_PKG}: minimum samples a type must appear in for "
+                                             "spatial_organization_consistency"),
     },
     "confidence": {
         "stability_drop_frac": _e(0.2, f"{_PKG} (SpatialScribe QC Layer-5): share of transcripts dropped"),

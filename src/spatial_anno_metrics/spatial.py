@@ -30,7 +30,13 @@ from ._utils import _squidpy, _store
 from ._validate import check_labels, dictionary_coverage, get_counts, skip
 from .thresholds import value as _thr
 
-__all__ = ["spatial_coherence", "neighborhood_sanity", "neighbor_contamination"]
+__all__ = [
+    "spatial_coherence",
+    "neighborhood_sanity",
+    "neighbor_contamination",
+    "residual_spatial_autocorrelation",
+    "spatial_organization_consistency",
+]
 _GRAPH_TAG = "sam_graph"          # uns['spatial_neighbors'][_GRAPH_TAG]: which graph this module cached
 
 
@@ -475,4 +481,290 @@ def neighbor_contamination(adata, marker_sets: dict, label_key: str = "cell_type
            **frames, "distance_curve": distance_curve, **cov, "graph": how, "n_perm": int(n_perm),
            "matrix": matrix}
     _store(adata, "neighbor_contamination", out, key_added)
+    return out
+
+
+def _knn_weight_matrix(xy: np.ndarray, n_neighs: int):
+    """Row-standardized spatial k-NN CSR weight matrix (zero self-loops) using cKDTree."""
+    from scipy.sparse import csr_matrix
+    from scipy.spatial import cKDTree
+
+    n = xy.shape[0]
+    if n <= 1 or n_neighs < 1:
+        return csr_matrix((n, n), dtype=np.float64)
+    k_eff = min(int(n_neighs), n - 1)
+    _, indices = cKDTree(xy).query(xy, k=k_eff + 1)
+    nbrs = indices[:, 1:]
+    rows = np.repeat(np.arange(n, dtype=np.int32), k_eff)
+    cols = nbrs.ravel().astype(np.int32)
+    data = np.full(rows.size, 1.0 / float(k_eff), dtype=np.float64)
+    return csr_matrix((data, (rows, cols)), shape=(n, n), dtype=np.float64)
+
+
+def _row_standardize_graph(A):
+    """Return binary-or-weighted CSR copy of ``A`` with zero diagonal and row sums normalized to 1."""
+    from scipy.sparse import csr_matrix, diags
+
+    W = csr_matrix(A, dtype=np.float64).copy()
+    W.setdiag(0.0)
+    W.eliminate_zeros()
+    rs = np.asarray(W.sum(axis=1)).ravel()
+    inv = np.divide(1.0, rs, out=np.zeros_like(rs), where=rs > 0)
+    return diags(inv) @ W
+
+
+def _morans_i_matrix(X: np.ndarray, W) -> np.ndarray:
+    """Vectorized Moran's I across all columns of ``X`` via one sparse ``W @ Xc`` product."""
+    n, g = X.shape
+    if n < 3 or g == 0 or W.nnz == 0:
+        return np.full(g, np.nan, dtype=np.float64)
+    s0 = float(W.sum())
+    if s0 <= 1e-12:
+        return np.full(g, np.nan, dtype=np.float64)
+    xc = X.astype(np.float64, copy=False) - np.mean(X, axis=0, keepdims=True)
+    denom = np.sum(xc * xc, axis=0)
+    ptp = np.ptp(X, axis=0)
+    num = np.sum(xc * (W @ xc), axis=0)
+    out = np.full(g, np.nan, dtype=np.float64)
+    valid = (denom > 1e-12) & (ptp > 1e-12)
+    out[valid] = (float(n) / s0) * (num[valid] / denom[valid])
+    return out
+
+
+def residual_spatial_autocorrelation(
+    adata,
+    label_key: str = "cell_type",
+    n_neighs: int = _thr("spatial", "residual_moran_n_neighs"),
+    min_cells: int = _thr("spatial", "residual_moran_min_cells"),
+    *,
+    layer: str | None = "counts",
+    graph: str | None = None,
+    exclude_controls: bool = True,
+) -> dict:
+    """Spatial autocorrelation remaining after subtracting per-cell-type mean expression.
+
+    Complements :func:`spatial_coherence`: merging two spatially structured types inflates
+    spatial coherence/PAS/CHAOS, whereas merging leaves unmodeled spatial autocorrelation in
+    the within-label expression residuals (higher ``residual_median_moran``, lower
+    ``explained_fraction``). Requires ``obsm['spatial']`` (or ``graph='obsp'``) and counts.
+    """
+    from .purity import _lognorm_cols
+    from .signal_qc import _control_mask
+
+    labels = check_labels(adata, label_key)
+    if len(np.unique(labels)) < 2:
+        return skip(f"need >= 2 labels in adata.obs[{label_key!r}], found {len(np.unique(labels))}")
+    if adata.n_obs < 3:
+        return skip("need >= 3 cells to compute Moran's I")
+
+    if graph == "obsp":
+        if "spatial_connectivities" not in adata.obsp:
+            return skip("no obsp['spatial_connectivities']")
+        W = _row_standardize_graph(adata.obsp["spatial_connectivities"])
+        how = "obsp"
+        xy = None
+        if "spatial" in adata.obsm:
+            cand = np.asarray(adata.obsm["spatial"], dtype=np.float64)
+            if cand.ndim == 2 and cand.shape[0] == adata.n_obs and cand.shape[1] >= 1 and np.all(np.isfinite(cand)):
+                xy = cand
+    elif graph is None:
+        if "spatial" not in adata.obsm:
+            return skip("no obsm['spatial'] coordinates")
+        xy = np.asarray(adata.obsm["spatial"], dtype=np.float64)
+        if xy.ndim != 2 or xy.shape[0] != adata.n_obs or xy.shape[1] < 1 or not np.all(np.isfinite(xy)):
+            return skip("obsm['spatial'] must be a finite 2D coordinate matrix")
+        W = _knn_weight_matrix(xy, n_neighs)
+        how = f"knn(n_neighs={min(int(n_neighs), adata.n_obs - 1)})"
+    else:
+        raise ValueError(f"graph must be None or 'obsp', got {graph!r}")
+
+    if W.nnz == 0:
+        return skip("spatial graph has no edges")
+
+    ctrl = _control_mask(adata) if exclude_controls else np.zeros(adata.n_vars, dtype=bool)
+    gene_cols = np.flatnonzero(~ctrl)
+    if gene_cols.size == 0:
+        return skip("no biological gene columns after excluding controls")
+    gene_names = [str(adata.var_names[i]) for i in gene_cols]
+
+    mat, matrix = get_counts(adata, layer)
+    L_sub = _lognorm_cols(mat, gene_cols.tolist())
+    L = L_sub.toarray() if hasattr(L_sub, "toarray") else np.asarray(L_sub, dtype=np.float64)
+
+    I_raw = _morans_i_matrix(L, W)
+    L_resid = L.copy()
+    for t in np.unique(labels):
+        m = labels == t
+        L_resid[m] -= L[m].mean(axis=0, keepdims=True)
+    I_resid = _morans_i_matrix(L_resid, W)
+
+    raw_med = float(np.nanmedian(I_raw)) if np.isfinite(I_raw).any() else float("nan")
+    res_med = float(np.nanmedian(I_resid)) if np.isfinite(I_resid).any() else float("nan")
+    if np.isfinite(raw_med) and np.isfinite(res_med) and raw_med > 1e-12:
+        explained = float(1.0 - res_med / raw_med)
+    else:
+        explained = float("nan")
+
+    per_type: dict[str, float] = {}
+    for t in np.unique(labels):
+        idx = np.flatnonzero(labels == t)
+        if idx.size < max(int(min_cells), 3):
+            continue
+        if xy is not None:
+            W_t = _knn_weight_matrix(xy[idx], n_neighs)
+        else:
+            W_t = _row_standardize_graph(W[idx][:, idx])
+        I_t = _morans_i_matrix(L[idx], W_t)
+        per_type[str(t)] = float(np.nanmedian(I_t)) if np.isfinite(I_t).any() else float("nan")
+
+    per_gene = {g: (float(v) if np.isfinite(v) else float("nan")) for g, v in zip(gene_names, I_resid)}
+    out = {
+        "status": "ok",
+        "raw_median_moran": raw_med,
+        "residual_median_moran": res_med,
+        "explained_fraction": explained,
+        "per_type_residual_moran": per_type,
+        "per_gene": per_gene,
+        "n_genes": int(len(gene_names)),
+        "graph": how,
+        "matrix": matrix,
+    }
+    _store(adata, "residual_spatial_autocorrelation", out, ())
+    return out
+
+
+def spatial_organization_consistency(
+    adata,
+    label_key: str = "cell_type",
+    sample_key: str = "sample",
+    n_neighs: int = _thr("spatial", "org_consistency_n_neighs"),
+    min_cells: int = _thr("spatial", "org_consistency_min_cells"),
+    min_samples: int = _thr("spatial", "org_consistency_min_samples"),
+) -> dict:
+    """Cross-sample consistency of spatial cell-type neighborhood organization.
+
+    Within each sample, builds a spatial ``n_neighs``-NN graph and computes the composition-
+    adjusted neighbor affinity ``A[a, b] = P(neighbor = b | cell = a) - P_sample(b)`` across
+    eligible cell types, then correlates flattened affinity matrices across sample pairs
+    (overall and off-diagonal).
+    """
+    from scipy.spatial import cKDTree
+    from scipy.stats import pearsonr, spearmanr
+
+    labels = check_labels(adata, label_key)
+    samples = check_labels(adata, sample_key)
+    if "spatial" not in adata.obsm:
+        return skip("no obsm['spatial'] coordinates")
+    xy = np.asarray(adata.obsm["spatial"], dtype=np.float64)
+    if xy.ndim != 2 or xy.shape[0] != adata.n_obs or xy.shape[1] < 1 or not np.all(np.isfinite(xy)):
+        return skip("obsm['spatial'] must be a finite 2D coordinate matrix")
+
+    uniq_samples = sorted(set(samples))
+    uniq_types = sorted(set(labels))
+    type_sample_counts: dict[str, int] = {}
+    for t in uniq_types:
+        n_ok = sum(1 for s in uniq_samples if int(np.sum((samples == s) & (labels == t))) >= min_cells)
+        type_sample_counts[t] = n_ok
+    eligible_types = [t for t in uniq_types if type_sample_counts[t] >= min_samples]
+    if len(eligible_types) < 2:
+        return skip(f"fewer than 2 cell types with >= {min_cells} cells in >= {min_samples} samples")
+
+    eligible_set = set(eligible_types)
+    sample_affinities: dict[str, tuple[list[str], np.ndarray]] = {}
+    for s in uniq_samples:
+        s_idx = np.flatnonzero(samples == s)
+        if s_idx.size < 3:
+            continue
+        s_labels = labels[s_idx]
+        present_types = [t for t in eligible_types if int(np.sum(s_labels == t)) >= min_cells]
+        if len(present_types) < 2:
+            continue
+        k_eff = min(int(n_neighs), s_idx.size - 1)
+        if k_eff < 1:
+            continue
+        _, indices = cKDTree(xy[s_idx]).query(xy[s_idx], k=k_eff + 1)
+        nbrs = indices[:, 1:]
+
+        k_t = len(present_types)
+        t_map = {t: i for i, t in enumerate(present_types)}
+        cell_tid = np.array([t_map.get(lb, -1) for lb in s_labels], dtype=np.int32)
+        nbr_tid = cell_tid[nbrs]  # (n_s, k_eff)
+
+        total_s = float(s_idx.size)
+        prop_b = np.array([float(np.sum(s_labels == t)) / total_s for t in present_types], dtype=np.float64)
+        aff = np.zeros((k_t, k_t), dtype=np.float64)
+        for i in range(k_t):
+            m_i = cell_tid == i
+            nb_i = nbr_tid[m_i].ravel()
+            # Denominator is all k_eff spatial neighbors of type-i cells (including ineligible neighbors)
+            denom = float(nb_i.size)
+            for j in range(k_t):
+                aff[i, j] = float(np.sum(nb_i == j)) / denom - prop_b[j]
+        sample_affinities[s] = (present_types, aff)
+
+    ok_samples = sorted(sample_affinities)
+    if len(ok_samples) < 2:
+        return skip("fewer than 2 eligible samples with >= 2 eligible cell types")
+
+    def _safe_corr(x: np.ndarray, y: np.ndarray, fn):
+        if x.size < 3 or np.std(x) <= 1e-12 or np.std(y) <= 1e-12:
+            return float("nan")
+        r = fn(x, y).statistic
+        return float(r) if np.isfinite(r) else float("nan")
+
+    pair_corrs: dict[tuple[str, str], float] = {}
+    pair_spears: dict[tuple[str, str], float] = {}
+    offdiag_corrs: list[float] = []
+    per_type_lists: dict[str, list[float]] = {t: [] for t in eligible_types if t in eligible_set}
+
+    for i in range(len(ok_samples)):
+        s1 = ok_samples[i]
+        t1, a1 = sample_affinities[s1]
+        idx1 = {t: k for k, t in enumerate(t1)}
+        for j in range(i + 1, len(ok_samples)):
+            s2 = ok_samples[j]
+            t2, a2 = sample_affinities[s2]
+            idx2 = {t: k for k, t in enumerate(t2)}
+            common = [t for t in eligible_types if t in idx1 and t in idx2]
+            if len(common) < 2:
+                continue
+            p1 = [idx1[t] for t in common]
+            p2 = [idx2[t] for t in common]
+            sub1 = a1[np.ix_(p1, p1)]
+            sub2 = a2[np.ix_(p2, p2)]
+            r_val = _safe_corr(sub1.ravel(), sub2.ravel(), pearsonr)
+            sp_val = _safe_corr(sub1.ravel(), sub2.ravel(), spearmanr)
+            pair_corrs[(s1, s2)] = r_val
+            pair_spears[(s1, s2)] = sp_val
+            if len(common) >= 3:
+                off = ~np.eye(len(common), dtype=bool)
+                off_r = _safe_corr(sub1[off], sub2[off], pearsonr)
+                if np.isfinite(off_r):
+                    offdiag_corrs.append(off_r)
+            for row_k, t in enumerate(common):
+                tr = _safe_corr(sub1[row_k], sub2[row_k], pearsonr)
+                if np.isfinite(tr):
+                    per_type_lists[t].append(tr)
+
+    if not pair_corrs:
+        return skip("no sample pair shared >= 2 eligible cell types")
+
+    fin_r = [v for v in pair_corrs.values() if np.isfinite(v)]
+    fin_sp = [v for v in pair_spears.values() if np.isfinite(v)]
+    mean_corr = float(np.mean(fin_r)) if fin_r else float("nan")
+    mean_spearman = float(np.mean(fin_sp)) if fin_sp else float("nan")
+    offdiag_mean = float(np.mean(offdiag_corrs)) if offdiag_corrs else float("nan")
+    per_type = {t: (float(np.mean(vs)) if vs else float("nan")) for t, vs in per_type_lists.items()}
+
+    out = {
+        "status": "ok",
+        "mean_corr": mean_corr,
+        "mean_spearman": mean_spearman,
+        "offdiag_mean_corr": offdiag_mean,
+        "per_pair": pair_corrs,
+        "per_type": per_type,
+        "n_samples": int(len(ok_samples)),
+        "n_types": int(len(eligible_types)),
+    }
+    _store(adata, "spatial_organization_consistency", out, ())
     return out

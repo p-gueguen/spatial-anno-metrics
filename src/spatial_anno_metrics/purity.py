@@ -31,7 +31,15 @@ from ._utils import _store
 from ._validate import check_labels, dictionary_coverage, get_counts, matrix_name, skip
 from .thresholds import value as _thr
 
-__all__ = ["crisp_purity", "mecr", "pmp", "nmp", "ncp", "coexpression_similarity"]
+__all__ = [
+    "crisp_purity",
+    "mecr",
+    "pmp",
+    "nmp",
+    "ncp",
+    "coexpression_similarity",
+    "relative_pairwise_ct_expression",
+]
 _DETECT = _thr("purity", "detection_threshold")         # detected = count > _DETECT, i.e. one count
 _SALAS_MAX_SHARE = _thr("purity", "nmp_salas_max_share")
 _SALAS_MIN_CELLS = _thr("purity", "nmp_salas_min_cells")
@@ -803,3 +811,89 @@ def coexpression_similarity(adata, reference=None, *, label_key: str | None = No
     out["per_gene"] = {g: float(np.nanmean(S[i])) if fin[i] else float("nan") for i, g in enumerate(genes)}
     out.update({"n_genes": len(genes), "matrix": matrix})
     return out
+
+
+def relative_pairwise_ct_expression(
+    adata,
+    reference=None,
+    *,
+    label_key: str = "cell_type",
+    ref_label_key: str = "cell_type",
+    min_cells: int = _thr("purity", "rel_pairwise_min_cells"),
+    layer: str | None = "counts",
+) -> dict:
+    """Relative pairwise cell-type expression similarity vs a matched reference (txsim).
+
+    For each gene ``g`` and ordered pair of shared cell types ``(a, b)``, computes the mean
+    log-normalised expression difference ``D[a, b, g] = mu[a, g] - mu[b, g]`` in both the
+    spatial section and the reference. Each modality's ``D[:, :, g]`` slice is normalised
+    by ``sum(|D[:, :, g]|) / K^2`` so per-gene probe-efficiency scaling factors cancel out.
+    The score is ``1 - sum(|D_sp - D_sc|) / (2 * sum(|D_sc|))`` in ``[0, 1]`` (1 = identical
+    cross-type expression structure).
+    """
+    if reference is None:
+        return skip("no reference")
+    labels = check_labels(adata, label_key)
+    ref_labels = check_labels(reference, ref_label_key)
+
+    ref_idx = {g: i for i, g in enumerate(map(str, reference.var_names))}
+    var_idx = {g: i for i, g in enumerate(map(str, adata.var_names))}
+    shared = sorted(g for g in var_idx if g in ref_idx)
+    if not shared:
+        return skip("no shared genes with reference")
+
+    sp_counts = Counter(labels)
+    sc_counts = Counter(ref_labels)
+    shared_types = sorted(
+        t for t in set(sp_counts) & set(sc_counts)
+        if sp_counts[t] >= min_cells and sc_counts[t] >= min_cells
+    )
+    if len(shared_types) < 2:
+        return skip(f"fewer than 2 shared cell types with >= {min_cells} cells in both datasets")
+
+    mat, matrix = get_counts(adata, layer)
+    ref_mat, _ = get_counts(reference, layer)
+    L_sp = _lognorm_cols(mat, [var_idx[g] for g in shared])
+    L_sc = _lognorm_cols(ref_mat, [ref_idx[g] for g in shared])
+
+    k_types = len(shared_types)
+    n_genes = len(shared)
+    M_sp = np.empty((k_types, n_genes), dtype=np.float64)
+    M_sc = np.empty((k_types, n_genes), dtype=np.float64)
+    for k, t in enumerate(shared_types):
+        M_sp[k] = np.asarray(L_sp[labels == t].mean(axis=0), dtype=np.float64).ravel()
+        M_sc[k] = np.asarray(L_sc[ref_labels == t].mean(axis=0), dtype=np.float64).ravel()
+
+    D_sc = M_sc[:, None, :] - M_sc[None, :, :]
+    D_sp = M_sp[:, None, :] - M_sp[None, :, :]
+
+    nf_sc = np.abs(D_sc).sum(axis=(0, 1)) / float(k_types * k_types)
+    nf_sp = np.abs(D_sp).sum(axis=(0, 1)) / float(k_types * k_types)
+    nz_sc = nf_sc != 0
+    nz_sp = nf_sp != 0
+    D_sc[:, :, nz_sc] = D_sc[:, :, nz_sc] / nf_sc[None, None, nz_sc]
+    D_sp[:, :, nz_sp] = D_sp[:, :, nz_sp] / nf_sp[None, None, nz_sp]
+
+    denom_total = 2.0 * float(np.abs(D_sc).sum())
+    if denom_total <= 0.0:
+        return skip("zero reference pairwise expression variance")
+
+    abs_diff = np.abs(D_sp - D_sc)
+    abs_sc = np.abs(D_sc)
+    overall = float(1.0 - float(abs_diff.sum()) / denom_total)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        gene_scores = 1.0 - abs_diff.sum(axis=(0, 1)) / (2.0 * abs_sc.sum(axis=(0, 1)))
+        type_scores = 1.0 - abs_diff.sum(axis=(1, 2)) / (2.0 * abs_sc.sum(axis=(1, 2)))
+
+    per_gene = {g: (float(v) if np.isfinite(v) else float("nan")) for g, v in zip(shared, gene_scores)}
+    per_type = {t: (float(v) if np.isfinite(v) else float("nan")) for t, v in zip(shared_types, type_scores)}
+    return {
+        "status": "ok",
+        "relative_pairwise_ct_expression": overall,
+        "per_type": per_type,
+        "per_gene": per_gene,
+        "n_types": k_types,
+        "n_genes": n_genes,
+        "matrix": matrix,
+    }

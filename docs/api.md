@@ -135,6 +135,7 @@ Marker co-expression / contamination purity.
    nmp
    ncp
    coexpression_similarity
+   relative_pairwise_ct_expression
 ```
 
 ## `spatial`
@@ -148,6 +149,8 @@ Spatial label-quality metrics: does the cell-type label make SPATIAL sense.
    spatial_coherence
    neighborhood_sanity
    neighbor_contamination
+   residual_spatial_autocorrelation
+   spatial_organization_consistency
 ```
 
 ## `confidence`

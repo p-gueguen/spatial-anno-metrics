@@ -643,6 +643,7 @@ def _score_one(
     *,
     min_rho: float,
     rel_tol: float,
+    abs_tol: float,
     caveat: str | None,
 ) -> dict[str, Any]:
     from scipy.stats import spearmanr
@@ -664,6 +665,7 @@ def _score_one(
     o = orientation or 1
     bad = -o * (m["mean"] - v0)
     thr = max(3.0 * sd0, rel_tol * max(abs(v0), 1e-3), 1e-6)
+    degrade_thr = max(thr, float(abs_tol))
     ok = ~bad.isna()
     if ok.sum() > 2 and np.nanstd(bad[ok]) > 0:
         rho = float(spearmanr(np.arange(ok.sum()), bad[ok].to_numpy())[0])
@@ -673,7 +675,8 @@ def _score_one(
         rho = 0.0
     moved = bool(np.nanmax(np.abs(bad.to_numpy())) > thr)
     end_bad = float(bad.iloc[-1]) if pd.notna(bad.iloc[-1]) else 0.0
-    first_lv = next((lv for lv, b in zip(levels, bad) if pd.notna(b) and float(b) > thr), None)
+    report_thr = degrade_thr if role == "must_not_degrade" else thr
+    first_lv = next((lv for lv, b in zip(levels, bad) if pd.notna(b) and float(b) > report_thr), None)
 
     if role == "must_detect":
         if moved and end_bad > thr and rho >= min_rho - 1e-9:
@@ -685,7 +688,7 @@ def _score_one(
     elif role == "must_be_invariant":
         verdict = "pass" if not moved else "fail_false_alarm"
     elif role == "must_not_degrade":
-        degraded = bool(np.nanmax(bad.to_numpy()) > thr)
+        degraded = bool(np.nanmax(bad.to_numpy()) > degrade_thr)
         verdict = "pass" if not degraded else "fail_false_alarm"
     else:
         verdict = "caveat_observed"
@@ -694,7 +697,7 @@ def _score_one(
         "v0": v0,
         "v_end": v_end,
         "rho": rho,
-        "threshold": thr,
+        "threshold": report_thr,
         "first_level": first_lv,
         "detail": caveat or "",
     }
@@ -713,6 +716,7 @@ def verify_metric_contracts(
     recompute_pca: bool = False,
     min_rho: float = 0.8,
     rel_tol: float = 0.02,
+    abs_tol: float = 0.01,
     perturbation_kwargs: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Verify metric behaviors against controlled perturbations on any dataset.
@@ -851,6 +855,7 @@ def verify_metric_contracts(
                 role,
                 min_rho=min_rho,
                 rel_tol=rel_tol,
+                abs_tol=abs_tol,
                 caveat=note,
             )
             summary_rows.append({"metric": metric, "perturbation": pert, "role": role, **res})

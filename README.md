@@ -42,6 +42,7 @@ pip install "spatial-anno-metrics[spatial] @ git+https://github.com/p-gueguen/sp
 | `nmp(adata, reference, label_key)` | negative marker purity, Salas et al. 2025 as txsim computes it (default `score="salas"`): reads on (gene, type) pairs the reference does not express, scaled so 0 = random labels and 1 = clean; tolerates co-expression the reference has. `score="moldia"`: older Moldia `Xenium_benchmarking` reads criterion (`x_sc < max_share / n_types`). `score="cells"`: txsim and Moldia cell-based NMP (`negative_marker_purity_cells`). `score="raw"`: per-cell fraction of counts on genes the reference detects in <= 5 % of the type's cells and >= 25 % of another type's (NaN when a type cannot be scored) | Salas et al. 2025; txsim; Moldia `Xenium_benchmarking`; raw `<= 5 %` cut from SegTraQ |
 | `ncp(adata, reference)` | non-coexpression preservation: fraction of reference-defined non-coexpressed gene pairs that stay non-coexpressed in the section (`score="pairs"`, MECR-style), or Moldia `Xenium_benchmarking` conditional clipped-excess NCP (`score="moldia"`) | Salas et al. 2025; Moldia `Xenium_benchmarking` |
 | `coexpression_similarity(adata, reference)` | gene-gene correlation agreement with the reference, `1 - \|rho_ref - rho_section\| / 2` averaged over pairs; `label_key=` per cell type | txsim |
+| `relative_pairwise_ct_expression(adata, reference, label_key=, ref_label_key=)` | reference-relative pairwise cell-type distance preservation (`1 - L1(D_spatial - D_ref) / 2` on per-gene L1-normalized pairwise mean differences); pass informative marker genes to avoid housekeeping dilution on large panels | txsim (`txsim.metrics.relative_pairwise_celltype_expression`) |
 
 ### Spatial label quality (does the label make spatial sense? — needs coords)
 
@@ -49,7 +50,16 @@ pip install "spatial-anno-metrics[spatial] @ git+https://github.com/p-gueguen/sp
 |---|---|---|
 | `spatial_coherence(adata, label_key, n_neighs=10, pas_threshold=0.4)` | per-cell fraction of spatial neighbors sharing the label + dataset **PAS** (Percentage of Abnormal Spots: label differs from >= 6 of 10 neighbours) and **CHAOS** (mean distance to the nearest same-label cell), both as in Shang & Zhou 2022. Detects *random* label noise only: blind to a compact mislabelled patch, better when types are merged, worse for correctly labelled infiltrating cells. Down-weight only | Shang & Zhou 2022 (SpatialPCA); SpatialScribe QC L6 |
 | `neighborhood_sanity(adata, label_key)` | flags types whose strongest neighborhood-enrichment partner is a *different* type (a mislabeling smell, e.g. two types forced together) via a squidpy permutation null | SpatialScribe QC L6 |
+| `residual_spatial_autocorrelation(adata, label_key, n_neighs=6)` | zero-squidpy spatial-graph Moran's I before vs after subtracting cell-type means (`explained_fraction`, `residual_median_moran`, `raw_median_moran`): catches label merges where `spatial_coherence`/PAS/CHAOS invert, detects lateral spillover, and stays stable on infiltrating populations (`explained_fraction` gated on `raw_median_moran > 0`) | OpenProblems `task_ist_preprocessing` / SpatialQM |
+| `spatial_organization_consistency(adata, label_key, sample_key, n_neighs=8)` | cross-sample spatial neighborhood-enrichment correlation (`mean_corr`, `offdiag_mean_corr`, `mean_spearman`) across replicate sections without squidpy; invariant to cell-type coordinate flips unless spatial structure is disrupted | OpenProblems `task_spatially_variable_genes` / `task_ist_preprocessing` |
 | `neighbor_contamination(adata, marker_sets, label_key)` | per-cell share of counts on markers of the **adjacent** cell types (not its own) + directed source → target frames: raw spillover, a **baseline** from same-type cells with no such neighbour, the **excess** over it, a permutation **p-value**, the SPLIT readout (`split_slope`, `split_corr` vs neighbour share), and CellSPA's negative-marker-vs-distance readout (`distance_corr`, `distance_curve`). Accepts SegTraQ's `{"positive", "negative"}` marker format; `graph="delaunay"` for SegTraQ's graph; reports labels without a marker set | SegTraQ `contamination_strength`; SPLIT (Bilous et al. 2026); CellSPA |
+
+### Behavioral verification (`augment.py` — controlled AnnData perturbations)
+
+| Function | Purpose |
+|---|---|
+| `perturb_anndata(adata, kind, level, ...)` | Applies controlled single-axis perturbations (`label_noise`, `merge`, `infiltration`, `spillover`, `type_swap`, `depth_loss`, `panel_growth`, `rare_type`, `coord_shuffle`, `nuisance_shuffle`) to verify metric monotonicity, invariance, and failure modes |
+| `verify_metric_contracts(adata, evaluators, ...)` | Executes `METRIC_CONTRACTS` across perturbation levels and seeds, returning structured `must_detect` / `must_be_invariant` / `must_not_degrade` / `known_caveat` verdicts |
 
 ### Per-cell confidence
 
@@ -145,7 +155,7 @@ original sources** in publications, not just this package.
 
 ## Status
 
-`v0.7.0`, experimental. Several thresholds/metrics in the catalog are flagged provisional —
+`v0.8.0`, experimental. Several thresholds/metrics in the catalog are flagged provisional —
 version accordingly. Tests: `pip install -e ".[spatial,dev]" && pytest`.
 
 ## License

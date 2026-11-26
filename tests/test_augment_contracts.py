@@ -1,6 +1,8 @@
 """Tests for generic AnnData perturbations and behavioral metric-contract verification."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -215,3 +217,33 @@ def test_verify_metric_contracts_passes_on_tissue_and_real_goldens():
     )
     assert Path(__file__).name == "test_augment_contracts.py"
     assert res_xen["status"] == "ok", res_xen["summary"][res_xen["summary"]["verdict"].str.startswith("fail_")]
+
+
+def test_must_not_degrade_abs_tol_and_roi_glob(tmp_path: Path) -> None:
+    """Near-zero deterministic jitter respects abs_tol, while real degradation still fails."""
+    import sys
+
+    repo_root = str(Path(__file__).resolve().parents[1])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    from benchmarks.augmentation.datasets import roi_inventory
+    from spatial_anno_metrics.augment import _score_one
+
+    levels = [1.0, 0.5, 0.25]
+    # Jitter like resid_moran.residual on nuclear Slide-tags (0.0032 -> 0.0054) must pass with abs_tol=0.01
+    s_ok = pd.Series([0.0032, 0.0041, 0.0054], index=levels)
+    r_ok = _score_one(s_ok, levels, orientation=-1, role="must_not_degrade", min_rho=0.8, rel_tol=0.02, abs_tol=0.01, caveat=None)
+    assert r_ok["verdict"] == "pass"
+    assert r_ok["threshold"] == pytest.approx(0.01)
+
+    # Real degradation (+0.05) still fails clearly
+    s_bad = pd.Series([0.0032, 0.0200, 0.0532], index=levels)
+    r_bad = _score_one(s_bad, levels, orientation=-1, role="must_not_degrade", min_rho=0.8, rel_tol=0.02, abs_tol=0.01, caveat=None)
+    assert r_bad["verdict"] == "fail_false_alarm"
+
+    # Rank 1 MERFISH human cortex glob must not double-count slidetags_human_cortex.h5ad
+    (tmp_path / "merfish_human_cortex_2_rep1.h5ad").write_bytes(b"")
+    (tmp_path / "slidetags_human_cortex.h5ad").write_bytes(b"")
+    inv = roi_inventory(tmp_path).set_index("rank")
+    assert inv.loc[1, "local_status"] == "cached (1 files)"
+    assert inv.loc[2, "local_status"] == "cached (1 files)"

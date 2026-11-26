@@ -21,7 +21,7 @@ TOP5_OPENPROBLEMS_ROI: list[dict[str, Any]] = [
         "scale": "3-4k cells x ~3,550 genes per section (cluster_L1..L3 hierarchy)",
         "primary_targets": ["imputation benchmark (clean same-cell panel holdout, ~300 -> ~3.5k genes)", "annotation benchmark (3-level human cortex hierarchy)"],
         "contract_metrics": ["residual_spatial_autocorrelation", "spatial_organization_consistency", "hierarchical_accuracy"],
-        "cache_glob": "*human_cortex*.h5ad",
+        "cache_glob": "merfish_human_cortex*.h5ad",
     },
     {
         "rank": 2,
